@@ -19,6 +19,14 @@ function getSeverityVariant(severity: string) {
   return 'gray' as const;
 }
 
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+      {children}
+    </h2>
+  );
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [alerts, setAlerts] = useState<AdminAlert[]>([]);
@@ -35,7 +43,7 @@ export default function DashboardPage() {
       setAlerts(a.slice(0, 5));
       setReports(r.slice(0, 5));
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err) => { console.error('[Dashboard] load error:', err); setLoading(false); });
   }, []);
 
   if (loading) return <LoadingSpinner message="대시보드 로딩 중..." />;
@@ -47,45 +55,90 @@ export default function DashboardPage() {
         <p className="text-gray-500 text-sm mt-1">다시, 봄 서비스 현황 요약</p>
       </div>
 
-      {/* Stats Grid */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          <StatsCard
-            label="총 사용자"
-            value={stats.totalUsers}
-            icon="👥"
-            color="bg-blue-50"
-          />
-          <StatsCard
-            label="활성 사용자"
-            value={stats.activeUsers}
-            icon="✅"
-            color="bg-green-50"
-          />
-          <StatsCard
-            label="차단된 사용자"
-            value={stats.blockedUsers}
-            icon="🚫"
-            color="bg-red-50"
-          />
-          <StatsCard
-            label="대기 중 신고"
-            value={stats.pendingReports}
-            icon="🚨"
-            color="bg-orange-50"
-          />
-          <StatsCard
-            label="미해결 알림"
-            value={stats.unresolvedAlerts}
-            icon="🔔"
-            color="bg-yellow-50"
-          />
-          <StatsCard
-            label="총 모임"
-            value={stats.totalCircles}
-            icon="🌿"
-            color="bg-emerald-50"
-          />
+        <div className="space-y-6 mb-8">
+
+          {/* ── 사용자 현황 ── */}
+          <div>
+            <SectionHeading>사용자 현황</SectionHeading>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <StatsCard
+                label="총 사용자"
+                value={stats.totalUsers}
+                icon="👥"
+                color="bg-blue-50"
+              />
+              <StatsCard
+                label="신규 가입 (7일)"
+                value={stats.newUsersThisWeek}
+                icon="🌱"
+                color="bg-emerald-50"
+              />
+              <StatsCard
+                label="신규 가입 (30일)"
+                value={stats.newUsersThisMonth}
+                icon="📅"
+                color="bg-teal-50"
+              />
+            </div>
+          </div>
+
+          {/* ── 활동 & 서비스 ── */}
+          <div>
+            <SectionHeading>활동 & 서비스</SectionHeading>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatsCard
+                label="주간 활성 (7일)"
+                value={stats.activeUsersThisWeek}
+                icon="✅"
+                color="bg-green-50"
+              />
+              <StatsCard
+                label="총 모임"
+                value={stats.totalCircles}
+                icon="🌿"
+                color="bg-lime-50"
+              />
+              <StatsCard
+                label="총 웨이브"
+                value={stats.totalWaves}
+                icon="👋"
+                color="bg-sky-50"
+              />
+              <StatsCard
+                label="총 대화"
+                value={stats.totalConversations}
+                icon="💬"
+                color="bg-violet-50"
+              />
+            </div>
+          </div>
+
+          {/* ── 보안 & 안전 ── */}
+          <div>
+            <SectionHeading>보안 & 안전</SectionHeading>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <StatsCard
+                label="차단된 사용자"
+                value={stats.blockedUsers}
+                icon="🚫"
+                color="bg-red-50"
+              />
+              <StatsCard
+                label="대기 중 신고"
+                value={stats.pendingReports}
+                icon="🚨"
+                color="bg-orange-50"
+              />
+              <StatsCard
+                label="미해결 알림"
+                value={stats.unresolvedAlerts}
+                icon="🔔"
+                color="bg-yellow-50"
+              />
+            </div>
+          </div>
+
         </div>
       )}
 

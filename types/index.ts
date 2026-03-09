@@ -110,9 +110,13 @@ export interface AdminAlert {
   userDisplayName?: string;
   timestamp?: Date;
   resolved?: boolean;
+  resolvedBy?: string;
+  resolvedNote?: string;
+  resolvedAt?: Date;
   reason?: string;
   detectedIssues?: string[];
   circleName?: string;
+  circleId?: string;
   circleDescription?: string;
   imageUrl?: string;
   adultScore?: number;
@@ -153,4 +157,18 @@ export interface DashboardStats {
   pendingReports: number;
   unresolvedAlerts: number;
   totalCircles: number;
+  // Growth & engagement
+  newUsersThisWeek: number;
+  newUsersThisMonth: number;
+  activeUsersThisWeek: number;
+  totalWaves: number;
+  totalConversations: number;
+}
+
+export interface UserActivity {
+  circlesJoined: number;
+  circleNames: string[];
+  wavesSent: number;
+  wavesReceived: number;
+  conversationsCount: number;
 }

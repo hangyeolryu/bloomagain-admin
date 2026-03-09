@@ -18,9 +18,10 @@ import {
   arrayRemove,
   increment,
   documentId,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, Announcement, AnnouncementType } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -276,8 +277,17 @@ export async function getAdminAlerts(limitCount = 50): Promise<AdminAlert[]> {
   })) as AdminAlert[];
 }
 
-export async function resolveAlert(alertId: string) {
-  await updateDoc(doc(db, 'admin_alerts', alertId), { resolved: true });
+export async function resolveAlert(alertId: string, note?: string, adminUid?: string) {
+  await updateDoc(doc(db, 'admin_alerts', alertId), {
+    resolved: true,
+    resolvedAt: Timestamp.now(),
+    ...(adminUid ? { resolvedBy: adminUid } : {}),
+    ...(note?.trim() ? { resolvedNote: note.trim() } : {}),
+  });
+}
+
+export async function deleteAlert(alertId: string) {
+  await deleteDoc(doc(db, 'admin_alerts', alertId));
 }
 
 export async function getSuspiciousMessages(limitCount = 50): Promise<SuspiciousMessage[]> {
@@ -383,21 +393,78 @@ export async function toggleAnnouncementActive(
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
+async function safeCount(q: Parameters<typeof getCountFromServer>[0], label: string): Promise<number> {
+  try {
+    const snap = await getCountFromServer(q);
+    return snap.data().count;
+  } catch (e) {
+    console.warn(`[getDashboardStats] count failed for "${label}":`, e);
+    return 0;
+  }
+}
+
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const [usersSnap, circlesSnap, reportsSnap, alertsSnap] = await Promise.all([
-    getDocs(collection(db, 'users')),
-    getDocs(collection(db, 'circles')),
-    getDocs(query(collection(db, 'reports'), where('status', '==', 'pending'))),
-    getDocs(query(collection(db, 'admin_alerts'), where('resolved', '==', false))),
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // Core user list — always needed for active/blocked split
+  const usersSnap = await getDocs(collection(db, 'users'));
+  const users = usersSnap.docs.map((d) => d.data());
+
+  // All remaining counts run in parallel; each fails gracefully to 0
+  const [
+    totalCircles,
+    pendingReports,
+    unresolvedAlerts,
+    newUsersThisWeek,
+    newUsersThisMonth,
+    activeUsersThisWeek,
+    totalWaves,
+    totalConversations,
+  ] = await Promise.all([
+    safeCount(collection(db, 'circles'), 'circles'),
+    safeCount(query(collection(db, 'reports'), where('status', '==', 'pending')), 'pending reports'),
+    safeCount(query(collection(db, 'admin_alerts'), where('resolved', '==', false)), 'unresolved alerts'),
+    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'new users 7d'),
+    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), 'new users 30d'),
+    safeCount(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'active users 7d'),
+    safeCount(collection(db, 'waves'), 'waves'),
+    safeCount(collection(db, 'conversations'), 'conversations'),
   ]);
 
-  const users = usersSnap.docs.map((d) => d.data());
   return {
     totalUsers: users.length,
     activeUsers: users.filter((u) => u.accountStatus === 'active' || !u.accountStatus).length,
     blockedUsers: users.filter((u) => u.isBlacklisted || u.accountStatus === 'blocked').length,
-    pendingReports: reportsSnap.size,
-    unresolvedAlerts: alertsSnap.size,
-    totalCircles: circlesSnap.size,
+    pendingReports,
+    unresolvedAlerts,
+    totalCircles,
+    newUsersThisWeek,
+    newUsersThisMonth,
+    activeUsersThisWeek,
+    totalWaves,
+    totalConversations,
+  };
+}
+
+// ─── User Activity ─────────────────────────────────────────────────────────────
+
+export async function getUserActivity(uid: string): Promise<UserActivity> {
+  const [circlesSnap, wavesSentSnap, wavesReceivedSnap, conversationsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'circles'), where('members', 'array-contains', uid))),
+    getDocs(query(collection(db, 'waves'), where('fromUserId', '==', uid), limit(200))),
+    getDocs(query(collection(db, 'waves'), where('toUserId', '==', uid), limit(200))),
+    getDocs(query(collection(db, 'conversations'), where('participants', 'array-contains', uid), limit(200))),
+  ]);
+
+  return {
+    circlesJoined: circlesSnap.size,
+    circleNames: circlesSnap.docs
+      .map((d) => (d.data().name as string) ?? '')
+      .filter(Boolean),
+    wavesSent: wavesSentSnap.size,
+    wavesReceived: wavesReceivedSnap.size,
+    conversationsCount: conversationsSnap.size,
   };
 }
