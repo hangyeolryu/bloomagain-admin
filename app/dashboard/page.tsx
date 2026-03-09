@@ -109,12 +109,14 @@ export default function DashboardPage() {
                 value={stats.totalWaves}
                 icon="👋"
                 color="bg-sky-50"
+                href="/dashboard/waves"
               />
               <StatsCard
                 label="총 대화"
                 value={stats.totalConversations}
                 icon="💬"
                 color="bg-violet-50"
+                href="/dashboard/conversations"
               />
             </div>
           </div>

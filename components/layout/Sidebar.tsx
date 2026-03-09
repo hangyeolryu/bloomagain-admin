@@ -20,8 +20,10 @@ const navItems: NavItem[] = [
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
   { href: '/dashboard/reports', label: '신고 관리', icon: '🚨' },
   { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔' },
+  { href: '/dashboard/waves', label: '웨이브', icon: '👋' },
+  { href: '/dashboard/conversations', label: '대화', icon: '💬' },
   { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️' },
-  { href: '/dashboard/messages', label: '의심 메시지', icon: '💬' },
+  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫' },
   { href: '/dashboard/announcements', label: '공지사항', icon: '📢', permission: 'manageCircles' },
   { href: '/dashboard/admins', label: '관리자 계정', icon: '🔑', permission: 'manageAdmins' },
 ];

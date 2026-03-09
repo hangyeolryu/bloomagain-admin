@@ -30,7 +30,7 @@ export type PaginatedResult<T> = {
   lastDoc: QueryDocumentSnapshot | null;
 };
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -575,4 +575,67 @@ export async function getUserActivity(uid: string): Promise<UserActivity> {
     conversationsCount:  conversationsCount.data().count,
     blockedConversations: blockedConversationsCount.data().count,
   };
+}
+
+// ─── Waves ────────────────────────────────────────────────────────────────────
+
+export async function getWaves(
+  pageSize = 30,
+  statusFilter?: 'pending' | 'accepted' | 'declined',
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<Wave>> {
+  const constraints = [
+    ...(statusFilter ? [where('status', '==', statusFilter)] : []),
+    orderBy('sentAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  ];
+  const q = query(collection(db, 'waves'), ...constraints);
+  const snap = await getDocs(q);
+  const items: Wave[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      fromUserId: data.fromUserId,
+      toUserId: data.toUserId,
+      message: data.message ?? undefined,
+      status: data.status ?? 'pending',
+      isRead: data.isRead ?? false,
+      isResponded: data.isResponded ?? false,
+      sentAt: data.sentAt?.toDate?.() ?? undefined,
+      respondedAt: data.respondedAt?.toDate?.() ?? undefined,
+      response: data.response ?? undefined,
+      conversationId: data.conversationId ?? undefined,
+    } as Wave;
+  });
+  return { items, lastDoc: snap.docs[snap.docs.length - 1] ?? null };
+}
+
+// ─── Conversations ─────────────────────────────────────────────────────────────
+
+export async function getConversations(
+  pageSize = 30,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<Conversation>> {
+  const q = query(
+    collection(db, 'conversations'),
+    orderBy('lastMessageAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  );
+  const snap = await getDocs(q);
+  const items: Conversation[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      participants: data.participants ?? [],
+      lastMessage: data.lastMessage ?? undefined,
+      lastMessageAt: data.lastMessageAt?.toDate?.() ?? undefined,
+      createdAt: data.createdAt?.toDate?.() ?? undefined,
+      conversationType: data.conversationType ?? 'direct',
+      isActive: data.isActive ?? true,
+      blockedParticipants: data.blockedParticipants ?? [],
+    } as Conversation;
+  });
+  return { items, lastDoc: snap.docs[snap.docs.length - 1] ?? null };
 }

@@ -150,6 +150,33 @@ export interface Announcement {
   expiresAt?: Date;
 }
 
+export type WaveStatus = 'pending' | 'accepted' | 'declined';
+
+export interface Wave {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  message?: string;
+  status: WaveStatus;
+  isRead?: boolean;
+  isResponded?: boolean;
+  sentAt?: Date;
+  respondedAt?: Date;
+  response?: string;
+  conversationId?: string;
+}
+
+export interface Conversation {
+  id: string;
+  participants: string[];
+  lastMessage?: string;
+  lastMessageAt?: Date;
+  createdAt?: Date;
+  conversationType?: string;
+  isActive?: boolean;
+  blockedParticipants?: string[];
+}
+
 export interface DashboardStats {
   totalUsers: number;
   activeUsers: number;
