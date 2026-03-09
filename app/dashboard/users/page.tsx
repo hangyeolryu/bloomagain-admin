@@ -46,6 +46,13 @@ export default function UsersPage() {
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // Pre-select status filter from URL param (e.g. ?status=blocked from dashboard card)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get('status');
+    if (s) setStatusFilter(s);
+  }, []);
+
   // ── Load more (stable ref so IntersectionObserver doesn't need to reconnect) ─
   const loadMoreRef = useRef<() => void>(() => {});
 

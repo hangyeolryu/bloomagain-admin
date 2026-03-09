@@ -67,18 +67,21 @@ export default function DashboardPage() {
                 value={stats.totalUsers}
                 icon="👥"
                 color="bg-blue-50"
+                href="/dashboard/users"
               />
               <StatsCard
                 label="신규 가입 (7일)"
                 value={stats.newUsersThisWeek}
                 icon="🌱"
                 color="bg-emerald-50"
+                href="/dashboard/users"
               />
               <StatsCard
                 label="신규 가입 (30일)"
                 value={stats.newUsersThisMonth}
                 icon="📅"
                 color="bg-teal-50"
+                href="/dashboard/users"
               />
             </div>
           </div>
@@ -92,12 +95,14 @@ export default function DashboardPage() {
                 value={stats.activeUsersThisWeek}
                 icon="✅"
                 color="bg-green-50"
+                href="/dashboard/users?status=active"
               />
               <StatsCard
                 label="총 모임"
                 value={stats.totalCircles}
                 icon="🌿"
                 color="bg-lime-50"
+                href="/dashboard/circles"
               />
               <StatsCard
                 label="총 웨이브"
@@ -123,18 +128,21 @@ export default function DashboardPage() {
                 value={stats.blockedUsers}
                 icon="🚫"
                 color="bg-red-50"
+                href="/dashboard/users?status=blocked"
               />
               <StatsCard
                 label="대기 중 신고"
                 value={stats.pendingReports}
                 icon="🚨"
                 color="bg-orange-50"
+                href="/dashboard/reports"
               />
               <StatsCard
                 label="미해결 알림"
                 value={stats.unresolvedAlerts}
                 icon="🔔"
                 color="bg-yellow-50"
+                href="/dashboard/alerts"
               />
             </div>
           </div>
@@ -156,17 +164,22 @@ export default function DashboardPage() {
           ) : (
             <ul className="divide-y divide-gray-50">
               {alerts.map((alert) => (
-                <li key={alert.id} className="px-6 py-4 flex items-start gap-3">
-                  <Badge variant={getSeverityVariant(alert.severity)}>
-                    {alert.severity === 'high' ? '높음' : alert.severity === 'medium' ? '중간' : '낮음'}
-                  </Badge>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {alert.userDisplayName || alert.userId || '-'}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">{alert.type} · {alert.reason || '-'}</p>
-                  </div>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(alert.timestamp)}</span>
+                <li key={alert.id}>
+                  <Link
+                    href={alert.userId ? `/dashboard/users/${alert.userId}` : '/dashboard/alerts'}
+                    className="flex items-start gap-3 px-6 py-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <Badge variant={getSeverityVariant(alert.severity)}>
+                      {alert.severity === 'high' ? '높음' : alert.severity === 'medium' ? '중간' : '낮음'}
+                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {alert.userDisplayName || alert.userId || '-'}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">{alert.type} · {alert.reason || '-'}</p>
+                    </div>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(alert.timestamp)}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -186,15 +199,20 @@ export default function DashboardPage() {
           ) : (
             <ul className="divide-y divide-gray-50">
               {reports.map((r) => (
-                <li key={r.id} className="px-6 py-4 flex items-start gap-3">
-                  <Badge variant="orange">
-                    {r.type === 'user' ? '사용자' : '모임'}
-                  </Badge>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{r.reason}</p>
-                    <p className="text-xs text-gray-500">신고자: {r.reportedBy.slice(0, 8)}...</p>
-                  </div>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(r.createdAt)}</span>
+                <li key={r.id}>
+                  <Link
+                    href={r.type === 'user' ? `/dashboard/users/view?id=${r.targetId}` : `/dashboard/circles/view?id=${r.targetId}`}
+                    className="flex items-start gap-3 px-6 py-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <Badge variant="orange">
+                      {r.type === 'user' ? '사용자' : '모임'}
+                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{r.reason}</p>
+                      <p className="text-xs text-gray-500">신고자: {r.reportedBy.slice(0, 8)}...</p>
+                    </div>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(r.createdAt)}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
