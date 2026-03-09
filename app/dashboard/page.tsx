@@ -37,11 +37,11 @@ export default function DashboardPage() {
     Promise.all([
       getDashboardStats(),
       getAdminAlerts(5),
-      getReports('pending'),
+      getReports('pending', 5),
     ]).then(([s, a, r]) => {
       setStats(s);
-      setAlerts(a.slice(0, 5));
-      setReports(r.slice(0, 5));
+      setAlerts(a.items);
+      setReports(r.items);
       setLoading(false);
     }).catch((err) => { console.error('[Dashboard] load error:', err); setLoading(false); });
   }, []);

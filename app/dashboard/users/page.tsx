@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { getUsers, blockUser, unblockUser, updateUserStatus } from '@/lib/firestore';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { UserProfile, AccountStatus } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
+
+const PAGE_SIZE = 30;
 
 function getStatusBadge(user: UserProfile) {
   if (user.isBlacklisted) return <Badge variant="red">차단됨</Badge>;
@@ -30,44 +33,61 @@ function formatDate(date?: Date) {
 
 export default function UsersPage() {
   const { user: adminUser } = useAuth();
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [filtered, setFiltered] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [allUsers, setAllUsers]         = useState<UserProfile[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [loadingMore, setLoadingMore]   = useState(false);
+  const [hasMore, setHasMore]           = useState(false);
+  const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [actionModal, setActionModal] = useState<{ user: UserProfile; type: 'block' | 'unblock' | 'suspend' } | null>(null);
-  const [reason, setReason] = useState('');
-  const [acting, setActing] = useState(false);
+  const [actionModal, setActionModal]   = useState<{ user: UserProfile; type: 'block' | 'unblock' | 'suspend' } | null>(null);
+  const [reason, setReason]             = useState('');
+  const [acting, setActing]             = useState(false);
 
+  const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // ── Load more (stable ref so IntersectionObserver doesn't need to reconnect) ─
+  const loadMoreRef = useRef<() => void>(() => {});
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current);
+      lastDocRef.current = lastDoc;
+      setAllUsers((prev) => [...prev, ...items]);
+      setHasMore(items.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore]);
+
+  // Keep ref in sync so the observer always calls the latest version
+  loadMoreRef.current = loadMore;
+
+  // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
-    getUsers(200).then((u) => {
-      setUsers(u);
-      setFiltered(u);
+    getUsers(PAGE_SIZE).then(({ items, lastDoc }) => {
+      setAllUsers(items);
+      lastDocRef.current = lastDoc;
+      setHasMore(items.length === PAGE_SIZE);
       setLoading(false);
     });
   }, []);
 
+  // ── IntersectionObserver (set up once) ────────────────────────────────────
   useEffect(() => {
-    let result = users;
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (u) =>
-          u.displayName?.toLowerCase().includes(q) ||
-          u.city?.toLowerCase().includes(q) ||
-          u.id.toLowerCase().includes(q)
-      );
-    }
-    if (statusFilter !== 'all') {
-      if (statusFilter === 'blocked') {
-        result = result.filter((u) => u.isBlacklisted || u.accountStatus === 'blocked');
-      } else {
-        result = result.filter((u) => (u.accountStatus || 'active') === statusFilter);
-      }
-    }
-    setFiltered(result);
-  }, [search, statusFilter, users]);
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
+  // ── Actions ───────────────────────────────────────────────────────────────
   const handleAction = async () => {
     if (!actionModal || !adminUser) return;
     setActing(true);
@@ -79,12 +99,12 @@ export default function UsersPage() {
       } else if (actionModal.type === 'suspend') {
         await updateUserStatus(actionModal.user.id, 'suspended');
       }
-      setUsers((prev) =>
+      setAllUsers((prev) =>
         prev.map((u) =>
           u.id === actionModal.user.id
             ? {
                 ...u,
-                accountStatus: actionModal.type === 'unblock' ? 'active' : (actionModal.type === 'block' ? 'blocked' : 'suspended') as AccountStatus,
+                accountStatus: (actionModal.type === 'unblock' ? 'active' : actionModal.type === 'block' ? 'blocked' : 'suspended') as AccountStatus,
                 isBlacklisted: actionModal.type === 'block',
               }
             : u
@@ -97,13 +117,33 @@ export default function UsersPage() {
     }
   };
 
+  // ── Derived filtered list (client-side, on loaded data) ───────────────────
+  const filtered = allUsers.filter((u) => {
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !u.displayName?.toLowerCase().includes(q) &&
+        !u.city?.toLowerCase().includes(q) &&
+        !u.id.toLowerCase().includes(q)
+      ) return false;
+    }
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'blocked') {
+        if (!u.isBlacklisted && u.accountStatus !== 'blocked') return false;
+      } else {
+        if ((u.accountStatus || 'active') !== statusFilter) return false;
+      }
+    }
+    return true;
+  });
+
   if (loading) return <LoadingSpinner />;
 
   return (
     <div>
       <Header
         title="사용자 관리"
-        subtitle={`총 ${users.length}명의 사용자`}
+        subtitle={`로드된 ${allUsers.length}명 중 ${filtered.length}명 표시`}
       />
 
       {/* Filters */}
@@ -217,10 +257,17 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
-        <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400">
-          {filtered.length}명 표시 중 (전체 {users.length}명)
+
+        {/* Footer: scroll sentinel + loading state */}
+        <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
+          <span>{filtered.length}명 표시 중 (로드된 {allUsers.length}명)</span>
+          {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
+          {!hasMore && allUsers.length > 0 && <span>전체 로드 완료</span>}
         </div>
       </div>
+
+      {/* IntersectionObserver sentinel */}
+      <div ref={sentinelRef} className="h-1" />
 
       {/* Action Modal */}
       <Modal

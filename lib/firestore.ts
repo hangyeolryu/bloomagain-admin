@@ -10,10 +10,12 @@ import {
   orderBy,
   limit,
   where,
+  startAfter,
   updateDoc,
   Timestamp,
   onSnapshot,
   QuerySnapshot,
+  QueryDocumentSnapshot,
   DocumentData,
   arrayRemove,
   arrayUnion,
@@ -21,6 +23,12 @@ import {
   documentId,
   getCountFromServer,
 } from 'firebase/firestore';
+
+// Cursor-based pagination result
+export type PaginatedResult<T> = {
+  items: T[];
+  lastDoc: QueryDocumentSnapshot | null;
+};
 import { db } from './firebase';
 import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType } from '@/types';
 
@@ -80,17 +88,28 @@ function toDate(val: unknown): Date | undefined {
   return undefined;
 }
 
-export async function getUsers(limitCount = 200): Promise<UserProfile[]> {
-  const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(limitCount));
+export async function getUsers(
+  pageSize = 30,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<UserProfile>> {
+  const q = query(
+    collection(db, 'users'),
+    orderBy('createdAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-    createdAt: toDate(d.data().createdAt),
-    updatedAt: toDate(d.data().updatedAt),
-    lastActiveAt: toDate(d.data().lastActiveAt),
-    blacklistedAt: toDate(d.data().blacklistedAt),
-  })) as UserProfile[];
+  return {
+    items: snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt),
+      updatedAt: toDate(d.data().updatedAt),
+      lastActiveAt: toDate(d.data().lastActiveAt),
+      blacklistedAt: toDate(d.data().blacklistedAt),
+    })) as UserProfile[],
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
 }
 
 export async function getUser(uid: string): Promise<UserProfile | null> {
@@ -164,15 +183,26 @@ export async function unblockUser(uid: string) {
   });
 }
 
-export async function getCircles(limitCount = 100): Promise<Circle[]> {
-  const q = query(collection(db, 'circles'), orderBy('createdAt', 'desc'), limit(limitCount));
+export async function getCircles(
+  pageSize = 24,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<Circle>> {
+  const q = query(
+    collection(db, 'circles'),
+    orderBy('createdAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-    createdAt: toDate(d.data().createdAt),
-    updatedAt: toDate(d.data().updatedAt),
-  })) as Circle[];
+  return {
+    items: snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt),
+      updatedAt: toDate(d.data().updatedAt),
+    })) as Circle[],
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
 }
 
 export async function getCircle(id: string): Promise<Circle | null> {
@@ -259,25 +289,28 @@ export async function getCircleEvents(circleId: string): Promise<CircleEvent[]> 
   })) as CircleEvent[];
 }
 
-export async function getReports(statusFilter?: string): Promise<Report[]> {
-  let q;
-  if (statusFilter && statusFilter !== 'all') {
-    q = query(
-      collection(db, 'reports'),
-      where('status', '==', statusFilter),
-      orderBy('createdAt', 'desc'),
-      limit(100)
-    );
-  } else {
-    q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100));
-  }
+export async function getReports(
+  statusFilter?: string,
+  pageSize = 30,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<Report>> {
+  const q = query(
+    collection(db, 'reports'),
+    ...(statusFilter && statusFilter !== 'all' ? [where('status', '==', statusFilter)] : []),
+    orderBy('createdAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-    createdAt: toDate(d.data().createdAt),
-    resolvedAt: toDate(d.data().resolvedAt),
-  })) as Report[];
+  return {
+    items: snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt),
+      resolvedAt: toDate(d.data().resolvedAt),
+    })) as Report[],
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
 }
 
 export async function resolveReport(reportId: string, resolution: string, adminUid: string) {
@@ -297,18 +330,25 @@ export async function dismissReport(reportId: string, adminUid: string) {
   });
 }
 
-export async function getAdminAlerts(limitCount = 50): Promise<AdminAlert[]> {
+export async function getAdminAlerts(
+  pageSize = 20,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<AdminAlert>> {
   const q = query(
     collection(db, 'admin_alerts'),
     orderBy('timestamp', 'desc'),
-    limit(limitCount)
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-    timestamp: toDate(d.data().timestamp),
-  })) as AdminAlert[];
+  return {
+    items: snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      timestamp: toDate(d.data().timestamp),
+    })) as AdminAlert[],
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
 }
 
 export async function resolveAlert(alertId: string, note?: string, adminUid?: string) {
@@ -325,21 +365,26 @@ export async function deleteAlert(alertId: string) {
 }
 
 export async function getSuspiciousMessages(
-  limitCount = 50,
+  pageSize = 30,
   source?: string,  // e.g. 'message' | 'circle' | 'profile_image'
-): Promise<SuspiciousMessage[]> {
-  const constraints = [
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<SuspiciousMessage>> {
+  const q = query(
+    collection(db, 'suspicious_messages'),
     ...(source ? [where('source', '==', source)] : []),
     orderBy('timestamp', 'desc'),
-    limit(limitCount),
-  ];
-  const q = query(collection(db, 'suspicious_messages'), ...constraints);
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-    timestamp: toDate(d.data().timestamp),
-  })) as SuspiciousMessage[];
+  return {
+    items: snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      timestamp: toDate(d.data().timestamp),
+    })) as SuspiciousMessage[],
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
 }
 
 export function subscribeToAlerts(
