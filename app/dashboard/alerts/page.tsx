@@ -23,17 +23,17 @@ function getSeverityInfo(s: string) {
   return                     { variant: 'gray'   as const, label: '낮음', emoji: '🟢', bg: 'bg-gray-50 border-gray-200' };
 }
 
-const TYPE_META: Record<string, { label: string; icon: string; hasUser: boolean; hasCircle: boolean }> = {
-  high_security_score:  { label: '높은 위험 점수',   icon: '⚠️',  hasUser: true,  hasCircle: false },
-  multiple_reports:     { label: '다중 신고',         icon: '🚨',  hasUser: true,  hasCircle: false },
-  blocked_circle:       { label: '차단된 모임',       icon: '🚫',  hasUser: false, hasCircle: true  },
-  suspicious_circle:    { label: '의심 모임',         icon: '👀',  hasUser: true,  hasCircle: true  },
-  blocked_image:        { label: '차단된 이미지',     icon: '🖼️', hasUser: true,  hasCircle: true  },
-  suspicious_image:     { label: '의심 이미지',       icon: '🖼️', hasUser: true,  hasCircle: true  },
+const TYPE_META: Record<string, { label: string; icon: string }> = {
+  high_security_score: { label: '높은 위험 점수', icon: '⚠️'  },
+  multiple_reports:    { label: '다중 신고',       icon: '🚨'  },
+  blocked_circle:      { label: '차단된 모임',     icon: '🚫'  },
+  suspicious_circle:   { label: '의심 모임',       icon: '👀'  },
+  blocked_image:       { label: '차단된 이미지',   icon: '🖼️' },
+  suspicious_image:    { label: '의심 이미지',     icon: '🖼️' },
 };
 
 function getTypeMeta(type: string) {
-  return TYPE_META[type] ?? { label: type, icon: '📋', hasUser: false, hasCircle: false };
+  return TYPE_META[type] ?? { label: type, icon: '📋' };
 }
 
 function ScoreBar({ label, score }: { label: string; score: number }) {
