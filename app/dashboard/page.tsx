@@ -1,0 +1,153 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { getDashboardStats, getAdminAlerts, getReports } from '@/lib/firestore';
+import type { DashboardStats, AdminAlert, Report } from '@/types';
+import StatsCard from '@/components/ui/StatsCard';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import Badge from '@/components/ui/Badge';
+
+function formatDate(date?: Date) {
+  if (!date) return '-';
+  return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function getSeverityVariant(severity: string) {
+  if (severity === 'high') return 'red' as const;
+  if (severity === 'medium') return 'yellow' as const;
+  return 'gray' as const;
+}
+
+export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [alerts, setAlerts] = useState<AdminAlert[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      getDashboardStats(),
+      getAdminAlerts(5),
+      getReports('pending'),
+    ]).then(([s, a, r]) => {
+      setStats(s);
+      setAlerts(a.slice(0, 5));
+      setReports(r.slice(0, 5));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <LoadingSpinner message="대시보드 로딩 중..." />;
+
+  return (
+    <div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">대시보드</h1>
+        <p className="text-gray-500 text-sm mt-1">다시, 봄 서비스 현황 요약</p>
+      </div>
+
+      {/* Stats Grid */}
+      {stats && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          <StatsCard
+            label="총 사용자"
+            value={stats.totalUsers}
+            icon="👥"
+            color="bg-blue-50"
+          />
+          <StatsCard
+            label="활성 사용자"
+            value={stats.activeUsers}
+            icon="✅"
+            color="bg-green-50"
+          />
+          <StatsCard
+            label="차단된 사용자"
+            value={stats.blockedUsers}
+            icon="🚫"
+            color="bg-red-50"
+          />
+          <StatsCard
+            label="대기 중 신고"
+            value={stats.pendingReports}
+            icon="🚨"
+            color="bg-orange-50"
+          />
+          <StatsCard
+            label="미해결 알림"
+            value={stats.unresolvedAlerts}
+            icon="🔔"
+            color="bg-yellow-50"
+          />
+          <StatsCard
+            label="총 모임"
+            value={stats.totalCircles}
+            icon="🌿"
+            color="bg-emerald-50"
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Alerts */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+            <h2 className="font-semibold text-gray-900">최근 관리자 알림</h2>
+            <Link href="/dashboard/alerts" className="text-xs text-green-600 hover:underline font-medium">
+              전체 보기
+            </Link>
+          </div>
+          {alerts.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-8">알림 없음</p>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {alerts.map((alert) => (
+                <li key={alert.id} className="px-6 py-4 flex items-start gap-3">
+                  <Badge variant={getSeverityVariant(alert.severity)}>
+                    {alert.severity === 'high' ? '높음' : alert.severity === 'medium' ? '중간' : '낮음'}
+                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">
+                      {alert.userDisplayName || alert.userId || '-'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{alert.type} · {alert.reason || '-'}</p>
+                  </div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(alert.timestamp)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Pending Reports */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+            <h2 className="font-semibold text-gray-900">대기 중인 신고</h2>
+            <Link href="/dashboard/reports" className="text-xs text-green-600 hover:underline font-medium">
+              전체 보기
+            </Link>
+          </div>
+          {reports.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-8">대기 중인 신고 없음</p>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {reports.map((r) => (
+                <li key={r.id} className="px-6 py-4 flex items-start gap-3">
+                  <Badge variant="orange">
+                    {r.type === 'user' ? '사용자' : '모임'}
+                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 truncate">{r.reason}</p>
+                    <p className="text-xs text-gray-500">신고자: {r.reportedBy.slice(0, 8)}...</p>
+                  </div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(r.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
