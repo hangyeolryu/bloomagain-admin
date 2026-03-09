@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
-import { getSuspiciousMessages } from '@/lib/firestore';
+import { getSuspiciousMessages, migrateMessagesSource } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import type { SuspiciousMessage } from '@/types';
 import Badge from '@/components/ui/Badge';
@@ -17,11 +17,13 @@ function formatDate(date?: Date) {
 }
 
 export default function MessagesPage() {
-  const [messages, setMessages]       = useState<SuspiciousMessage[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore]         = useState(false);
-  const [filter, setFilter]           = useState<'all' | 'blocked' | 'warning'>('all');
+  const [messages, setMessages]         = useState<SuspiciousMessage[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [loadingMore, setLoadingMore]   = useState(false);
+  const [hasMore, setHasMore]           = useState(false);
+  const [filter, setFilter]             = useState<'all' | 'blocked' | 'warning'>('all');
+  const [migrating, setMigrating]       = useState(false);
+  const [migrateResult, setMigrateResult] = useState<string | null>(null);
 
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -73,6 +75,27 @@ export default function MessagesPage() {
     return () => observer.disconnect();
   }, []);
 
+  async function handleMigrate() {
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const count = await migrateMessagesSource();
+      setMigrateResult(`완료: ${count}개 문서에 source='message' 추가됨`);
+      // Reload messages so newly-migrated docs appear
+      if (count > 0) {
+        const { items, lastDoc } = await getSuspiciousMessages(PAGE_SIZE, 'message');
+        setMessages(items);
+        lastDocRef.current = lastDoc;
+        setHasMore(items.length === PAGE_SIZE);
+      }
+    } catch (err) {
+      setMigrateResult(`오류 발생: ${String(err)}`);
+      console.error('[migrate]', err);
+    } finally {
+      setMigrating(false);
+    }
+  }
+
   const displayed      = filter === 'all' ? messages : messages.filter((m) => m.action === filter);
   const blockedCount   = messages.filter((m) => m.action === 'blocked').length;
   const warningCount   = messages.filter((m) => m.action === 'warning').length;
@@ -85,6 +108,26 @@ export default function MessagesPage() {
         title="의심 채팅 메시지"
         subtitle={`차단 ${blockedCount}건 · 경고 ${warningCount}건 · 로드된 ${messages.length}건`}
       />
+
+      {/* One-time migration banner */}
+      <div className="flex items-center justify-between gap-4 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-4 text-sm">
+        <div className="text-amber-800">
+          <strong>데이터 마이그레이션:</strong> 기존 채팅 필터 기록에 <code className="bg-amber-100 px-1 rounded">source</code> 필드가 없을 수 있습니다.
+          아래 버튼을 한 번 실행하면 누락된 문서에 <code className="bg-amber-100 px-1 rounded">source=&apos;message&apos;</code>를 일괄 추가합니다.
+          {migrateResult && (
+            <span className={`ml-2 font-medium ${migrateResult.startsWith('오류') ? 'text-red-600' : 'text-green-700'}`}>
+              {migrateResult}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleMigrate}
+          disabled={migrating}
+          className="flex-shrink-0 px-4 py-2 text-xs font-medium bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50"
+        >
+          {migrating ? '처리 중...' : '마이그레이션 실행'}
+        </button>
+      </div>
 
       {/* Info banner */}
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 mb-5 text-sm text-blue-700">
