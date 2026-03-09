@@ -153,4 +153,18 @@ export interface DashboardStats {
   pendingReports: number;
   unresolvedAlerts: number;
   totalCircles: number;
+  // Growth & engagement
+  newUsersThisWeek: number;
+  newUsersThisMonth: number;
+  activeUsersThisWeek: number;
+  totalWaves: number;
+  totalConversations: number;
+}
+
+export interface UserActivity {
+  circlesJoined: number;
+  circleNames: string[];
+  wavesSent: number;
+  wavesReceived: number;
+  conversationsCount: number;
 }

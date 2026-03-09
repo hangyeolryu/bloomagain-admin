@@ -18,9 +18,10 @@ import {
   arrayRemove,
   increment,
   documentId,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, Announcement, AnnouncementType } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -384,11 +385,30 @@ export async function toggleAnnouncementActive(
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const [usersSnap, circlesSnap, reportsSnap, alertsSnap] = await Promise.all([
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [
+    usersSnap,
+    circlesCountSnap,
+    reportsCountSnap,
+    alertsCountSnap,
+    newUsersWeekSnap,
+    newUsersMonthSnap,
+    activeUsersWeekSnap,
+    wavesCountSnap,
+    conversationsCountSnap,
+  ] = await Promise.all([
     getDocs(collection(db, 'users')),
-    getDocs(collection(db, 'circles')),
-    getDocs(query(collection(db, 'reports'), where('status', '==', 'pending'))),
-    getDocs(query(collection(db, 'admin_alerts'), where('resolved', '==', false))),
+    getCountFromServer(collection(db, 'circles')),
+    getCountFromServer(query(collection(db, 'reports'), where('status', '==', 'pending'))),
+    getCountFromServer(query(collection(db, 'admin_alerts'), where('resolved', '==', false))),
+    getCountFromServer(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo)))),
+    getCountFromServer(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo)))),
+    getCountFromServer(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo)))),
+    getCountFromServer(collection(db, 'waves')),
+    getCountFromServer(collection(db, 'conversations')),
   ]);
 
   const users = usersSnap.docs.map((d) => d.data());
@@ -396,8 +416,34 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalUsers: users.length,
     activeUsers: users.filter((u) => u.accountStatus === 'active' || !u.accountStatus).length,
     blockedUsers: users.filter((u) => u.isBlacklisted || u.accountStatus === 'blocked').length,
-    pendingReports: reportsSnap.size,
-    unresolvedAlerts: alertsSnap.size,
-    totalCircles: circlesSnap.size,
+    pendingReports: reportsCountSnap.data().count,
+    unresolvedAlerts: alertsCountSnap.data().count,
+    totalCircles: circlesCountSnap.data().count,
+    newUsersThisWeek: newUsersWeekSnap.data().count,
+    newUsersThisMonth: newUsersMonthSnap.data().count,
+    activeUsersThisWeek: activeUsersWeekSnap.data().count,
+    totalWaves: wavesCountSnap.data().count,
+    totalConversations: conversationsCountSnap.data().count,
+  };
+}
+
+// ─── User Activity ─────────────────────────────────────────────────────────────
+
+export async function getUserActivity(uid: string): Promise<UserActivity> {
+  const [circlesSnap, wavesSentSnap, wavesReceivedSnap, conversationsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'circles'), where('members', 'array-contains', uid))),
+    getDocs(query(collection(db, 'waves'), where('fromUserId', '==', uid), limit(200))),
+    getDocs(query(collection(db, 'waves'), where('toUserId', '==', uid), limit(200))),
+    getDocs(query(collection(db, 'conversations'), where('participants', 'array-contains', uid), limit(200))),
+  ]);
+
+  return {
+    circlesJoined: circlesSnap.size,
+    circleNames: circlesSnap.docs
+      .map((d) => (d.data().name as string) ?? '')
+      .filter(Boolean),
+    wavesSent: wavesSentSnap.size,
+    wavesReceived: wavesReceivedSnap.size,
+    conversationsCount: conversationsSnap.size,
   };
 }

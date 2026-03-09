@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getUser, blockUser, unblockUser, updateUserStatus } from '@/lib/firestore';
+import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity } from '@/lib/firestore';
 import { useAuth } from '@/lib/auth-context';
-import type { UserProfile } from '@/types';
+import type { UserProfile, UserActivity } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
@@ -20,6 +20,16 @@ function InfoRow({ label, value }: { label: string; value?: string | number | bo
   );
 }
 
+function ActivityStat({ label, value, icon }: { label: string; value: number; icon: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center bg-gray-50 rounded-xl py-4 px-3 gap-1">
+      <span className="text-2xl">{icon}</span>
+      <span className="text-xl font-bold text-gray-900">{value}</span>
+      <span className="text-xs text-gray-500 text-center leading-tight">{label}</span>
+    </div>
+  );
+}
+
 function formatDate(date?: Date) {
   if (!date) return '-';
   return date.toLocaleString('ko-KR');
@@ -30,6 +40,8 @@ export default function UserDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activity, setActivity] = useState<UserActivity | null>(null);
+  const [activityLoading, setActivityLoading] = useState(true);
   const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | null>(null);
   const [reason, setReason] = useState('');
   const [acting, setActing] = useState(false);
@@ -39,6 +51,10 @@ export default function UserDetailClient({ id }: { id: string }) {
       setProfile(p);
       setLoading(false);
     });
+    getUserActivity(id).then((a) => {
+      setActivity(a);
+      setActivityLoading(false);
+    }).catch(() => setActivityLoading(false));
   }, [id]);
 
   const handleAction = async () => {
@@ -200,6 +216,42 @@ export default function UserDetailClient({ id }: { id: string }) {
           <InfoRow label="음성 안내" value={(profile as any).accessibility?.voiceGuidanceEnabled ? '활성화' : '비활성화'} />
           <InfoRow label="고대비 모드" value={(profile as any).accessibility?.highContrastMode ? '활성화' : '비활성화'} />
           <InfoRow label="손떨림 모드" value={(profile as any).accessibility?.tremorModeEnabled ? '✅ 활성화' : '비활성화'} />
+        </div>
+
+        {/* Activity */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:col-span-2">
+          <h2 className="font-semibold text-gray-900 mb-4">활동 현황</h2>
+          {activityLoading ? (
+            <div className="flex items-center justify-center py-6 text-gray-400 text-sm gap-2">
+              <span className="animate-spin">⏳</span> 불러오는 중...
+            </div>
+          ) : activity ? (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <ActivityStat label="참여 모임" value={activity.circlesJoined} icon="🌿" />
+                <ActivityStat label="보낸 웨이브" value={activity.wavesSent} icon="👋" />
+                <ActivityStat label="받은 웨이브" value={activity.wavesReceived} icon="💌" />
+                <ActivityStat label="대화 수" value={activity.conversationsCount} icon="💬" />
+              </div>
+              {activity.circleNames.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">참여 모임 목록</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activity.circleNames.map((name) => (
+                      <span
+                        key={name}
+                        className="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-full border border-green-100"
+                      >
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 py-4 text-center">활동 데이터를 불러올 수 없습니다.</p>
+          )}
         </div>
       </div>
 
