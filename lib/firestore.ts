@@ -12,7 +12,6 @@ import {
   where,
   startAfter,
   updateDoc,
-  writeBatch,
   Timestamp,
   onSnapshot,
   QuerySnapshot,
@@ -386,40 +385,6 @@ export async function getSuspiciousMessages(
     })) as SuspiciousMessage[],
     lastDoc: snap.docs[snap.docs.length - 1] ?? null,
   };
-}
-
-// Backfill source='message' on all suspicious_messages docs that have no source field.
-// These were written by an older version of chat_service.dart before the source field was added.
-// Safe to call multiple times — only updates docs where source is missing.
-// Returns the count of documents updated.
-export async function migrateMessagesSource(): Promise<number> {
-  let updated = 0;
-  let cursor: QueryDocumentSnapshot | null = null;
-  const CHUNK = 400; // Firestore batch limit is 500; leave headroom
-
-  while (true) {
-    const q = query(
-      collection(db, 'suspicious_messages'),
-      ...(cursor ? [startAfter(cursor)] : []),
-      limit(CHUNK),
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) break;
-
-    // Only update docs that have no source field at all
-    const missing = snap.docs.filter((d) => d.data().source === undefined || d.data().source === null);
-    if (missing.length > 0) {
-      const batch = writeBatch(db);
-      missing.forEach((d) => batch.update(d.ref, { source: 'message' }));
-      await batch.commit();
-      updated += missing.length;
-    }
-
-    if (snap.docs.length < CHUNK) break;
-    cursor = snap.docs[snap.docs.length - 1];
-  }
-
-  return updated;
 }
 
 export function subscribeToAlerts(
