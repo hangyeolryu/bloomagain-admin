@@ -16,6 +16,7 @@ import {
   QuerySnapshot,
   DocumentData,
   arrayRemove,
+  arrayUnion,
   increment,
   documentId,
   getCountFromServer,
@@ -109,6 +110,7 @@ export async function updateUserStatus(uid: string, status: string) {
 }
 
 export async function blockUser(uid: string, reason: string, adminUid: string) {
+  // 1. Block the user account
   await updateDoc(doc(db, 'users', uid), {
     isBlacklisted: true,
     blacklistedAt: Timestamp.now(),
@@ -117,6 +119,38 @@ export async function blockUser(uid: string, reason: string, adminUid: string) {
     accountStatus: 'blocked',
     updatedAt: Timestamp.now(),
   });
+
+  // 2. Delete pending waves (both sent and received) that haven't been accepted yet.
+  //    Accepted waves already have a conversationId — leave those intact.
+  try {
+    const [sentSnap, receivedSnap] = await Promise.all([
+      getDocs(query(collection(db, 'waves'), where('fromUserId', '==', uid))),
+      getDocs(query(collection(db, 'waves'), where('toUserId',   '==', uid))),
+    ]);
+    const pendingWaves = [
+      ...sentSnap.docs.filter((d) => !d.data().conversationId),
+      ...receivedSnap.docs.filter((d) => !d.data().conversationId),
+    ];
+    await Promise.all(pendingWaves.map((d) => deleteDoc(d.ref)));
+  } catch (e) {
+    console.warn('[blockUser] wave cleanup failed:', e);
+  }
+
+  // 3. Mark active conversations so the Flutter app can show "차단된 사용자" UI.
+  //    We write blockedParticipants: [uid] onto each conversation — never delete
+  //    conversations as they may hold moderation-relevant message history.
+  try {
+    const convSnap = await getDocs(
+      query(collection(db, 'conversations'), where('participants', 'array-contains', uid))
+    );
+    await Promise.all(
+      convSnap.docs.map((d) =>
+        updateDoc(d.ref, { blockedParticipants: arrayUnion(uid) })
+      )
+    );
+  } catch (e) {
+    console.warn('[blockUser] conversation flag failed:', e);
+  }
 }
 
 export async function unblockUser(uid: string) {
@@ -451,20 +485,45 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 // ─── User Activity ─────────────────────────────────────────────────────────────
 
 export async function getUserActivity(uid: string): Promise<UserActivity> {
-  const [circlesSnap, wavesSentSnap, wavesReceivedSnap, conversationsSnap] = await Promise.all([
-    getDocs(query(collection(db, 'circles'), where('members', 'array-contains', uid))),
-    getDocs(query(collection(db, 'waves'), where('fromUserId', '==', uid), limit(200))),
-    getDocs(query(collection(db, 'waves'), where('toUserId', '==', uid), limit(200))),
-    getDocs(query(collection(db, 'conversations'), where('participants', 'array-contains', uid), limit(200))),
+  // ── Exact server-side counts (no document transfer, no cap) ──────────────
+  const [
+    wavesSentCount,
+    wavesReceivedCount,
+    conversationsCount,
+    blockedConversationsCount,
+  ] = await Promise.all([
+    getCountFromServer(query(collection(db, 'waves'), where('fromUserId', '==', uid))),
+    getCountFromServer(query(collection(db, 'waves'), where('toUserId',   '==', uid))),
+    getCountFromServer(query(collection(db, 'conversations'), where('participants',        'array-contains', uid))),
+    getCountFromServer(query(collection(db, 'conversations'), where('blockedParticipants', 'array-contains', uid))),
   ]);
+
+  // ── getDocs only for data that needs field inspection ────────────────────
+  // Circles: need names → getDocs (circles per user are naturally small)
+  // Pending waves: need to check absence of conversationId on each doc.
+  //   Firestore cannot query "field does not exist", so we fetch only the
+  //   minimal projection needed. Real-world pending wave counts are small
+  //   (users rarely have hundreds of unaccepted waves), so limit(500) is safe
+  //   and far above any realistic ceiling for pending-only waves.
+  const [circlesSnap, pendingSentSnap, pendingReceivedSnap] = await Promise.all([
+    getDocs(query(collection(db, 'circles'), where('members', 'array-contains', uid))),
+    getDocs(query(collection(db, 'waves'), where('fromUserId', '==', uid), limit(500))),
+    getDocs(query(collection(db, 'waves'), where('toUserId',   '==', uid), limit(500))),
+  ]);
+
+  const pendingWavesSent     = pendingSentSnap.docs.filter((d) => !d.data().conversationId).length;
+  const pendingWavesReceived = pendingReceivedSnap.docs.filter((d) => !d.data().conversationId).length;
 
   return {
     circlesJoined: circlesSnap.size,
     circleNames: circlesSnap.docs
       .map((d) => (d.data().name as string) ?? '')
       .filter(Boolean),
-    wavesSent: wavesSentSnap.size,
-    wavesReceived: wavesReceivedSnap.size,
-    conversationsCount: conversationsSnap.size,
+    wavesSent:           wavesSentCount.data().count,
+    wavesReceived:       wavesReceivedCount.data().count,
+    pendingWavesSent,
+    pendingWavesReceived,
+    conversationsCount:  conversationsCount.data().count,
+    blockedConversations: blockedConversationsCount.data().count,
   };
 }

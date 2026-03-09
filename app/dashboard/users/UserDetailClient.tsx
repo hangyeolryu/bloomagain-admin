@@ -227,12 +227,49 @@ export default function UserDetailClient({ id }: { id: string }) {
             </div>
           ) : activity ? (
             <>
+              {/* Primary stats */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <ActivityStat label="참여 모임" value={activity.circlesJoined} icon="🌿" />
                 <ActivityStat label="보낸 웨이브" value={activity.wavesSent} icon="👋" />
                 <ActivityStat label="받은 웨이브" value={activity.wavesReceived} icon="💌" />
                 <ActivityStat label="대화 수" value={activity.conversationsCount} icon="💬" />
               </div>
+
+              {/* Wave / conversation health breakdown */}
+              <div className="bg-gray-50 rounded-xl px-4 py-3 mb-4 grid grid-cols-2 sm:grid-cols-3 gap-y-2 text-sm">
+                <div className="flex justify-between col-span-1 gap-2 border-b border-gray-100 pb-2 sm:border-0 sm:pb-0">
+                  <span className="text-gray-500">대기 중 웨이브 (발신)</span>
+                  <span className={`font-semibold ${activity.pendingWavesSent > 0 ? 'text-yellow-600' : 'text-gray-700'}`}>
+                    {activity.pendingWavesSent}
+                  </span>
+                </div>
+                <div className="flex justify-between col-span-1 gap-2 border-b border-gray-100 pb-2 sm:border-0 sm:pb-0">
+                  <span className="text-gray-500">대기 중 웨이브 (수신)</span>
+                  <span className={`font-semibold ${activity.pendingWavesReceived > 0 ? 'text-yellow-600' : 'text-gray-700'}`}>
+                    {activity.pendingWavesReceived}
+                  </span>
+                </div>
+                <div className="flex justify-between col-span-2 sm:col-span-1 gap-2">
+                  <span className="text-gray-500">차단 포함 대화</span>
+                  <span className={`font-semibold ${activity.blockedConversations > 0 ? 'text-red-500' : 'text-gray-700'}`}>
+                    {activity.blockedConversations}
+                  </span>
+                </div>
+              </div>
+
+              {/* Warnings */}
+              {(activity.pendingWavesSent > 0 || activity.pendingWavesReceived > 0) && (
+                <p className="text-xs text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2 mb-3">
+                  ⚠️ 미수락 웨이브가 있습니다. 이 계정을 차단하면 해당 웨이브가 자동으로 삭제됩니다.
+                </p>
+              )}
+              {activity.blockedConversations > 0 && (
+                <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 mb-3">
+                  🚫 차단된 참여자가 포함된 대화가 있습니다. 앱에서 차단 안내 메시지가 표시됩니다.
+                </p>
+              )}
+
+              {/* Circle chips */}
               {activity.circleNames.length > 0 && (
                 <div>
                   <p className="text-xs text-gray-500 mb-2">참여 모임 목록</p>

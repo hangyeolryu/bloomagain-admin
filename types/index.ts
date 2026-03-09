@@ -170,5 +170,8 @@ export interface UserActivity {
   circleNames: string[];
   wavesSent: number;
   wavesReceived: number;
+  pendingWavesSent: number;
+  pendingWavesReceived: number;
   conversationsCount: number;
+  blockedConversations: number;
 }
