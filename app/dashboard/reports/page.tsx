@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { getReports, resolveReport, dismissReport } from '@/lib/firestore';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { Report } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
+
+const PAGE_SIZE = 30;
 
 function formatDate(date?: Date) {
   if (!date) return '-';
@@ -16,10 +19,10 @@ function formatDate(date?: Date) {
 
 function getStatusBadge(status: string) {
   const map: Record<string, { variant: 'gray' | 'green' | 'orange' | 'red' | 'yellow' | 'blue'; label: string }> = {
-    pending: { variant: 'orange', label: '대기중' },
-    reviewed: { variant: 'blue', label: '검토중' },
-    resolved: { variant: 'green', label: '처리완료' },
-    dismissed: { variant: 'gray', label: '기각' },
+    pending:   { variant: 'orange', label: '대기중' },
+    reviewed:  { variant: 'blue',   label: '검토중' },
+    resolved:  { variant: 'green',  label: '처리완료' },
+    dismissed: { variant: 'gray',   label: '기각' },
   };
   const item = map[status] || { variant: 'gray', label: status };
   return <Badge variant={item.variant}>{item.label}</Badge>;
@@ -27,24 +30,62 @@ function getStatusBadge(status: string) {
 
 export default function ReportsPage() {
   const { user: adminUser, can } = useAuth();
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [reports, setReports]         = useState<Report[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]         = useState(false);
   const [statusFilter, setStatusFilter] = useState('pending');
-  const [modal, setModal] = useState<{ report: Report; type: 'resolve' | 'dismiss' } | null>(null);
-  const [resolution, setResolution] = useState('');
-  const [acting, setActing] = useState(false);
+  const [modal, setModal]             = useState<{ report: Report; type: 'resolve' | 'dismiss' } | null>(null);
+  const [resolution, setResolution]   = useState('');
+  const [acting, setActing]           = useState(false);
 
-  const fetchReports = (status: string) => {
+  const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
+  // Keep filter in a ref so loadMore always reads the latest value
+  const filterRef   = useRef(statusFilter);
+  filterRef.current = statusFilter;
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { items, lastDoc } = await getReports(filterRef.current, PAGE_SIZE, lastDocRef.current);
+      lastDocRef.current = lastDoc;
+      setReports((prev) => [...prev, ...items]);
+      setHasMore(items.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore]);
+
+  loadMoreRef.current = loadMore;
+
+  // Reset + reload when filter changes
+  useEffect(() => {
     setLoading(true);
-    getReports(status).then((r) => {
-      setReports(r);
+    setReports([]);
+    lastDocRef.current = null;
+    setHasMore(false);
+    getReports(statusFilter, PAGE_SIZE).then(({ items, lastDoc }) => {
+      setReports(items);
+      lastDocRef.current = lastDoc;
+      setHasMore(items.length === PAGE_SIZE);
       setLoading(false);
     });
-  };
-
-  useEffect(() => {
-    fetchReports(statusFilter);
   }, [statusFilter]);
+
+  // IntersectionObserver (set up once)
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const handleAction = async () => {
     if (!modal || !adminUser) return;
@@ -132,11 +173,16 @@ export default function ReportsPage() {
               ))}
             </div>
           )}
-          <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400">
-            {reports.length}건의 신고
+          <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
+            <span>{reports.length}건의 신고</span>
+            {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
+            {!hasMore && reports.length > 0 && <span>전체 로드 완료</span>}
           </div>
         </div>
       )}
+
+      {/* IntersectionObserver sentinel */}
+      <div ref={sentinelRef} className="h-1" />
 
       <Modal
         isOpen={!!modal}

@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { getSuspiciousMessages } from '@/lib/firestore';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import type { SuspiciousMessage } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
+
+const PAGE_SIZE = 30;
 
 function formatDate(date?: Date) {
   if (!date) return '-';
@@ -14,22 +17,65 @@ function formatDate(date?: Date) {
 }
 
 export default function MessagesPage() {
-  const [messages, setMessages] = useState<SuspiciousMessage[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [filter, setFilter]     = useState<'all' | 'blocked' | 'warning'>('all');
+  const [messages, setMessages]       = useState<SuspiciousMessage[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]         = useState(false);
+  const [filter, setFilter]           = useState<'all' | 'blocked' | 'warning'>('all');
 
+  const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { items, lastDoc } = await getSuspiciousMessages(PAGE_SIZE, 'message', lastDocRef.current);
+      lastDocRef.current = lastDoc;
+      setMessages((prev) => [...prev, ...items]);
+      setHasMore(items.length === PAGE_SIZE);
+    } catch (err) {
+      console.error('[Messages] loadMore failed:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore]);
+
+  loadMoreRef.current = loadMore;
+
+  // Initial load
   useEffect(() => {
     // source='message' applied at query level (needs composite index: source ASC + timestamp DESC)
     // If the index isn't deployed yet, Firestore will log a link to create it in the console
-    getSuspiciousMessages(100, 'message')
-      .then((m) => { setMessages(m); setLoading(false); })
-      .catch((err) => { console.error('[Messages] query failed — check console for index link:', err); setLoading(false); });
+    getSuspiciousMessages(PAGE_SIZE, 'message')
+      .then(({ items, lastDoc }) => {
+        setMessages(items);
+        lastDocRef.current = lastDoc;
+        setHasMore(items.length === PAGE_SIZE);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('[Messages] query failed — check console for index link:', err);
+        setLoading(false);
+      });
   }, []);
 
-  const displayed = filter === 'all' ? messages : messages.filter((m) => m.action === filter);
+  // IntersectionObserver (set up once)
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
-  const blockedCount = messages.filter((m) => m.action === 'blocked').length;
-  const warningCount = messages.filter((m) => m.action === 'warning').length;
+  const displayed      = filter === 'all' ? messages : messages.filter((m) => m.action === filter);
+  const blockedCount   = messages.filter((m) => m.action === 'blocked').length;
+  const warningCount   = messages.filter((m) => m.action === 'warning').length;
 
   if (loading) return <LoadingSpinner />;
 
@@ -37,7 +83,7 @@ export default function MessagesPage() {
     <div>
       <Header
         title="의심 채팅 메시지"
-        subtitle={`차단 ${blockedCount}건 · 경고 ${warningCount}건 · 전체 ${messages.length}건`}
+        subtitle={`차단 ${blockedCount}건 · 경고 ${warningCount}건 · 로드된 ${messages.length}건`}
       />
 
       {/* Info banner */}
@@ -123,11 +169,16 @@ export default function MessagesPage() {
               </div>
             ))}
           </div>
-          <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400">
-            {displayed.length}건 표시
+          <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
+            <span>{displayed.length}건 표시</span>
+            {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
+            {!hasMore && messages.length > 0 && <span>전체 로드 완료</span>}
           </div>
         </div>
       )}
+
+      {/* IntersectionObserver sentinel */}
+      <div ref={sentinelRef} className="h-1" />
     </div>
   );
 }

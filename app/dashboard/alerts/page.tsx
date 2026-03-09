@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { getAdminAlerts, resolveAlert, deleteAlert, blockUser, blockCircle } from '@/lib/firestore';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { AdminAlert } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
 import Modal from '@/components/ui/Modal';
+
+const PAGE_SIZE = 20;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,11 +59,13 @@ type ActivePanel = 'resolve' | 'block_user' | 'block_circle' | 'delete' | null;
 
 export default function AlertsPage() {
   const { user: adminUser, can } = useAuth();
-  const [alerts, setAlerts]           = useState<AdminAlert[]>([]);
-  const [loading, setLoading]         = useState(true);
+  const [alerts, setAlerts]             = useState<AdminAlert[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [loadingMore, setLoadingMore]   = useState(false);
+  const [hasMore, setHasMore]           = useState(false);
   const [showResolved, setShowResolved] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
-  const [typeFilter, setTypeFilter]   = useState('all');
+  const [typeFilter, setTypeFilter]     = useState('all');
 
   // per-card action state
   const [expandedId, setExpandedId]   = useState<string | null>(null);
@@ -71,8 +76,43 @@ export default function AlertsPage() {
   // image preview modal
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
 
+  const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { items, lastDoc } = await getAdminAlerts(PAGE_SIZE, lastDocRef.current);
+      lastDocRef.current = lastDoc;
+      setAlerts((prev) => [...prev, ...items]);
+      setHasMore(items.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore]);
+
+  loadMoreRef.current = loadMore;
+
   useEffect(() => {
-    getAdminAlerts(200).then((a) => { setAlerts(a); setLoading(false); });
+    getAdminAlerts(PAGE_SIZE).then(({ items, lastDoc }) => {
+      setAlerts(items);
+      lastDocRef.current = lastDoc;
+      setHasMore(items.length === PAGE_SIZE);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   // ── derived ──────────────────────────────────────────────────────────────
@@ -145,7 +185,7 @@ export default function AlertsPage() {
     <div>
       <Header
         title="관리자 알림"
-        subtitle={`미해결 ${unresolved}건 · 전체 ${alerts.length}건`}
+        subtitle={`미해결 ${unresolved}건 · 로드된 ${alerts.length}건`}
       />
 
       {/* Filter bar */}
@@ -500,6 +540,15 @@ export default function AlertsPage() {
           })}
         </div>
       )}
+
+      {/* Load more status */}
+      <div className="mt-4 text-center text-xs text-gray-400">
+        {loadingMore && <span className="text-green-600 animate-pulse">알림 불러오는 중...</span>}
+        {!hasMore && alerts.length > 0 && <span>전체 로드 완료 ({alerts.length}건)</span>}
+      </div>
+
+      {/* IntersectionObserver sentinel */}
+      <div ref={sentinelRef} className="h-1" />
 
       {/* Image preview modal */}
       <Modal isOpen={!!previewUrl} onClose={() => setPreviewUrl(null)} title="이미지 검토">

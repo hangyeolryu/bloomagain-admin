@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCircles } from '@/lib/firestore';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import type { Circle } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
+
+const PAGE_SIZE = 24;
 
 function formatDate(date?: Date) {
   if (!date) return '-';
@@ -14,34 +17,61 @@ function formatDate(date?: Date) {
 
 export default function CirclesPage() {
   const router = useRouter();
-  const [circles, setCircles] = useState<Circle[]>([]);
-  const [filtered, setFiltered] = useState<Circle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [allCircles, setAllCircles]   = useState<Circle[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]         = useState(false);
+  const [search, setSearch]           = useState('');
+
+  const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { items, lastDoc } = await getCircles(PAGE_SIZE, lastDocRef.current);
+      lastDocRef.current = lastDoc;
+      setAllCircles((prev) => [...prev, ...items]);
+      setHasMore(items.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore]);
+
+  loadMoreRef.current = loadMore;
 
   useEffect(() => {
-    getCircles(100).then((c) => {
-      setCircles(c);
-      setFiltered(c);
+    getCircles(PAGE_SIZE).then(({ items, lastDoc }) => {
+      setAllCircles(items);
+      lastDocRef.current = lastDoc;
+      setHasMore(items.length === PAGE_SIZE);
       setLoading(false);
     });
   }, []);
 
   useEffect(() => {
-    if (!search) {
-      setFiltered(circles);
-      return;
-    }
-    const q = search.toLowerCase();
-    setFiltered(
-      circles.filter(
-        (c) =>
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const filtered = search
+    ? allCircles.filter((c) => {
+        const q = search.toLowerCase();
+        return (
           c.name?.toLowerCase().includes(q) ||
           c.city?.toLowerCase().includes(q) ||
           (c.interests || []).some((i) => i.toLowerCase().includes(q))
-      )
-    );
-  }, [search, circles]);
+        );
+      })
+    : allCircles;
 
   if (loading) return <LoadingSpinner />;
 
@@ -49,7 +79,7 @@ export default function CirclesPage() {
     <div>
       <Header
         title="모임 관리"
-        subtitle={`총 ${circles.length}개의 모임`}
+        subtitle={`로드된 ${allCircles.length}개 중 ${filtered.length}개 표시`}
       />
 
       <div className="mb-6">
@@ -121,6 +151,15 @@ export default function CirclesPage() {
           ))}
         </div>
       )}
+
+      {/* Footer status */}
+      <div className="mt-4 text-xs text-gray-400 text-center">
+        {loadingMore && <span className="text-green-600 animate-pulse">모임 불러오는 중...</span>}
+        {!hasMore && allCircles.length > 0 && <span>전체 로드 완료 ({allCircles.length}개)</span>}
+      </div>
+
+      {/* IntersectionObserver sentinel */}
+      <div ref={sentinelRef} className="h-1" />
     </div>
   );
 }
