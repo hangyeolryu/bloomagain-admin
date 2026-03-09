@@ -324,12 +324,16 @@ export async function deleteAlert(alertId: string) {
   await deleteDoc(doc(db, 'admin_alerts', alertId));
 }
 
-export async function getSuspiciousMessages(limitCount = 50): Promise<SuspiciousMessage[]> {
-  const q = query(
-    collection(db, 'suspicious_messages'),
+export async function getSuspiciousMessages(
+  limitCount = 50,
+  source?: string,  // e.g. 'message' | 'circle' | 'profile_image'
+): Promise<SuspiciousMessage[]> {
+  const constraints = [
+    ...(source ? [where('source', '==', source)] : []),
     orderBy('timestamp', 'desc'),
-    limit(limitCount)
-  );
+    limit(limitCount),
+  ];
+  const q = query(collection(db, 'suspicious_messages'), ...constraints);
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({
     id: d.id,
