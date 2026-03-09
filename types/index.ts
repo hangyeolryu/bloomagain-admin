@@ -110,9 +110,13 @@ export interface AdminAlert {
   userDisplayName?: string;
   timestamp?: Date;
   resolved?: boolean;
+  resolvedBy?: string;
+  resolvedNote?: string;
+  resolvedAt?: Date;
   reason?: string;
   detectedIssues?: string[];
   circleName?: string;
+  circleId?: string;
   circleDescription?: string;
   imageUrl?: string;
   adultScore?: number;

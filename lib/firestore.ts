@@ -277,8 +277,17 @@ export async function getAdminAlerts(limitCount = 50): Promise<AdminAlert[]> {
   })) as AdminAlert[];
 }
 
-export async function resolveAlert(alertId: string) {
-  await updateDoc(doc(db, 'admin_alerts', alertId), { resolved: true });
+export async function resolveAlert(alertId: string, note?: string, adminUid?: string) {
+  await updateDoc(doc(db, 'admin_alerts', alertId), {
+    resolved: true,
+    resolvedAt: Timestamp.now(),
+    ...(adminUid ? { resolvedBy: adminUid } : {}),
+    ...(note?.trim() ? { resolvedNote: note.trim() } : {}),
+  });
+}
+
+export async function deleteAlert(alertId: string) {
+  await deleteDoc(doc(db, 'admin_alerts', alertId));
 }
 
 export async function getSuspiciousMessages(limitCount = 50): Promise<SuspiciousMessage[]> {
@@ -384,46 +393,58 @@ export async function toggleAnnouncementActive(
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
+async function safeCount(q: Parameters<typeof getCountFromServer>[0], label: string): Promise<number> {
+  try {
+    const snap = await getCountFromServer(q);
+    return snap.data().count;
+  } catch (e) {
+    console.warn(`[getDashboardStats] count failed for "${label}":`, e);
+    return 0;
+  }
+}
+
 export async function getDashboardStats(): Promise<DashboardStats> {
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+  // Core user list — always needed for active/blocked split
+  const usersSnap = await getDocs(collection(db, 'users'));
+  const users = usersSnap.docs.map((d) => d.data());
+
+  // All remaining counts run in parallel; each fails gracefully to 0
   const [
-    usersSnap,
-    circlesCountSnap,
-    reportsCountSnap,
-    alertsCountSnap,
-    newUsersWeekSnap,
-    newUsersMonthSnap,
-    activeUsersWeekSnap,
-    wavesCountSnap,
-    conversationsCountSnap,
+    totalCircles,
+    pendingReports,
+    unresolvedAlerts,
+    newUsersThisWeek,
+    newUsersThisMonth,
+    activeUsersThisWeek,
+    totalWaves,
+    totalConversations,
   ] = await Promise.all([
-    getDocs(collection(db, 'users')),
-    getCountFromServer(collection(db, 'circles')),
-    getCountFromServer(query(collection(db, 'reports'), where('status', '==', 'pending'))),
-    getCountFromServer(query(collection(db, 'admin_alerts'), where('resolved', '==', false))),
-    getCountFromServer(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo)))),
-    getCountFromServer(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo)))),
-    getCountFromServer(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo)))),
-    getCountFromServer(collection(db, 'waves')),
-    getCountFromServer(collection(db, 'conversations')),
+    safeCount(collection(db, 'circles'), 'circles'),
+    safeCount(query(collection(db, 'reports'), where('status', '==', 'pending')), 'pending reports'),
+    safeCount(query(collection(db, 'admin_alerts'), where('resolved', '==', false)), 'unresolved alerts'),
+    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'new users 7d'),
+    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), 'new users 30d'),
+    safeCount(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'active users 7d'),
+    safeCount(collection(db, 'waves'), 'waves'),
+    safeCount(collection(db, 'conversations'), 'conversations'),
   ]);
 
-  const users = usersSnap.docs.map((d) => d.data());
   return {
     totalUsers: users.length,
     activeUsers: users.filter((u) => u.accountStatus === 'active' || !u.accountStatus).length,
     blockedUsers: users.filter((u) => u.isBlacklisted || u.accountStatus === 'blocked').length,
-    pendingReports: reportsCountSnap.data().count,
-    unresolvedAlerts: alertsCountSnap.data().count,
-    totalCircles: circlesCountSnap.data().count,
-    newUsersThisWeek: newUsersWeekSnap.data().count,
-    newUsersThisMonth: newUsersMonthSnap.data().count,
-    activeUsersThisWeek: activeUsersWeekSnap.data().count,
-    totalWaves: wavesCountSnap.data().count,
-    totalConversations: conversationsCountSnap.data().count,
+    pendingReports,
+    unresolvedAlerts,
+    totalCircles,
+    newUsersThisWeek,
+    newUsersThisMonth,
+    activeUsersThisWeek,
+    totalWaves,
+    totalConversations,
   };
 }
 

@@ -43,7 +43,7 @@ export default function DashboardPage() {
       setAlerts(a.slice(0, 5));
       setReports(r.slice(0, 5));
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err) => { console.error('[Dashboard] load error:', err); setLoading(false); });
   }, []);
 
   if (loading) return <LoadingSpinner message="대시보드 로딩 중..." />;
@@ -69,13 +69,13 @@ export default function DashboardPage() {
                 color="bg-blue-50"
               />
               <StatsCard
-                label="이번 주 신규"
+                label="신규 가입 (7일)"
                 value={stats.newUsersThisWeek}
                 icon="🌱"
                 color="bg-emerald-50"
               />
               <StatsCard
-                label="이번 달 신규"
+                label="신규 가입 (30일)"
                 value={stats.newUsersThisMonth}
                 icon="📅"
                 color="bg-teal-50"
@@ -88,7 +88,7 @@ export default function DashboardPage() {
             <SectionHeading>활동 & 서비스</SectionHeading>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatsCard
-                label="이번 주 활성"
+                label="주간 활성 (7일)"
                 value={stats.activeUsersThisWeek}
                 icon="✅"
                 color="bg-green-50"
