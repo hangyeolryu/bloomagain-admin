@@ -190,6 +190,21 @@ export interface DashboardStats {
   activeUsersThisWeek: number;
   totalWaves: number;
   totalConversations: number;
+  pendingDeleteRequests: number;
+}
+
+export type DeleteRequestStatus = 'pending' | 'completed' | 'cancelled';
+
+export interface DeleteRequest {
+  id: string;
+  name: string;
+  contactInfo: string; // email or phone
+  reason?: string;
+  status: DeleteRequestStatus;
+  requestedAt?: Date;
+  processedAt?: Date;
+  processedBy?: string;
+  note?: string;
 }
 
 export interface UserActivity {

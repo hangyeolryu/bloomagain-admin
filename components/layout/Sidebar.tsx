@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/conversations', label: '대화', icon: '💬' },
   { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️' },
   { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫' },
+  { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️' },
   { href: '/dashboard/announcements', label: '공지사항', icon: '📢', permission: 'manageCircles' },
   { href: '/dashboard/admins', label: '관리자 계정', icon: '🔑', permission: 'manageAdmins' },
 ];

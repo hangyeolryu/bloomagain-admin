@@ -30,7 +30,7 @@ export type PaginatedResult<T> = {
   lastDoc: QueryDocumentSnapshot | null;
 };
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -505,6 +505,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     activeUsersThisWeek,
     totalWaves,
     totalConversations,
+    pendingDeleteRequests,
   ] = await Promise.all([
     safeCount(collection(db, 'circles'), 'circles'),
     safeCount(query(collection(db, 'reports'), where('status', '==', 'pending')), 'pending reports'),
@@ -514,6 +515,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     safeCount(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'active users 7d'),
     safeCount(collection(db, 'waves'), 'waves'),
     safeCount(collection(db, 'conversations'), 'conversations'),
+    safeCount(query(collection(db, 'delete_requests'), where('status', '==', 'pending')), 'pending delete requests'),
   ]);
 
   return {
@@ -528,6 +530,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     activeUsersThisWeek,
     totalWaves,
     totalConversations,
+    pendingDeleteRequests,
   };
 }
 
@@ -638,4 +641,64 @@ export async function getConversations(
     } as Conversation;
   });
   return { items, lastDoc: snap.docs[snap.docs.length - 1] ?? null };
+}
+
+// ─── Delete Requests ──────────────────────────────────────────────────────────
+
+export async function submitDeleteRequest(data: {
+  name: string;
+  contactInfo: string;
+  reason?: string;
+}): Promise<void> {
+  await addDoc(collection(db, 'delete_requests'), {
+    name: data.name,
+    contactInfo: data.contactInfo,
+    reason: data.reason ?? '',
+    status: 'pending',
+    requestedAt: Timestamp.now(),
+  });
+}
+
+export async function getDeleteRequests(
+  statusFilter?: DeleteRequestStatus,
+  pageSize = 30,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<DeleteRequest>> {
+  const constraints = [
+    ...(statusFilter ? [where('status', '==', statusFilter)] : []),
+    orderBy('requestedAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  ];
+  const q = query(collection(db, 'delete_requests'), ...constraints);
+  const snap = await getDocs(q);
+  const items: DeleteRequest[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: data.name,
+      contactInfo: data.contactInfo,
+      reason: data.reason ?? undefined,
+      status: data.status ?? 'pending',
+      requestedAt: data.requestedAt?.toDate?.() ?? undefined,
+      processedAt: data.processedAt?.toDate?.() ?? undefined,
+      processedBy: data.processedBy ?? undefined,
+      note: data.note ?? undefined,
+    } as DeleteRequest;
+  });
+  return { items, lastDoc: snap.docs[snap.docs.length - 1] ?? null };
+}
+
+export async function resolveDeleteRequest(
+  id: string,
+  status: 'completed' | 'cancelled',
+  processedBy: string,
+  note?: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'delete_requests', id), {
+    status,
+    processedAt: Timestamp.now(),
+    processedBy,
+    ...(note ? { note } : {}),
+  });
 }

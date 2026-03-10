@@ -146,6 +146,13 @@ export default function DashboardPage() {
                 color="bg-yellow-50"
                 href="/dashboard/alerts"
               />
+              <StatsCard
+                label="계정 삭제 요청"
+                value={stats.pendingDeleteRequests}
+                icon="🗑️"
+                color="bg-red-50"
+                href="/dashboard/delete-requests"
+              />
             </div>
           </div>
 
