@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔' },
   { href: '/dashboard/waves', label: '웨이브', icon: '👋' },
   { href: '/dashboard/conversations', label: '대화', icon: '💬' },
+  { href: '/dashboard/identity', label: 'NICE 본인확인', icon: '🪪' },
   { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️' },
   { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫' },
   { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️' },
@@ -44,7 +45,7 @@ export default function Sidebar() {
   );
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col min-h-screen">
+    <aside className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col md:min-h-screen">
       {/* Logo */}
       <div className="p-6 border-b border-gray-100">
         <div className="flex items-center gap-3">
