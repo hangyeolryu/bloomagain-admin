@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const origin = request.headers.get('origin') ?? '';
 
-    const upstream = await fetch(`${backendUrl}/nice/init`, {
+    const targetUrl = `${backendUrl}/nice/init`;
+    const upstream = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -30,18 +31,23 @@ export async function POST(request: NextRequest) {
       body: body || JSON.stringify({}),
     });
 
-    const data = await upstream.json();
+    const raw = await upstream.text();
+    console.log(`[/api/nice/init proxy] upstream ${upstream.status} from ${targetUrl}:`, raw.slice(0, 200));
 
     if (!upstream.ok) {
-      return NextResponse.json(
-        { error: data.detail ?? '백엔드 오류' },
-        { status: upstream.status }
-      );
+      let detail = '백엔드 오류';
+      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* raw is not JSON */ }
+      return NextResponse.json({ error: detail }, { status: upstream.status });
     }
 
-    return NextResponse.json(data);
+    try {
+      return NextResponse.json(JSON.parse(raw));
+    } catch {
+      console.error('[/api/nice/init proxy] non-JSON response:', raw.slice(0, 500));
+      return NextResponse.json({ error: `백엔드가 JSON을 반환하지 않았습니다: ${raw.slice(0, 100)}` }, { status: 502 });
+    }
   } catch (err: unknown) {
-    console.error('[/api/nice/init proxy]', err);
+    console.error('[/api/nice/init proxy] fetch error:', err);
     const message = err instanceof Error ? err.message : '알 수 없는 오류';
     return NextResponse.json({ error: message }, { status: 500 });
   }
