@@ -354,7 +354,7 @@ export default function AnnouncementsPage() {
               type="text"
               value={form.ctaRoute}
               onChange={(e) => setForm((f) => ({ ...f, ctaRoute: e.target.value }))}
-              placeholder="예: /settings/identity"
+              placeholder="예: /settings/identity  또는  https://dasi-bom.web.app/download"
               className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
