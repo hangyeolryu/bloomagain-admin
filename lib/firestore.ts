@@ -94,7 +94,7 @@ export async function getUsers(
 ): Promise<PaginatedResult<UserProfile>> {
   const q = query(
     collection(db, 'users'),
-    orderBy('createdAt', 'desc'),
+    orderBy('__name__'),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),
   );
