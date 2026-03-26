@@ -50,6 +50,12 @@ export interface UserProfile {
   fcmToken?: string;
   notificationEnabled?: boolean;
   appVersion?: string;
+  // NICE identity verification
+  identityVerified?: boolean;
+  identityVerificationStatus?: 'verified' | 'pending' | 'failed' | string;
+  identityVerifiedAt?: Date;
+  legalName?: string;
+  legalBirthYear?: number;
 }
 
 export interface Circle {

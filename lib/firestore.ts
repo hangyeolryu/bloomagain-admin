@@ -107,6 +107,7 @@ export async function getUsers(
       updatedAt: toDate(d.data().updatedAt),
       lastActiveAt: toDate(d.data().lastActiveAt),
       blacklistedAt: toDate(d.data().blacklistedAt),
+      identityVerifiedAt: toDate(d.data().identityVerifiedAt),
     })) as UserProfile[],
     lastDoc: snap.docs[snap.docs.length - 1] ?? null,
   };
@@ -121,6 +122,7 @@ export async function getUser(uid: string): Promise<UserProfile | null> {
     createdAt: toDate(snap.data().createdAt),
     updatedAt: toDate(snap.data().updatedAt),
     lastActiveAt: toDate(snap.data().lastActiveAt),
+    identityVerifiedAt: toDate(snap.data().identityVerifiedAt),
   } as UserProfile;
 }
 

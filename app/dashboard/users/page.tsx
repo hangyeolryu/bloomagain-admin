@@ -130,12 +130,17 @@ export default function UsersPage() {
       const q = search.toLowerCase();
       if (
         !u.displayName?.toLowerCase().includes(q) &&
+        !u.legalName?.toLowerCase().includes(q) &&
         !u.city?.toLowerCase().includes(q) &&
         !u.id.toLowerCase().includes(q)
       ) return false;
     }
     if (statusFilter !== 'all') {
-      if (statusFilter === 'blocked') {
+      if (statusFilter === 'verified') {
+        if (!u.identityVerified) return false;
+      } else if (statusFilter === 'unverified') {
+        if (u.identityVerified) return false;
+      } else if (statusFilter === 'blocked') {
         if (!u.isBlacklisted && u.accountStatus !== 'blocked') return false;
       } else {
         if ((u.accountStatus || 'active') !== statusFilter) return false;
@@ -172,6 +177,8 @@ export default function UsersPage() {
           <option value="suspended">정지됨</option>
           <option value="restricted">제한됨</option>
           <option value="blocked">차단됨</option>
+          <option value="verified">본인인증 완료</option>
+          <option value="unverified">본인인증 미완료</option>
         </select>
       </div>
 
@@ -182,6 +189,7 @@ export default function UsersPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름 / 본인인증</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
@@ -192,7 +200,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-gray-400">
+                  <td colSpan={7} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -209,6 +217,23 @@ export default function UsersPage() {
                           <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 10)}...</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {u.identityVerified ? (
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-gray-900">{u.legalName ?? '-'}</span>
+                            <span title="NICE 본인인증 완료" className="inline-flex items-center gap-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                              ✓ 인증
+                            </span>
+                          </div>
+                          {u.legalBirthYear && (
+                            <p className="text-xs text-gray-400 mt-0.5">{u.legalBirthYear}년생</p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">미인증</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-gray-600">
                       {formatAge(u.yearOfBirth)} / {u.city || '-'}
