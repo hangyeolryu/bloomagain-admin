@@ -13,12 +13,94 @@ import Header from '@/components/layout/Header';
 
 const PAGE_SIZE = 30;
 
+// ── PostgreSQL status per user ────────────────────────────────────────────────
+interface PgStatus {
+  exists: boolean;
+  account_status?: string;
+  subscription_tier?: string;
+}
+
+type PgStatusMap = Record<string, PgStatus>;
+
+async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
+  if (!userIds.length) return {};
+  const res = await fetch('/api/backend/check-users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_ids: userIds }),
+  });
+  if (!res.ok) return {};
+  return res.json();
+}
+
+async function registerUserInBackend(userId: string, username: string, email?: string): Promise<boolean> {
+  const res = await fetch('/api/backend/register-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, username, ...(email ? { email } : {}) }),
+  });
+  return res.ok;
+}
+
+interface BatchRegisterResult {
+  registered: string[];
+  already_existed: string[];
+  failed: Array<{ userId: string; error: string }>;
+}
+
+async function batchRegisterUsersInBackend(
+  users: Array<{ userId: string; username: string; email?: string }>
+): Promise<BatchRegisterResult> {
+  const res = await fetch('/api/backend/batch-register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ users }),
+  });
+  if (!res.ok) return { registered: [], already_existed: [], failed: [] };
+  return res.json();
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function getStatusBadge(user: UserProfile) {
   if (user.isBlacklisted) return <Badge variant="red">차단됨</Badge>;
   if (user.accountStatus === 'blocked') return <Badge variant="red">차단됨</Badge>;
   if (user.accountStatus === 'suspended') return <Badge variant="orange">정지됨</Badge>;
   if (user.accountStatus === 'restricted') return <Badge variant="yellow">제한됨</Badge>;
   return <Badge variant="green">활성</Badge>;
+}
+
+function PgBadge({ status, onRegister }: { status: PgStatus | undefined; onRegister: () => void }) {
+  if (!status) {
+    return <span className="text-xs text-gray-300 animate-pulse">확인 중…</span>;
+  }
+  if (status.exists) {
+    const tier = status.subscription_tier;
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit">
+          <span>DB ✓</span>
+        </span>
+        {tier && tier !== 'FREE' && (
+          <span className="inline-flex text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full w-fit">
+            {tier}
+          </span>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="inline-flex items-center text-xs font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full w-fit">
+        미등록
+      </span>
+      <button
+        onClick={onRegister}
+        className="text-xs text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-full font-medium transition-colors w-fit"
+      >
+        등록
+      </button>
+    </div>
+  );
 }
 
 function formatAge(yearOfBirth?: number) {
@@ -43,6 +125,15 @@ export default function UsersPage() {
   const [reason, setReason]             = useState('');
   const [acting, setActing]             = useState(false);
 
+  // ── PostgreSQL status ──────────────────────────────────────────────────────
+  // null  = not yet fetched for this uid
+  // PgStatus = fetched result
+  const [pgStatus, setPgStatus]         = useState<PgStatusMap>({});
+  const [pgChecking, setPgChecking]     = useState(false);
+  const [bulkRegistering, setBulkRegistering] = useState(false);
+  // Track which UIDs we've already sent to batch-check so we don't re-fetch on render.
+  const checkedUidsRef = useRef<Set<string>>(new Set());
+
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -53,9 +144,22 @@ export default function UsersPage() {
     if (s) setStatusFilter(s);
   }, []);
 
-  // ── Load more (stable ref so IntersectionObserver doesn't need to reconnect) ─
-  const loadMoreRef = useRef<() => void>(() => {});
+  // ── Batch-check new users against backend ────────────────────────────────
+  const checkNewUsers = useCallback(async (users: UserProfile[]) => {
+    const unchecked = users.filter((u) => !checkedUidsRef.current.has(u.id));
+    if (!unchecked.length) return;
+    unchecked.forEach((u) => checkedUidsRef.current.add(u.id));
+    setPgChecking(true);
+    try {
+      const result = await checkUsersInBackend(unchecked.map((u) => u.id));
+      setPgStatus((prev) => ({ ...prev, ...result }));
+    } finally {
+      setPgChecking(false);
+    }
+  }, []);
 
+  // ── Load more ─────────────────────────────────────────────────────────────
+  const loadMoreRef = useRef<() => void>(() => {});
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore || !lastDocRef.current) return;
     setLoadingMore(true);
@@ -64,25 +168,25 @@ export default function UsersPage() {
       lastDocRef.current = lastDoc;
       setAllUsers((prev) => [...prev, ...items]);
       setHasMore(items.length === PAGE_SIZE);
+      await checkNewUsers(items);
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore]);
-
-  // Keep ref in sync so the observer always calls the latest version
+  }, [hasMore, loadingMore, checkNewUsers]);
   loadMoreRef.current = loadMore;
 
   // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
-    getUsers(PAGE_SIZE).then(({ items, lastDoc }) => {
+    getUsers(PAGE_SIZE).then(async ({ items, lastDoc }) => {
       setAllUsers(items);
       lastDocRef.current = lastDoc;
       setHasMore(items.length === PAGE_SIZE);
       setLoading(false);
+      await checkNewUsers(items);
     });
-  }, []);
+  }, [checkNewUsers]);
 
-  // ── IntersectionObserver (set up once) ────────────────────────────────────
+  // ── IntersectionObserver ──────────────────────────────────────────────────
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -94,7 +198,55 @@ export default function UsersPage() {
     return () => observer.disconnect();
   }, []);
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+  // ── Register single user in backend ──────────────────────────────────────
+  const handleRegisterUser = async (u: UserProfile) => {
+    const ok = await registerUserInBackend(
+      u.id,
+      u.displayName || 'User',
+      undefined,
+    );
+    if (ok) {
+      setPgStatus((prev) => ({
+        ...prev,
+        [u.id]: { exists: true, account_status: 'active', subscription_tier: 'FREE' },
+      }));
+    }
+  };
+
+  // ── Bulk-register all missing users in the current loaded batch ───────────
+  // Uses a single batch endpoint (no N parallel requests → no rate-limit issues).
+  const missingUsers = allUsers.filter((u) => pgStatus[u.id]?.exists === false);
+  const handleBulkRegister = async () => {
+    if (!missingUsers.length) return;
+    setBulkRegistering(true);
+    try {
+      const payload = missingUsers.map((u) => ({
+        userId: u.id,
+        username: u.displayName || 'User',
+      }));
+      const result = await batchRegisterUsersInBackend(payload);
+      // Mark all successfully registered or already-existed users as present.
+      const nowPresent = new Set([...result.registered, ...result.already_existed]);
+      setPgStatus((prev) => {
+        const next = { ...prev };
+        for (const uid of nowPresent) {
+          next[uid] = { exists: true, account_status: 'active', subscription_tier: 'FREE' };
+        }
+        return next;
+      });
+    } finally {
+      setBulkRegistering(false);
+    }
+  };
+
+  // ── Re-check all loaded users (manual refresh) ───────────────────────────
+  const handleRecheck = async () => {
+    checkedUidsRef.current.clear();
+    setPgStatus({});
+    await checkNewUsers(allUsers);
+  };
+
+  // ── Moderation actions ────────────────────────────────────────────────────
   const handleAction = async () => {
     if (!actionModal || !adminUser) return;
     setActing(true);
@@ -124,7 +276,7 @@ export default function UsersPage() {
     }
   };
 
-  // ── Derived filtered list (client-side, on loaded data) ───────────────────
+  // ── Derived filtered list ─────────────────────────────────────────────────
   const filtered = allUsers.filter((u) => {
     if (search) {
       const q = search.toLowerCase();
@@ -142,6 +294,8 @@ export default function UsersPage() {
         if (u.identityVerified) return false;
       } else if (statusFilter === 'blocked') {
         if (!u.isBlacklisted && u.accountStatus !== 'blocked') return false;
+      } else if (statusFilter === 'pg_missing') {
+        if (pgStatus[u.id]?.exists !== false) return false;
       } else {
         if ((u.accountStatus || 'active') !== statusFilter) return false;
       }
@@ -151,12 +305,53 @@ export default function UsersPage() {
 
   if (loading) return <LoadingSpinner />;
 
+  const checkedCount  = Object.keys(pgStatus).length;
+  const missingCount  = missingUsers.length;
+
   return (
     <div>
       <Header
         title="사용자 관리"
         subtitle={`로드된 ${allUsers.length}명 중 ${filtered.length}명 표시`}
       />
+
+      {/* PostgreSQL status banner */}
+      {checkedCount > 0 && missingCount > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-red-700">
+            <span className="text-base">⚠️</span>
+            <span>
+              <strong>{missingCount}명</strong>이 PostgreSQL에 미등록 상태입니다
+              {checkedCount < allUsers.length && ` (${checkedCount}명 확인 완료)`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkRegister}
+              disabled={bulkRegistering}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {bulkRegistering ? '등록 중…' : `미등록 ${missingCount}명 모두 등록`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DB sync info bar */}
+      {checkedCount > 0 && missingCount === 0 && (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <span className="text-sm text-emerald-700">
+            ✓ 로드된 {checkedCount}명 전원 PostgreSQL에 등록됨
+          </span>
+          <button
+            onClick={handleRecheck}
+            disabled={pgChecking}
+            className="text-xs text-emerald-700 hover:underline disabled:opacity-50"
+          >
+            {pgChecking ? '확인 중…' : '새로 고침'}
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -179,7 +374,16 @@ export default function UsersPage() {
           <option value="blocked">차단됨</option>
           <option value="verified">본인인증 완료</option>
           <option value="unverified">본인인증 미완료</option>
+          <option value="pg_missing">⚠ PostgreSQL 미등록</option>
         </select>
+        <button
+          onClick={handleRecheck}
+          disabled={pgChecking}
+          title="PostgreSQL 상태 재확인"
+          className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+        >
+          {pgChecking ? 'DB 확인 중…' : 'DB 재확인'}
+        </button>
       </div>
 
       {/* Table */}
@@ -193,6 +397,7 @@ export default function UsersPage() {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">PostgreSQL DB</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">가입일</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">작업</th>
               </tr>
@@ -200,7 +405,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-400">
+                  <td colSpan={8} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -249,6 +454,12 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">{getStatusBadge(u)}</td>
+                    <td className="px-6 py-4">
+                      <PgBadge
+                        status={pgStatus[u.id]}
+                        onRegister={() => handleRegisterUser(u)}
+                      />
+                    </td>
                     <td className="px-6 py-4 text-gray-500">{formatDate(u.createdAt)}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -290,7 +501,7 @@ export default function UsersPage() {
           </table>
         </div>
 
-        {/* Footer: scroll sentinel + loading state */}
+        {/* Footer */}
         <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
           <span>{filtered.length}명 표시 중 (로드된 {allUsers.length}명)</span>
           {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
