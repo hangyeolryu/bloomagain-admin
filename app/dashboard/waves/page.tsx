@@ -133,39 +133,39 @@ export default function WavesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">보낸 사람</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">받은 사람</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">메시지</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">보낸 시간</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">대화</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">보낸 사람</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">받은 사람</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">메시지</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">보낸 시간</th>
+                  <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">대화</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {waves.map((w) => (
                   <tr key={w.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-2.5">
                       <Link
                         href={`/dashboard/users/view?id=${w.fromUserId}`}
                         className="font-mono text-xs text-blue-600 hover:underline"
                       >
-                        {w.fromUserId.slice(0, 10)}...
+                        {w.fromUserId.slice(0, 8)}…
                       </Link>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-2.5">
                       <Link
                         href={`/dashboard/users/view?id=${w.toUserId}`}
                         className="font-mono text-xs text-blue-600 hover:underline"
                       >
-                        {w.toUserId.slice(0, 10)}...
+                        {w.toUserId.slice(0, 8)}…
                       </Link>
                     </td>
-                    <td className="px-6 py-4 max-w-[200px]">
+                    <td className="hidden sm:table-cell px-4 py-2.5 max-w-[200px]">
                       <p className="text-gray-700 truncate text-xs">{w.message || <span className="text-gray-400 italic">메시지 없음</span>}</p>
                     </td>
-                    <td className="px-6 py-4">{getStatusBadge(w.status)}</td>
-                    <td className="px-6 py-4 text-gray-500 text-xs whitespace-nowrap">{formatDate(w.sentAt)}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-2.5">{getStatusBadge(w.status)}</td>
+                    <td className="hidden sm:table-cell px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{formatDate(w.sentAt)}</td>
+                    <td className="hidden md:table-cell px-4 py-2.5">
                       {w.conversationId ? (
                         <span className="text-xs text-green-600 font-medium">연결됨</span>
                       ) : (
@@ -178,7 +178,7 @@ export default function WavesPage() {
             </table>
           </div>
 
-          <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
+          <div className="px-4 py-2.5 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
             <span>{waves.length}건 표시</span>
             {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
             {!hasMore && waves.length > 0 && <span>전체 로드 완료</span>}

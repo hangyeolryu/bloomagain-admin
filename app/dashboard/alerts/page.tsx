@@ -253,13 +253,13 @@ export default function AlertsPage() {
                 }`}
               >
                 {/* ── Main row ── */}
-                <div className="p-5">
-                  <div className="flex items-start gap-4">
-                    <span className="text-2xl flex-shrink-0">{meta.icon}</span>
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl flex-shrink-0 mt-0.5">{meta.icon}</span>
 
                     <div className="flex-1 min-w-0">
                       {/* Header */}
-                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
                         <Badge variant={sev.variant}>{sev.label}</Badge>
                         <span className="text-sm font-semibold text-gray-800">{meta.label}</span>
                         {alert.resolved && <Badge variant="gray">해결됨</Badge>}
@@ -267,7 +267,7 @@ export default function AlertsPage() {
 
                       {/* User */}
                       {alert.userId && (
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className="text-xs text-gray-500">사용자:</span>
                           <Link
                             href={`/dashboard/users/${alert.userId}`}
@@ -275,13 +275,13 @@ export default function AlertsPage() {
                           >
                             {alert.userDisplayName || alert.userId.slice(0, 10)}
                           </Link>
-                          <span className="text-xs text-gray-400 font-mono">({alert.userId.slice(0, 8)}...)</span>
+                          <span className="text-xs text-gray-400 font-mono">({alert.userId.slice(0, 8)}…)</span>
                         </div>
                       )}
 
                       {/* Circle */}
                       {alert.circleName && (
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className="text-xs text-gray-500">모임:</span>
                           {alert.circleId ? (
                             <Link
@@ -293,9 +293,6 @@ export default function AlertsPage() {
                           ) : (
                             <span className="text-sm text-gray-700">{alert.circleName}</span>
                           )}
-                          {alert.circleDescription && (
-                            <span className="text-xs text-gray-400 truncate max-w-xs">{alert.circleDescription}</span>
-                          )}
                         </div>
                       )}
 
@@ -306,7 +303,7 @@ export default function AlertsPage() {
 
                       {/* Detected issues chips */}
                       {(alert.detectedIssues ?? []).length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
+                        <div className="flex flex-wrap gap-1 mb-1.5">
                           {alert.detectedIssues!.map((issue, i) => (
                             <span key={i} className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full border border-red-100">
                               {issue}
@@ -317,7 +314,7 @@ export default function AlertsPage() {
 
                       {/* Score bars */}
                       {(alert.adultScore !== undefined || alert.violenceScore !== undefined) && (
-                        <div className="space-y-1 mb-2 max-w-xs">
+                        <div className="space-y-1 mb-1.5 max-w-xs">
                           {alert.adultScore    !== undefined && <ScoreBar label="성인"  score={alert.adultScore} />}
                           {alert.violenceScore !== undefined && <ScoreBar label="폭력"  score={alert.violenceScore} />}
                         </div>
@@ -333,7 +330,7 @@ export default function AlertsPage() {
                           <img
                             src={alert.imageUrl}
                             alt="flagged"
-                            className="h-20 w-20 object-cover rounded-xl border border-gray-200 hover:opacity-80 transition-opacity"
+                            className="h-16 w-16 object-cover rounded-xl border border-gray-200 hover:opacity-80 transition-opacity"
                           />
                           <span className="text-xs text-blue-500 mt-0.5 block">이미지 확대</span>
                         </button>
@@ -341,16 +338,47 @@ export default function AlertsPage() {
 
                       {/* Resolution note */}
                       {alert.resolved && alert.resolvedNote && (
-                        <p className="text-xs text-gray-500 mt-2 italic">처리 메모: {alert.resolvedNote}</p>
+                        <p className="text-xs text-gray-500 mt-1.5 italic">처리 메모: {alert.resolvedNote}</p>
                       )}
 
-                      <p className="text-xs text-gray-400 mt-2">{formatDate(alert.timestamp)}</p>
+                      <p className="text-xs text-gray-400 mt-1.5">{formatDate(alert.timestamp)}</p>
+
+                      {/* ── Action buttons (below on mobile, beside on sm+) ── */}
+                      {!alert.resolved && can('resolveAlerts') && (
+                        <div className="flex flex-wrap gap-1.5 mt-3 sm:hidden">
+                          {alert.userId && (
+                            <Link href={`/dashboard/users/${alert.userId}`} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium">
+                              👤 사용자 보기
+                            </Link>
+                          )}
+                          {alert.circleId && (
+                            <Link href={`/dashboard/circles/${alert.circleId}`} className="px-3 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium">
+                              🌿 모임 보기
+                            </Link>
+                          )}
+                          {alert.userId && can('manageUsers') && (
+                            <button onClick={() => toggleCard(alert.id, 'block_user')} className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'block_user' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}>
+                              🚫 사용자 차단
+                            </button>
+                          )}
+                          {alert.circleId && can('manageCircles') && (
+                            <button onClick={() => toggleCard(alert.id, 'block_circle')} className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'block_circle' ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}>
+                              🚫 모임 차단
+                            </button>
+                          )}
+                          <button onClick={() => toggleCard(alert.id, 'resolve')} className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'resolve' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
+                            ✅ 해결 처리
+                          </button>
+                          <button onClick={() => toggleCard(alert.id, 'delete')} className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'delete' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                            🗑️ 삭제
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* ── Action buttons ── */}
+                    {/* ── Action buttons (right column on sm+) ── */}
                     {!alert.resolved && can('resolveAlerts') && (
-                      <div className="flex flex-col gap-1.5 flex-shrink-0">
-                        {/* View user */}
+                      <div className="hidden sm:flex flex-col gap-1.5 flex-shrink-0">
                         {alert.userId && (
                           <Link
                             href={`/dashboard/users/${alert.userId}`}
@@ -359,8 +387,6 @@ export default function AlertsPage() {
                             👤 사용자 보기
                           </Link>
                         )}
-
-                        {/* View circle */}
                         {alert.circleId && (
                           <Link
                             href={`/dashboard/circles/${alert.circleId}`}
@@ -369,55 +395,31 @@ export default function AlertsPage() {
                             🌿 모임 보기
                           </Link>
                         )}
-
-                        {/* Block user */}
                         {alert.userId && can('manageUsers') && (
                           <button
                             onClick={() => toggleCard(alert.id, 'block_user')}
-                            className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
-                              isExpanded && activePanel === 'block_user'
-                                ? 'bg-red-600 text-white'
-                                : 'bg-red-50 text-red-600 hover:bg-red-100'
-                            }`}
+                            className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'block_user' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
                           >
                             🚫 사용자 차단
                           </button>
                         )}
-
-                        {/* Block circle */}
                         {alert.circleId && can('manageCircles') && (
                           <button
                             onClick={() => toggleCard(alert.id, 'block_circle')}
-                            className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
-                              isExpanded && activePanel === 'block_circle'
-                                ? 'bg-orange-600 text-white'
-                                : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
-                            }`}
+                            className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'block_circle' ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
                           >
                             🚫 모임 차단
                           </button>
                         )}
-
-                        {/* Resolve */}
                         <button
                           onClick={() => toggleCard(alert.id, 'resolve')}
-                          className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
-                            isExpanded && activePanel === 'resolve'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-green-50 text-green-700 hover:bg-green-100'
-                          }`}
+                          className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'resolve' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
                         >
                           ✅ 해결 처리
                         </button>
-
-                        {/* Delete */}
                         <button
                           onClick={() => toggleCard(alert.id, 'delete')}
-                          className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
-                            isExpanded && activePanel === 'delete'
-                              ? 'bg-gray-700 text-white'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
+                          className={`px-3 py-1.5 text-xs rounded-lg font-medium ${isExpanded && activePanel === 'delete' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                         >
                           🗑️ 삭제
                         </button>

@@ -93,11 +93,11 @@ export default function ConversationsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">참여자</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">마지막 메시지</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">마지막 활동</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">생성일</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">참여자</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">마지막 메시지</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">마지막 활동</th>
+                  <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">생성일</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -105,25 +105,25 @@ export default function ConversationsPage() {
                   const isBlocked = (c.blockedParticipants ?? []).length > 0;
                   return (
                     <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
+                      <td className="px-4 py-2.5">
+                        <div className="flex flex-col gap-0.5">
                           {c.participants.map((uid) => (
                             <Link
                               key={uid}
                               href={`/dashboard/users/view?id=${uid}`}
                               className="font-mono text-xs text-blue-600 hover:underline"
                             >
-                              {uid.slice(0, 10)}...
+                              {uid.slice(0, 8)}…
                             </Link>
                           ))}
                         </div>
                       </td>
-                      <td className="px-6 py-4 max-w-[240px]">
+                      <td className="hidden sm:table-cell px-4 py-2.5 max-w-[240px]">
                         <p className="text-xs text-gray-700 truncate">
                           {c.lastMessage || <span className="text-gray-400 italic">메시지 없음</span>}
                         </p>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         {isBlocked ? (
                           <Badge variant="red">차단 포함</Badge>
                         ) : c.isActive ? (
@@ -132,10 +132,10 @@ export default function ConversationsPage() {
                           <Badge variant="gray">비활성</Badge>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-gray-500 text-xs whitespace-nowrap">
+                      <td className="hidden sm:table-cell px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(c.lastMessageAt)}
                       </td>
-                      <td className="px-6 py-4 text-gray-500 text-xs whitespace-nowrap">
+                      <td className="hidden md:table-cell px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(c.createdAt)}
                       </td>
                     </tr>
@@ -145,7 +145,7 @@ export default function ConversationsPage() {
             </table>
           </div>
 
-          <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
+          <div className="px-4 py-2.5 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
             <span>{conversations.length}건 표시</span>
             {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
             {!hasMore && conversations.length > 0 && <span>전체 로드 완료</span>}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getUsers, blockUser, unblockUser, updateUserStatus } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
@@ -115,6 +116,7 @@ function formatDate(date?: Date) {
 
 export default function UsersPage() {
   const { user: adminUser } = useAuth();
+  const router = useRouter();
   const [allUsers, setAllUsers]         = useState<UserProfile[]>([]);
   const [loading, setLoading]           = useState(true);
   const [loadingMore, setLoadingMore]   = useState(false);
@@ -392,14 +394,14 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름 / 본인인증</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">PostgreSQL DB</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">가입일</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">작업</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름</th>
+                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
+                <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
+                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">DB</th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">가입일</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">작업</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -411,40 +413,42 @@ export default function UsersPage() {
                 </tr>
               ) : (
                 filtered.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center text-sm font-bold text-green-700 flex-shrink-0">
+                  <tr
+                    key={u.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => router.push(`/dashboard/users/view?id=${u.id}`)}
+                  >
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm font-bold text-green-700 flex-shrink-0">
                           {u.displayName?.[0] || '?'}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{u.displayName || '이름 없음'}</p>
-                          <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 10)}...</p>
+                          <p className="font-medium text-gray-900 text-sm leading-tight">{u.displayName || '이름 없음'}</p>
+                          <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 8)}…</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="hidden md:table-cell px-4 py-2.5">
                       {u.identityVerified ? (
                         <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-gray-900">{u.legalName ?? '-'}</span>
-                            <span title="NICE 본인인증 완료" className="inline-flex items-center gap-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                              ✓ 인증
-                            </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm text-gray-900">{u.legalName ?? '-'}</span>
+                            <span className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">✓</span>
                           </div>
                           {u.legalBirthYear && (
-                            <p className="text-xs text-gray-400 mt-0.5">{u.legalBirthYear}년생</p>
+                            <p className="text-xs text-gray-400">{u.legalBirthYear}년생</p>
                           )}
                         </div>
                       ) : (
                         <span className="text-xs text-gray-400">미인증</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
+                    <td className="hidden sm:table-cell px-4 py-2.5 text-xs text-gray-600">
                       {formatAge(u.yearOfBirth)} / {u.city || '-'}
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1 max-w-[160px]">
+                    <td className="hidden lg:table-cell px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1">
                         {(u.interests || []).slice(0, 2).map((i) => (
                           <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{i}</span>
                         ))}
@@ -453,19 +457,20 @@ export default function UsersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4">{getStatusBadge(u)}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-2.5">{getStatusBadge(u)}</td>
+                    <td className="hidden sm:table-cell px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <PgBadge
                         status={pgStatus[u.id]}
                         onRegister={() => handleRegisterUser(u)}
                       />
                     </td>
-                    <td className="px-6 py-4 text-gray-500">{formatDate(u.createdAt)}</td>
-                    <td className="px-6 py-4">
+                    <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
+                    <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <Link
                           href={`/dashboard/users/view?id=${u.id}`}
                           className="text-xs text-green-600 hover:underline font-medium"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           상세
                         </Link>
@@ -474,7 +479,7 @@ export default function UsersPage() {
                             onClick={() => setActionModal({ user: u, type: 'unblock' })}
                             className="text-xs text-blue-600 hover:underline font-medium"
                           >
-                            차단 해제
+                            해제
                           </button>
                         ) : (
                           <>
@@ -502,7 +507,7 @@ export default function UsersPage() {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
+        <div className="px-4 py-2.5 border-t border-gray-50 text-xs text-gray-400 flex items-center justify-between">
           <span>{filtered.length}명 표시 중 (로드된 {allUsers.length}명)</span>
           {loadingMore && <span className="text-green-600 animate-pulse">불러오는 중...</span>}
           {!hasMore && allUsers.length > 0 && <span>전체 로드 완료</span>}

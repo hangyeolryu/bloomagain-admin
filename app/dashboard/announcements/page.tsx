@@ -190,24 +190,24 @@ export default function AnnouncementsPage() {
           <p>등록된 공지사항이 없습니다</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {announcements.map((a) => {
             const { variant, label, emoji } = typeInfo(a.type);
             const expired = a.expiresAt && a.expiresAt < new Date();
             return (
               <div
                 key={a.id}
-                className={`bg-white rounded-2xl border shadow-sm p-5 transition-opacity ${
+                className={`bg-white rounded-2xl border shadow-sm p-4 transition-opacity ${
                   !a.isActive || expired ? 'opacity-60 border-gray-100' : 'border-gray-200'
                 }`}
               >
-                <div className="flex items-start gap-4">
-                  <span className="text-2xl flex-shrink-0">{emoji}</span>
+                <div className="flex items-start gap-3">
+                  <span className="text-xl flex-shrink-0 mt-0.5">{emoji}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
                       <Badge variant={variant}>{label}</Badge>
                       {a.isPinned && (
-                        <span className="text-xs text-gray-500">📌 고정</span>
+                        <span className="text-xs text-gray-500">📌</span>
                       )}
                       {!a.isActive && <Badge variant="gray">비활성</Badge>}
                       {expired && <Badge variant="red">만료됨</Badge>}
@@ -215,7 +215,7 @@ export default function AnnouncementsPage() {
                         {a.title}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap mb-2">
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap mb-1.5">
                       {a.body}
                     </p>
                     {a.ctaText && a.ctaRoute && (
@@ -223,45 +223,42 @@ export default function AnnouncementsPage() {
                         버튼: &quot;{a.ctaText}&quot; → {a.ctaRoute}
                       </p>
                     )}
-                    <div className="flex flex-wrap gap-3 text-xs text-gray-400">
+                    <div className="flex flex-wrap gap-3 text-xs text-gray-400 mb-2">
                       <span>등록: {formatDate(a.createdAt)}</span>
                       {a.expiresAt && (
                         <span>만료: {formatDate(a.expiresAt)}</span>
                       )}
                     </div>
-                  </div>
 
-                  {canManage && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => handleToggle(a)}
-                        disabled={toggling === a.id}
-                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 ${
-                          a.isActive
-                            ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            : 'bg-green-100 text-green-700 hover:bg-green-200'
-                        }`}
-                      >
-                        {toggling === a.id
-                          ? '...'
-                          : a.isActive
-                          ? '비활성화'
-                          : '활성화'}
-                      </button>
-                      <button
-                        onClick={() => openEdit(a)}
-                        className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium"
-                      >
-                        수정
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(a)}
-                        className="px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium"
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  )}
+                    {/* Action buttons — below content on all screens for easy tapping */}
+                    {canManage && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => handleToggle(a)}
+                          disabled={toggling === a.id}
+                          className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 ${
+                            a.isActive
+                              ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
+                        >
+                          {toggling === a.id ? '...' : a.isActive ? '비활성화' : '활성화'}
+                        </button>
+                        <button
+                          onClick={() => openEdit(a)}
+                          className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium"
+                        >
+                          수정
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(a)}
+                          className="px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
