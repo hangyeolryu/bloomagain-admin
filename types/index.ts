@@ -28,6 +28,7 @@ export function can(role: AdminRole | null, permission: Permission): boolean {
 export interface UserProfile {
   id: string;
   displayName: string;
+  email?: string;
   yearOfBirth?: number;
   city?: string;
   district?: string;

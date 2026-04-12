@@ -23,6 +23,33 @@ interface PgStatus {
 
 type PgStatusMap = Record<string, PgStatus>;
 
+interface BackfillPayload {
+  userId: string;
+  username: string;
+  email?: string;
+  accountStatus?: string;
+  verified?: boolean;
+  verifiedName?: string;
+  yearOfBirth?: number;
+  verifiedAt?: string;   // ISO string
+  aiTrainingOptIn?: boolean;
+}
+
+function buildBackfillPayload(u: UserProfile): BackfillPayload {
+  const payload: BackfillPayload = {
+    userId: u.id,
+    // Prefer verified legal name, fall back to displayName, then uid
+    username: u.legalName || u.displayName || u.id,
+    ...(u.email ? { email: u.email } : {}),
+    accountStatus: u.accountStatus ?? 'active',
+    verified: u.identityVerified ?? false,
+    ...(u.legalName         ? { verifiedName:    u.legalName }                       : {}),
+    ...(u.legalBirthYear    ? { yearOfBirth:      u.legalBirthYear }                 : {}),
+    ...(u.identityVerifiedAt ? { verifiedAt:      u.identityVerifiedAt.toISOString() } : {}),
+  };
+  return payload;
+}
+
 async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
   if (!userIds.length) return {};
   const res = await fetch('/api/backend/check-users', {
@@ -34,11 +61,11 @@ async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
   return res.json();
 }
 
-async function registerUserInBackend(userId: string, username: string, email?: string): Promise<boolean> {
-  const res = await fetch('/api/backend/register-user', {
+async function backfillUserInBackend(payload: BackfillPayload): Promise<boolean> {
+  const res = await fetch('/api/backend/admin-backfill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, username, ...(email ? { email } : {}) }),
+    body: JSON.stringify(payload),
   });
   return res.ok;
 }
@@ -49,10 +76,10 @@ interface BatchRegisterResult {
   failed: Array<{ userId: string; error: string }>;
 }
 
-async function batchRegisterUsersInBackend(
-  users: Array<{ userId: string; username: string; email?: string }>
+async function batchBackfillUsersInBackend(
+  users: BackfillPayload[]
 ): Promise<BatchRegisterResult> {
-  const res = await fetch('/api/backend/batch-register', {
+  const res = await fetch('/api/backend/batch-admin-backfill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ users }),
@@ -202,15 +229,15 @@ export default function UsersPage() {
 
   // ── Register single user in backend ──────────────────────────────────────
   const handleRegisterUser = async (u: UserProfile) => {
-    const ok = await registerUserInBackend(
-      u.id,
-      u.displayName || 'User',
-      undefined,
-    );
+    const ok = await backfillUserInBackend(buildBackfillPayload(u));
     if (ok) {
       setPgStatus((prev) => ({
         ...prev,
-        [u.id]: { exists: true, account_status: 'active', subscription_tier: 'FREE' },
+        [u.id]: {
+          exists: true,
+          account_status: u.accountStatus ?? 'active',
+          subscription_tier: 'FREE',
+        },
       }));
     }
   };
@@ -222,17 +249,19 @@ export default function UsersPage() {
     if (!missingUsers.length) return;
     setBulkRegistering(true);
     try {
-      const payload = missingUsers.map((u) => ({
-        userId: u.id,
-        username: u.displayName || 'User',
-      }));
-      const result = await batchRegisterUsersInBackend(payload);
+      const payload = missingUsers.map(buildBackfillPayload);
+      const result = await batchBackfillUsersInBackend(payload);
       // Mark all successfully registered or already-existed users as present.
       const nowPresent = new Set([...result.registered, ...result.already_existed]);
       setPgStatus((prev) => {
         const next = { ...prev };
         for (const uid of nowPresent) {
-          next[uid] = { exists: true, account_status: 'active', subscription_tier: 'FREE' };
+          const u = missingUsers.find((x) => x.id === uid);
+          next[uid] = {
+            exists: true,
+            account_status: u?.accountStatus ?? 'active',
+            subscription_tier: 'FREE',
+          };
         }
         return next;
       });
