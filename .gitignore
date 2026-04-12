@@ -30,8 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — local secrets stay local
+.env.local
+.env*.local
+# .env.production is committed (NEXT_PUBLIC_ vars are public by definition;
+# server-only vars like BACKEND_API_KEY must NOT go in .env.production)
 
 # firebase
 .firebase/
