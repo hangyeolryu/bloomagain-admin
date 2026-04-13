@@ -30,7 +30,7 @@ export type PaginatedResult<T> = {
   lastDoc: QueryDocumentSnapshot | null;
 };
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus, SupportInquiry, SupportInquiryStatus } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -701,6 +701,53 @@ export async function resolveDeleteRequest(
     status,
     processedAt: Timestamp.now(),
     processedBy,
+    ...(note ? { note } : {}),
+  });
+}
+
+// ─── Support Inquiries ────────────────────────────────────────────────────────
+
+export async function getSupportInquiries(
+  statusFilter?: SupportInquiryStatus,
+  pageSize = 30,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<SupportInquiry>> {
+  const constraints = [
+    ...(statusFilter ? [where('status', '==', statusFilter)] : []),
+    orderBy('submittedAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  ];
+  const q = query(collection(db, 'support_inquiries'), ...constraints);
+  const snap = await getDocs(q);
+  const items: SupportInquiry[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: data.name ?? '',
+      contact: data.contact ?? data.email ?? '',
+      category: data.category ?? undefined,
+      message: data.message ?? '',
+      status: data.status ?? 'pending',
+      submittedAt: data.submittedAt?.toDate?.() ?? undefined,
+      resolvedAt: data.resolvedAt?.toDate?.() ?? undefined,
+      resolvedBy: data.resolvedBy ?? undefined,
+      note: data.note ?? undefined,
+      userId: data.userId ?? undefined,
+    } as SupportInquiry;
+  });
+  return { items, lastDoc: snap.docs[snap.docs.length - 1] ?? null };
+}
+
+export async function resolveSupportInquiry(
+  id: string,
+  status: 'in_progress' | 'resolved',
+  resolvedBy: string,
+  note?: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'support_inquiries', id), {
+    status,
+    ...(status === 'resolved' ? { resolvedAt: Timestamp.now(), resolvedBy } : {}),
     ...(note ? { note } : {}),
   });
 }
