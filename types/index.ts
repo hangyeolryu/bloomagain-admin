@@ -214,6 +214,37 @@ export interface DeleteRequest {
   note?: string;
 }
 
+export type SupportInquiryStatus = 'pending' | 'in_progress' | 'resolved';
+
+export type SupportInquiryCategory =
+  | 'account'
+  | 'technical'
+  | 'billing'
+  | 'report'
+  | 'other';
+
+export const SUPPORT_CATEGORY_LABELS: Record<SupportInquiryCategory, string> = {
+  account: '계정',
+  technical: '기술 문제',
+  billing: '결제',
+  report: '신고',
+  other: '기타',
+};
+
+export interface SupportInquiry {
+  id: string;
+  name: string;
+  contact: string; // email or phone
+  category?: SupportInquiryCategory;
+  message: string;
+  status: SupportInquiryStatus;
+  submittedAt?: Date;
+  resolvedAt?: Date;
+  resolvedBy?: string;
+  note?: string;
+  userId?: string;
+}
+
 export interface UserActivity {
   circlesJoined: number;
   circleNames: string[];
