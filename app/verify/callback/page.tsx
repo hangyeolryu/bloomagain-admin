@@ -10,21 +10,19 @@ interface IdentityData {
   birth_date?: string;
   gender?: string;
   nation_info?: string;
-  ci?: string;
-  di?: string;
   [key: string]: string | undefined;
 }
 
 type Status = 'loading' | 'success' | 'error' | 'closed';
 
+// CI and DI are intentionally excluded — they are hashed server-side and
+// must not re-traverse the client. Only display-safe fields are shown.
 const FIELD_LABELS: Record<string, string> = {
   name: '이름',
   mobile_no: '휴대폰 번호',
   birth_date: '생년월일',
   gender: '성별',
   nation_info: '내/외국인',
-  ci: 'CI (연계정보)',
-  di: 'DI (중복가입확인정보)',
 };
 
 /**
@@ -32,7 +30,7 @@ const FIELD_LABELS: Record<string, string> = {
  *  - Flutter WebView  → window.NiceAuth.postMessage(JSON)   (JavascriptChannel)
  *  - Admin popup      → window.opener.postMessage(object)
  */
-function notifyResult(payload: { success: boolean; data?: IdentityData; error?: string }) {
+function notifyResult(payload: { success: boolean; verification_token?: string; data?: IdentityData; error?: string }) {
   const json = JSON.stringify(payload);
 
   // Flutter WebView JS channel (registered via addJavaScriptChannel('NiceAuth', ...))
@@ -57,8 +55,13 @@ function CallbackInner() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const tokenVersionId = searchParams.get('token_version_id');
+    const encData = searchParams.get('enc_data');
+    const integrityValue = searchParams.get('integrity_value');
     const webTransactionId = searchParams.get('web_transaction_id');
     const sessionKey = searchParams.get('key');
+    // Embedded by backend during init_flow for new NICE Auth API session recovery
+    const niceReqNo = searchParams.get('nice_req_no');
     const closed = searchParams.get('closed');
 
     if (closed === '1') {
@@ -67,7 +70,11 @@ function CallbackInner() {
       return;
     }
 
-    if (!webTransactionId || !sessionKey) {
+    const nicePassOk = !!(tokenVersionId && encData && integrityValue);
+    const niceAuthOk = !!(webTransactionId && niceReqNo);
+    const legacyOk = !!(webTransactionId && sessionKey);  // kept for backwards compat
+
+    if (!nicePassOk && !niceAuthOk && !legacyOk) {
       const msg = '필수 파라미터가 없습니다.';
       notifyResult({ success: false, error: msg });
       setError(msg);
@@ -77,13 +84,26 @@ function CallbackInner() {
 
     (async () => {
       try {
+        const body = nicePassOk
+          ? {
+              token_version_id: tokenVersionId!,
+              enc_data: encData!,
+              integrity_value: integrityValue!,
+            }
+          : niceAuthOk
+          ? {
+              web_transaction_id: webTransactionId!,
+              req_no: niceReqNo!,
+            }
+          : {
+              web_transaction_id: webTransactionId!,
+              session_key: sessionKey!,
+            };
+
         const res = await fetch('/api/nice/result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            web_transaction_id: webTransactionId,
-            session_key: sessionKey,
-          }),
+          body: JSON.stringify(body),
         });
         const json = await res.json();
 
@@ -93,7 +113,7 @@ function CallbackInner() {
 
         setData(json.data);
         setStatus('success');
-        notifyResult({ success: true, data: json.data });
+        notifyResult({ success: true, verification_token: json.verification_token, data: json.data });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '알 수 없는 오류';
         setError(msg);
@@ -175,9 +195,7 @@ function CallbackInner() {
             <div key={key} className="flex justify-between items-start">
               <span className="text-sm text-gray-500 w-28 flex-shrink-0">{label}</span>
               <span className="text-sm font-medium text-gray-900 text-right break-all">
-                {key === 'ci' || key === 'di'
-                  ? `${(data?.[key] ?? '').slice(0, 20)}...`
-                  : data?.[key] ?? '-'}
+                {data?.[key] ?? '-'}
               </span>
             </div>
           ))}
