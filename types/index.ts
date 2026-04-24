@@ -128,6 +128,9 @@ export interface AdminAlert {
   imageUrl?: string;
   adultScore?: number;
   violenceScore?: number;
+  // app_error fields
+  errorContext?: string;
+  platform?: string;
 }
 
 export interface SuspiciousMessage {

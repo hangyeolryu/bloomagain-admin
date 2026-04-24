@@ -105,21 +105,54 @@ export default function IdentityPage() {
     setLatestResult(null);
 
     try {
-      const res = await fetch('/api/nice/init', { method: 'POST' });
+      const returnUrl = `${window.location.origin}/verify/callback/`;
+      const res = await fetch('/api/nice/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_url: returnUrl }),
+      });
       const json = await res.json();
 
-      if (!res.ok || !json.auth_url) {
-        throw new Error(json.error ?? 'auth_url을 받지 못했습니다.');
+      if (!res.ok) {
+        throw new Error(json.error ?? json.detail ?? '인증 시작 요청에 실패했습니다.');
       }
 
+      const np = json.nice_pass as
+        | {
+            action: string;
+            token_version_id: string;
+            enc_data: string;
+            integrity_value: string;
+          }
+        | undefined;
+
       const popup = window.open(
-        json.auth_url,
+        'about:blank',
         'NICE_AUTH',
         'width=500,height=700,left=200,top=100,toolbar=0,menubar=0,scrollbars=1'
       );
 
       if (!popup) {
-        throw new Error('팝업이 차단되었습니다. 브라우저 팝업 차단을 해제해 주세요.');
+        throw new Error('Pop-up blocked. Allow pop-ups for this site.');
+      }
+
+      if (np?.action && np.token_version_id && np.enc_data && np.integrity_value) {
+        const esc = (s: string) =>
+          s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        popup.document.open();
+        popup.document.write(
+          `<!DOCTYPE html><html><body><form id="nicef" method="POST" action="${esc(np.action)}" accept-charset="UTF-8">` +
+            `<input type="hidden" name="token_version_id" value="${esc(np.token_version_id)}" />` +
+            `<input type="hidden" name="enc_data" value="${esc(np.enc_data)}" />` +
+            `<input type="hidden" name="integrity_value" value="${esc(np.integrity_value)}" />` +
+            `</form><script>document.getElementById('nicef')?.submit();<\/script></body></html>`
+        );
+        popup.document.close();
+      } else if (json.auth_url) {
+        popup.location.href = json.auth_url;
+      } else {
+        popup.close();
+        throw new Error(json.error ?? 'Unexpected NICE init response');
       }
 
       setPopupRef(popup);
@@ -222,10 +255,15 @@ export default function IdentityPage() {
 
           {/* Env warning */}
           <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs text-amber-700 space-y-1">
-            <p className="font-semibold">⚙️ 환경 변수 설정 필요</p>
-            <p><code className="bg-amber-100 px-1 rounded">NICE_CLIENT_ID</code></p>
-            <p><code className="bg-amber-100 px-1 rounded">NICE_CLIENT_SECRET</code></p>
-            <p className="mt-1 text-amber-600">.env.local에 NICE평가정보 자격증명을 입력하세요.</p>
+            <p className="font-semibold">⚙️ 환경 변수 안내</p>
+            <p>
+              관리자 앱(Next.js): <code className="bg-amber-100 px-1 rounded">NICE_BACKEND_URL</code>만 설정합니다.
+            </p>
+            <p className="mt-1 text-amber-600">
+              <code className="bg-amber-100 px-1 rounded">NICE_CLIENT_ID</code>,{' '}
+              <code className="bg-amber-100 px-1 rounded">NICE_CLIENT_SECRET</code>는 백엔드(FastAPI) 서버
+              환경에만 설정하세요.
+            </p>
           </div>
         </div>
 

@@ -33,6 +33,7 @@ const TYPE_META: Record<string, { label: string; icon: string }> = {
   suspicious_circle:   { label: '의심 모임',       icon: '👀'  },
   blocked_image:       { label: '차단된 이미지',   icon: '🖼️' },
   suspicious_image:    { label: '의심 이미지',     icon: '🖼️' },
+  app_error:           { label: '앱 오류',         icon: '🐛'  },
 };
 
 function getTypeMeta(type: string) {
@@ -270,7 +271,7 @@ export default function AlertsPage() {
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className="text-xs text-gray-500">사용자:</span>
                           <Link
-                            href={`/dashboard/users/${alert.userId}`}
+                            href={`/dashboard/users/view?id=${alert.userId}`}
                             className="text-sm font-medium text-blue-600 hover:underline"
                           >
                             {alert.userDisplayName || alert.userId.slice(0, 10)}
@@ -299,6 +300,14 @@ export default function AlertsPage() {
                       {/* Reason */}
                       {alert.reason && (
                         <p className="text-sm text-gray-600 mb-1">{alert.reason}</p>
+                      )}
+
+                      {/* app_error meta */}
+                      {alert.type === 'app_error' && (alert.errorContext || alert.platform) && (
+                        <div className="flex flex-wrap gap-2 mb-1.5 text-xs text-gray-400 font-mono">
+                          {alert.errorContext && <span>ctx: {alert.errorContext}</span>}
+                          {alert.platform    && <span>· {alert.platform}</span>}
+                        </div>
                       )}
 
                       {/* Detected issues chips */}
@@ -347,7 +356,7 @@ export default function AlertsPage() {
                       {!alert.resolved && can('resolveAlerts') && (
                         <div className="flex flex-wrap gap-1.5 mt-3 sm:hidden">
                           {alert.userId && (
-                            <Link href={`/dashboard/users/${alert.userId}`} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium">
+                            <Link href={`/dashboard/users/view?id=${alert.userId}`} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium">
                               👤 사용자 보기
                             </Link>
                           )}
@@ -381,7 +390,7 @@ export default function AlertsPage() {
                       <div className="hidden sm:flex flex-col gap-1.5 flex-shrink-0">
                         {alert.userId && (
                           <Link
-                            href={`/dashboard/users/${alert.userId}`}
+                            href={`/dashboard/users/view?id=${alert.userId}`}
                             className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium text-center"
                           >
                             👤 사용자 보기

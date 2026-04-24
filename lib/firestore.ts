@@ -366,6 +366,79 @@ export async function deleteAlert(alertId: string) {
   await deleteDoc(doc(db, 'admin_alerts', alertId));
 }
 
+// ─── Sync Failures (DLQ from firestore_sync.py retries) ─────────────────────
+
+export interface SyncFailureRecord {
+  id: string;
+  user_id: string;
+  error: string;
+  doc_data?: Record<string, unknown>;
+  failed_at: Date | undefined;
+}
+
+export async function getSyncFailures(
+  pageSize = 30,
+  cursor?: QueryDocumentSnapshot,
+): Promise<PaginatedResult<SyncFailureRecord>> {
+  const q = query(
+    collection(db, 'sync_failures'),
+    orderBy('failed_at', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  );
+  const snap = await getDocs(q);
+  return {
+    items: snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        user_id: (data.user_id as string) ?? '',
+        error: (data.error as string) ?? '',
+        doc_data: data.doc_data as Record<string, unknown> | undefined,
+        failed_at: toDate(data.failed_at),
+      };
+    }),
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
+}
+
+export async function dismissSyncFailure(id: string) {
+  await deleteDoc(doc(db, 'sync_failures', id));
+}
+
+// ─── District Density (written hourly by /operations/district-density) ──────
+
+export interface DistrictDensityRecord {
+  id: string;
+  city: string;
+  district: string | null;
+  user_count: number;
+  circle_count: number;
+  event_count_30d: number;
+  aggregated_at: Date | undefined;
+}
+
+export async function getDistrictDensity(): Promise<DistrictDensityRecord[]> {
+  const snap = await getDocs(
+    query(collection(db, 'district_density'), limit(500)),
+  );
+  return snap.docs
+    .map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        city: (data.city as string) ?? '',
+        district: (data.district as string | null) ?? null,
+        user_count: (data.user_count as number) ?? 0,
+        circle_count: (data.circle_count as number) ?? 0,
+        event_count_30d: (data.event_count_30d as number) ?? 0,
+        aggregated_at: toDate(data.aggregated_at),
+      };
+    })
+    // Sort by user_count desc so cold-start deserts show at the bottom
+    .sort((a, b) => b.user_count - a.user_count);
+}
+
 export async function getSuspiciousMessages(
   pageSize = 30,
   source?: string,  // e.g. 'message' | 'circle' | 'profile_image'

@@ -9,9 +9,9 @@ import { useEffect, useState } from 'react';
  *
  * Flow:
  *   1. Page loads → calls /api/nice/init with return_url pointing back here
- *   2. Redirects the entire page (no popup) to NICE auth_url
+ *   2. POSTs to NICE (nice_pass) or redirects to auth_url (legacy)
  *   3. NICE runs verification in the same WebView window
- *   4. NICE redirects back to /verify/callback/?key=...&web_transaction_id=...
+ *   4. NICE redirects back to /verify/callback/ with token_version_id, enc_data, integrity_value
  *   5. Callback page sends result to Flutter via window.NiceAuth.postMessage()
  *
  * This page is NOT the admin dashboard — it has no sidebar and is mobile-optimised.
@@ -38,13 +38,47 @@ export default function VerifyStartPage() {
 
         const json = await res.json();
 
-        if (!res.ok || !json.auth_url) {
-          throw new Error(json.error ?? 'auth_url을 받지 못했습니다.');
+        if (!res.ok) {
+          throw new Error(json.error ?? json.detail ?? '인증 시작 요청에 실패했습니다.');
         }
 
-        // Full-page redirect → works in both browser and Flutter WebView.
-        // (window.open popup would be blocked in WebView.)
-        window.location.href = json.auth_url;
+        const np = json.nice_pass as
+          | {
+              action: string;
+              token_version_id: string;
+              enc_data: string;
+              integrity_value: string;
+            }
+          | undefined;
+
+        if (np?.action && np.token_version_id && np.enc_data && np.integrity_value) {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = np.action;
+          form.setAttribute('accept-charset', 'UTF-8');
+          const fields: Record<string, string> = {
+            token_version_id: np.token_version_id,
+            enc_data: np.enc_data,
+            integrity_value: np.integrity_value,
+          };
+          for (const [name, value] of Object.entries(fields)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+          }
+          document.body.appendChild(form);
+          form.submit();
+          return;
+        }
+
+        if (json.auth_url) {
+          window.location.href = json.auth_url;
+          return;
+        }
+
+        throw new Error(json.error ?? 'Unexpected NICE init response');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '알 수 없는 오류';
         setError(msg);

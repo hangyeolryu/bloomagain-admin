@@ -19,10 +19,10 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
 
-// Analytics is browser-only
-export const analytics =
-  typeof window !== 'undefined'
-    ? import('firebase/analytics').then(({ getAnalytics }) => getAnalytics(app))
-    : null;
+/** Call from a client component when you want GA; avoid top-level import so /verify WebViews do not load gtag. */
+export function initFirebaseAnalytics() {
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  return import('firebase/analytics').then(({ getAnalytics }) => getAnalytics(app));
+}
 
 export default app;

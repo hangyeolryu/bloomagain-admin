@@ -28,6 +28,9 @@ const navItems: NavItem[] = [
   { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️' },
   { href: '/dashboard/support', label: '고객 문의', icon: '🎧' },
   { href: '/dashboard/announcements', label: '공지사항', icon: '📢', permission: 'manageCircles' },
+  { href: '/dashboard/health', label: '백엔드 상태', icon: '💚' },
+  { href: '/dashboard/sync-failures', label: '싱크 실패', icon: '🔁' },
+  { href: '/dashboard/district-density', label: '지역 밀집도', icon: '🗺️' },
   { href: '/dashboard/admins', label: '관리자 계정', icon: '🔑', permission: 'manageAdmins' },
 ];
 

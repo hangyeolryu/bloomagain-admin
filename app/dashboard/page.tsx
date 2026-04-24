@@ -175,7 +175,7 @@ export default function DashboardPage() {
               {alerts.map((alert) => (
                 <li key={alert.id}>
                   <Link
-                    href={alert.userId ? `/dashboard/users/${alert.userId}` : '/dashboard/alerts'}
+                    href={alert.userId ? `/dashboard/users/view?id=${alert.userId}` : '/dashboard/alerts'}
                     className="flex items-start gap-3 px-6 py-4 hover:bg-gray-50 transition-colors"
                   >
                     <Badge variant={getSeverityVariant(alert.severity)}>

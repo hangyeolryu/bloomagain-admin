@@ -42,9 +42,10 @@ export default function UserDetailClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState<UserActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
-  const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | null>(null);
+  const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | 'delete' | null>(null);
   const [reason, setReason] = useState('');
   const [acting, setActing] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   useEffect(() => {
     getUser(id).then((p) => {
@@ -76,6 +77,33 @@ export default function UserDetailClient({ id }: { id: string }) {
       }
       setModal(null);
       setReason('');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!profile) return;
+    setActing(true);
+    try {
+      const res = await fetch('/api/backend/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile.id }),
+      });
+      if (!res.ok) {
+        let message = `서버 오류 (${res.status})`;
+        try {
+          const data = await res.json() as { error?: string };
+          message = data.error ?? message;
+        } catch { /* response was not JSON */ }
+        throw new Error(message);
+      }
+      setModal(null);
+      setDeleteConfirmText('');
+      router.push('/dashboard/users');
+    } catch (err: unknown) {
+      alert(`삭제 실패: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setActing(false);
     }
@@ -161,6 +189,12 @@ export default function UserDetailClient({ id }: { id: string }) {
                   )}
                 </>
               )}
+              <button
+                onClick={() => { setDeleteConfirmText(''); setModal('delete'); }}
+                className="px-4 py-2 text-sm bg-gray-900 text-white rounded-xl hover:bg-black font-medium"
+              >
+                계정 삭제
+              </button>
             </div>
           )}
         </div>
@@ -294,7 +328,7 @@ export default function UserDetailClient({ id }: { id: string }) {
 
       {/* Action Modal */}
       <Modal
-        isOpen={!!modal}
+        isOpen={!!modal && modal !== 'delete'}
         onClose={() => { setModal(null); setReason(''); }}
         title={
           modal === 'block' ? '사용자 차단' :
@@ -338,6 +372,51 @@ export default function UserDetailClient({ id }: { id: string }) {
               }`}
             >
               {acting ? '처리 중...' : '확인'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Modal */}
+      <Modal
+        isOpen={modal === 'delete'}
+        onClose={() => { setModal(null); setDeleteConfirmText(''); }}
+        title="계정 영구 삭제"
+      >
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-red-800 mb-1">⚠️ 이 작업은 되돌릴 수 없습니다</p>
+            <p className="text-sm text-red-700">
+              Firebase Auth, Cloud SQL, Firestore에서 <strong>{profile.displayName}</strong> 계정이
+              완전히 삭제됩니다.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              확인을 위해 사용자 ID를 입력하세요
+            </label>
+            <p className="text-xs text-gray-500 font-mono mb-2">{profile.id}</p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="사용자 ID 입력..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setModal(null); setDeleteConfirmText(''); }}
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={acting || deleteConfirmText !== profile.id}
+              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gray-900 hover:bg-black transition-colors disabled:opacity-40"
+            >
+              {acting ? '삭제 중...' : '영구 삭제'}
             </button>
           </div>
         </div>

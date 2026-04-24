@@ -35,6 +35,14 @@ interface BackfillPayload {
   aiTrainingOptIn?: boolean;
 }
 
+/** True if Firestore reflects a completed NICE / identity check (fields may be written partially). */
+function isIdentityVerified(u: UserProfile): boolean {
+  if (u.identityVerified) return true;
+  if (u.identityVerificationStatus === 'verified') return true;
+  if (u.identityVerifiedAt) return true;
+  return false;
+}
+
 function buildBackfillPayload(u: UserProfile): BackfillPayload {
   const payload: BackfillPayload = {
     userId: u.id,
@@ -42,7 +50,7 @@ function buildBackfillPayload(u: UserProfile): BackfillPayload {
     username: u.legalName || u.displayName || u.id,
     ...(u.email ? { email: u.email } : {}),
     accountStatus: u.accountStatus ?? 'active',
-    verified: u.identityVerified ?? false,
+    verified: isIdentityVerified(u),
     ...(u.legalName         ? { verifiedName:    u.legalName }                       : {}),
     ...(u.legalBirthYear    ? { yearOfBirth:      u.legalBirthYear }                 : {}),
     ...(u.identityVerifiedAt ? { verifiedAt:      u.identityVerifiedAt.toISOString() } : {}),
@@ -216,7 +224,10 @@ export default function UsersPage() {
   }, [checkNewUsers]);
 
   // ── IntersectionObserver ──────────────────────────────────────────────────
+  // Must run after initial load: while `loading` is true we only render a spinner,
+  // so the sentinel is not mounted on the first effect pass ([] deps would never attach).
   useEffect(() => {
+    if (loading) return;
     const el = sentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
@@ -225,7 +236,7 @@ export default function UsersPage() {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [loading]);
 
   // ── Register single user in backend ──────────────────────────────────────
   const handleRegisterUser = async (u: UserProfile) => {
@@ -320,9 +331,9 @@ export default function UsersPage() {
     }
     if (statusFilter !== 'all') {
       if (statusFilter === 'verified') {
-        if (!u.identityVerified) return false;
+        if (!isIdentityVerified(u)) return false;
       } else if (statusFilter === 'unverified') {
-        if (u.identityVerified) return false;
+        if (isIdentityVerified(u)) return false;
       } else if (statusFilter === 'blocked') {
         if (!u.isBlacklisted && u.accountStatus !== 'blocked') return false;
       } else if (statusFilter === 'pg_missing') {
@@ -459,7 +470,7 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5">
-                      {u.identityVerified ? (
+                      {isIdentityVerified(u) ? (
                         <div>
                           <div className="flex items-center gap-1">
                             <span className="text-sm text-gray-900">{u.legalName ?? '-'}</span>

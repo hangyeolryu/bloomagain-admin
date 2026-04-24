@@ -144,7 +144,7 @@ export default function MessagesPage() {
                       <span>사유: {msg.reason}</span>
                       <span>·</span>
                       <Link
-                        href={`/dashboard/users/${msg.userId}`}
+                        href={`/dashboard/users/view?id=${msg.userId}`}
                         className="font-mono text-blue-600 hover:underline"
                       >
                         👤 {msg.userId.slice(0, 12)}...
