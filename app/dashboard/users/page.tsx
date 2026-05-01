@@ -96,6 +96,36 @@ async function batchBackfillUsersInBackend(
   return res.json();
 }
 
+interface SetSubscriptionResponse {
+  user_id: string;
+  tier: string;
+  expires_at: string | null;
+  founding_member_number: number | null;
+  error?: string;
+}
+
+/**
+ * Admin override — flip a user between FREE and PREMIUM for QA testing.
+ * The backend does NOT touch founding_member_number, so this never consumes
+ * a launch-cohort slot.
+ */
+async function setSubscriptionInBackend(
+  userId: string,
+  tier: 'PREMIUM' | 'FREE',
+  expiresAt?: string,
+): Promise<SetSubscriptionResponse> {
+  const res = await fetch('/api/backend/set-subscription', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, tier, expiresAt }),
+  });
+  const data = (await res.json()) as SetSubscriptionResponse;
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to set subscription');
+  }
+  return data;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getStatusBadge(user: UserProfile) {
   if (user.isBlacklisted) return <Badge variant="red">차단됨</Badge>;
@@ -105,22 +135,49 @@ function getStatusBadge(user: UserProfile) {
   return <Badge variant="green">활성</Badge>;
 }
 
-function PgBadge({ status, onRegister }: { status: PgStatus | undefined; onRegister: () => void }) {
+function PgBadge({
+  status,
+  onRegister,
+  onTogglePlus,
+  togglingPlus,
+}: {
+  status: PgStatus | undefined;
+  onRegister: () => void;
+  onTogglePlus: () => void;
+  togglingPlus: boolean;
+}) {
   if (!status) {
     return <span className="text-xs text-gray-300 animate-pulse">확인 중…</span>;
   }
   if (status.exists) {
-    const tier = status.subscription_tier;
+    const tier = (status.subscription_tier || 'FREE').toUpperCase();
+    const isPlus = tier === 'PREMIUM';
     return (
       <div className="flex flex-col gap-0.5">
         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit">
           <span>DB ✓</span>
         </span>
-        {tier && tier !== 'FREE' && (
+        {isPlus && (
           <span className="inline-flex text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full w-fit">
-            {tier}
+            PREMIUM
           </span>
         )}
+        <button
+          onClick={onTogglePlus}
+          disabled={togglingPlus}
+          title={
+            isPlus
+              ? '테스트용 Plus 권한 해제 (Founding number 변경 없음)'
+              : '테스트용 Plus 권한 부여 (Founding number 변경 없음)'
+          }
+          className={`text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors w-fit disabled:opacity-50 ${
+            isPlus
+              ? 'text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100'
+              : 'text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100'
+          }`}
+        >
+          {togglingPlus ? '처리 중…' : isPlus ? 'Plus 해제' : 'Plus 부여'}
+        </button>
       </div>
     );
   }
@@ -170,6 +227,10 @@ export default function UsersPage() {
   const [bulkRegistering, setBulkRegistering] = useState(false);
   // Track which UIDs we've already sent to batch-check so we don't re-fetch on render.
   const checkedUidsRef = useRef<Set<string>>(new Set());
+
+  // Per-user Plus toggle in-flight state, keyed by uid. Keeps the button busy
+  // for that one row while letting other rows act independently.
+  const [togglingPlusUids, setTogglingPlusUids] = useState<Set<string>>(new Set());
 
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -286,6 +347,47 @@ export default function UsersPage() {
     checkedUidsRef.current.clear();
     setPgStatus({});
     await checkNewUsers(allUsers);
+  };
+
+  // ── Toggle Plus subscription for QA testing (no founding-member impact) ──
+  const handleTogglePlus = async (u: UserProfile) => {
+    const current = (pgStatus[u.id]?.subscription_tier || 'FREE').toUpperCase();
+    const next: 'PREMIUM' | 'FREE' = current === 'PREMIUM' ? 'FREE' : 'PREMIUM';
+
+    // Confirm — Plus 부여는 가벼운 토글이지만 prod 데이터 위에서 작동하므로
+    // 이름 한 번 더 보여주는 게 안전.
+    const confirmed = window.confirm(
+      next === 'PREMIUM'
+        ? `${u.displayName ?? u.id}님께 Plus 권한을 부여하시겠어요?\n(Founding member number는 변경되지 않습니다.)`
+        : `${u.displayName ?? u.id}님의 Plus 권한을 해제하시겠어요?`,
+    );
+    if (!confirmed) return;
+
+    setTogglingPlusUids((prev) => {
+      const set = new Set(prev);
+      set.add(u.id);
+      return set;
+    });
+    try {
+      const result = await setSubscriptionInBackend(u.id, next);
+      setPgStatus((prev) => ({
+        ...prev,
+        [u.id]: {
+          ...(prev[u.id] || { exists: true }),
+          exists: true,
+          subscription_tier: result.tier,
+        },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(`Plus 권한 변경 실패: ${msg}`);
+    } finally {
+      setTogglingPlusUids((prev) => {
+        const set = new Set(prev);
+        set.delete(u.id);
+        return set;
+      });
+    }
   };
 
   // ── Moderation actions ────────────────────────────────────────────────────
@@ -502,6 +604,8 @@ export default function UsersPage() {
                       <PgBadge
                         status={pgStatus[u.id]}
                         onRegister={() => handleRegisterUser(u)}
+                        onTogglePlus={() => handleTogglePlus(u)}
+                        togglingPlus={togglingPlusUids.has(u.id)}
                       />
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
