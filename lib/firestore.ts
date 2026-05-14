@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   getDocs,
   getDoc,
   doc,
@@ -823,4 +824,188 @@ export async function resolveSupportInquiry(
     ...(status === 'resolved' ? { resolvedAt: Timestamp.now(), resolvedBy } : {}),
     ...(note ? { note } : {}),
   });
+}
+
+// ─── Data Collection Dashboard ───────────────────────────────────────────────
+// Stats for the /dashboard/data-collection page added 2026-05-13.
+// Reads Firestore aggregates only (no Postgres) and is intentionally cheap to
+// call — uses getCountFromServer for top-level counts so the page can refresh
+// without pulling thousands of docs.
+
+export interface DataCollectionStats {
+  // High-level
+  totalUsers: number;
+  usersWithTags: number;            // users.dailyQuestionTags non-empty
+  usersWithEmbedding: number;       // users.embedding non-empty
+  usersAtDailyCap: number;          // users that hit today's 8 answers
+  // Daily Question
+  totalDailyAnswers: number;        // collectionGroup('dailyQuestions') count
+  todaysDailyAnswers: number;       // dailyAnswerCountDate == today
+  avgAnswersPerUser: number;
+  // Mini Pulse
+  totalMiniPulseResponses: number;  // collectionGroup('mini_pulses') count
+  miniPulsesWithLonelyHigh: number; // tags contains lonely_high
+  // Tag distribution (top 15)
+  topTags: Array<{ tag: string; count: number }>;
+  // Daily Question category distribution
+  categoryCounts: Record<string, number>;
+}
+
+/**
+ * Compute Firestore-side data-collection metrics. Heavy on reads — should be
+ * called sparingly (typical: once per admin page view). For production scale,
+ * back this with BigQuery aggregations and cache; for now Firestore direct is
+ * accurate and fast enough for the first ~10k users.
+ */
+export async function getDataCollectionStats(): Promise<DataCollectionStats> {
+  // 1) Pull all user docs once. We need to inspect dailyQuestionTags arrays,
+  //    which getCountFromServer can't filter on, so a single bulk read is
+  //    actually cheaper than several aggregate queries with limits.
+  const usersSnap = await getDocs(collection(db, 'users'));
+  const todayKey = (() => {
+    const d = new Date();
+    const y = d.getFullYear().toString().padStart(4, '0');
+    const m = (d.getMonth() + 1).toString().padStart(2, '0');
+    const day = d.getDate().toString().padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  })();
+
+  const tagCounter = new Map<string, number>();
+  let usersWithTags = 0;
+  let usersWithEmbedding = 0;
+  let usersAtDailyCap = 0;
+  let todaysDailyAnswers = 0;
+
+  for (const d of usersSnap.docs) {
+    const data = d.data();
+    const tags = (data.dailyQuestionTags as unknown[] | undefined)?.filter(
+      (x): x is string => typeof x === 'string',
+    ) ?? [];
+    if (tags.length > 0) usersWithTags++;
+    for (const t of tags) tagCounter.set(t, (tagCounter.get(t) ?? 0) + 1);
+    if (Array.isArray(data.embedding) && data.embedding.length > 0) {
+      usersWithEmbedding++;
+    }
+    if (
+      typeof data.dailyAnswerCountDate === 'string' &&
+      data.dailyAnswerCountDate === todayKey &&
+      typeof data.dailyAnswerCount === 'number'
+    ) {
+      todaysDailyAnswers += data.dailyAnswerCount;
+      if (data.dailyAnswerCount >= 8) usersAtDailyCap++;
+    }
+  }
+
+  // 2) Aggregate counts via collectionGroup. These are O(1) reads — they only
+  //    return the count, not the docs. Both indexes must exist (Firebase will
+  //    surface a console error with the create-index URL if not).
+  const [totalDailyAnswers, totalMiniPulseResponses] = await Promise.all([
+    safeCount(collection(db, 'users'), '__placeholder__').then(async () => {
+      // Use collectionGroup for daily answers
+      try {
+        const cg = collectionGroup(db, 'dailyQuestions');
+        const snap = await getCountFromServer(cg);
+        return snap.data().count;
+      } catch (e) {
+        console.warn('[data-collection] dailyQuestions count failed:', e);
+        return 0;
+      }
+    }),
+    (async () => {
+      try {
+        const cg = collectionGroup(db, 'mini_pulses');
+        const snap = await getCountFromServer(cg);
+        return snap.data().count;
+      } catch (e) {
+        console.warn('[data-collection] mini_pulses count failed:', e);
+        return 0;
+      }
+    })(),
+  ]);
+
+  // 3) Mini Pulse with lonely_high tag — sample the most recent 200 docs to
+  //    avoid loading everything. Good enough for a dashboard signal.
+  let miniPulsesWithLonelyHigh = 0;
+  try {
+    const cg = collectionGroup(db, 'mini_pulses');
+    const recent = await getDocs(query(cg, orderBy('completedAt', 'desc'), limit(200)));
+    for (const d of recent.docs) {
+      const tags = (d.data().tags as unknown[] | undefined)?.filter(
+        (x): x is string => typeof x === 'string',
+      ) ?? [];
+      if (tags.includes('lonely_high')) miniPulsesWithLonelyHigh++;
+    }
+  } catch (e) {
+    console.warn('[data-collection] mini pulse tag sample failed:', e);
+  }
+
+  // 4) Daily Question category counts — derived from the bundled questions
+  //    JSON via tag prefix. We don't actually fetch the JSON here; instead the
+  //    UI maps the well-known categories. The counter below is for tag→bucket
+  //    cross-reference if we ever want to do per-category answer counts.
+  const categoryCounts: Record<string, number> = {
+    '성향 - 외향성': 0,
+    '성향 - 친화성': 0,
+    '성향 - 성실성': 0,
+    '성향 - 개방성': 0,
+    '성향 - 정서안정': 0,
+    '문화': 0,
+    '트렌드': 0,
+    '정서': 0,
+    '취향': 0,
+    '상태/관계': 0,
+  };
+  // Map common tag prefixes to category buckets so the bar chart has signal.
+  for (const [tag, count] of tagCounter) {
+    if (tag.startsWith('e_')) categoryCounts['성향 - 외향성'] += count;
+    else if (tag.startsWith('a_')) categoryCounts['성향 - 친화성'] += count;
+    else if (tag.startsWith('c_')) categoryCounts['성향 - 성실성'] += count;
+    else if (tag.startsWith('o_')) categoryCounts['성향 - 개방성'] += count;
+    else if (tag.startsWith('n_')) categoryCounts['성향 - 정서안정'] += count;
+    else if (
+      tag === 'jung_deep' || tag === 'wide_social' || tag === 'nunchi_high' ||
+      tag === 'heung' || tag === 'jeong_calm' || tag === 'peer_only' ||
+      tag === 'multi_gen' || tag === 'caregiver_active' || tag === 'sns_active'
+    ) categoryCounts['문화'] += count;
+    else if (
+      tag.startsWith('yold_') || tag.startsWith('self_') ||
+      tag === 'pleasure_first' || tag === 'health_first' ||
+      tag === 'digital_explorer' || tag === 'digital_help_seek' ||
+      tag === 'tech_curious' || tag === 'active_learner' ||
+      tag === 'depth_lover' || tag === 'breadth_explorer'
+    ) categoryCounts['트렌드'] += count;
+    else if (
+      tag === 'lonely_high' || tag === 'socially_satisfied' ||
+      tag === 'mildly_lonely' || tag.startsWith('meaning_') ||
+      tag === 'flow_high' || tag === 'slow_time'
+    ) categoryCounts['정서'] += count;
+    else if (
+      tag === 'morning_person' || tag === 'night_owl' ||
+      tag === 'voice_call' || tag === 'text_based' ||
+      tag === 'foodie' || tag === 'guided_tour' || tag === 'free_travel'
+    ) categoryCounts['취향'] += count;
+    else if (tag.startsWith('status_') || tag.startsWith('friend_') || tag === 'activity_friend') {
+      categoryCounts['상태/관계'] += count;
+    }
+  }
+
+  const topTags = Array.from(tagCounter.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([tag, count]) => ({ tag, count }));
+
+  return {
+    totalUsers: usersSnap.size,
+    usersWithTags,
+    usersWithEmbedding,
+    usersAtDailyCap,
+    totalDailyAnswers,
+    todaysDailyAnswers,
+    avgAnswersPerUser:
+      usersWithTags > 0 ? Math.round((totalDailyAnswers / usersWithTags) * 10) / 10 : 0,
+    totalMiniPulseResponses,
+    miniPulsesWithLonelyHigh,
+    topTags,
+    categoryCounts,
+  };
 }

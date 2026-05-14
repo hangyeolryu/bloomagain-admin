@@ -16,6 +16,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: '대시보드', icon: '📊' },
+  { href: '/dashboard/data-collection', label: '데이터 수집 현황', icon: '🌱' },
   { href: '/dashboard/users', label: '사용자 관리', icon: '👥', permission: 'viewUsers' },
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
   { href: '/dashboard/reports', label: '신고 관리', icon: '🚨' },
