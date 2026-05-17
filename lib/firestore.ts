@@ -1158,3 +1158,128 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     categoryCounts,
   };
 }
+
+// ─── Onboarding Funnel ──────────────────────────────────────────────────────
+// Track where users drop off during onboarding.
+//
+// Terms-agreement consents live in the backend Postgres (not Firestore), so
+// the pre-NICE step boundary isn't observable here — use the GA4 funnel
+// (`onboarding_page_view` events) for that resolution. This function buckets
+// users by the *Firestore-visible* state, which is plenty for "who got
+// stuck mid-flow and never came back".
+
+export type OnboardingStage =
+  | 'signed_up'           // Firestore doc exists, no NICE, no profile
+  | 'nice_done'           // identityVerified + legalName, but profile blank
+  | 'profile_partial'     // some profile fields but missing name OR interests
+  | 'completed';          // displayName + (interests OR city) — usable account
+
+export interface OnboardingDropoff {
+  uid: string;
+  displayName?: string;
+  email?: string;
+  stage: OnboardingStage;
+  createdAt?: Date;
+  updatedAt?: Date;
+  daysSinceCreated: number;
+}
+
+export interface OnboardingFunnel {
+  totalSignedUp: number;
+  bySignedUp: number;
+  byNiceDone: number;
+  byProfilePartial: number;
+  byCompleted: number;
+  // % of total at each stage (sum = 100)
+  pctSignedUp: number;
+  pctNiceDone: number;
+  pctProfilePartial: number;
+  pctCompleted: number;
+  // Drop-offs created in last 7 days who never completed — sorted oldest
+  // first so we surface the longest-stalled people on top.
+  recentDropoffs: OnboardingDropoff[];
+}
+
+function classifyOnboardingStage(u: UserProfile): OnboardingStage {
+  const niceDone =
+    u.identityVerified === true || !!u.identityVerifiedAt || !!u.legalName;
+  const hasName = !!u.displayName && u.displayName.trim().length > 0;
+  const hasProfileBits = !!u.city || (u.interests && u.interests.length > 0);
+
+  if (!niceDone) return 'signed_up';
+  if (!hasName) return 'profile_partial';
+  if (!hasProfileBits) return 'profile_partial';
+  return 'completed';
+}
+
+export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
+  const usersSnap = await getDocs(collection(db, 'users'));
+  const total = usersSnap.size;
+
+  let signedUp = 0;
+  let niceDone = 0;
+  let profilePartial = 0;
+  let completed = 0;
+  const recentDropoffs: OnboardingDropoff[] = [];
+
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  for (const d of usersSnap.docs) {
+    const data = d.data();
+    const profile: UserProfile = {
+      id: d.id,
+      displayName: data.displayName ?? '',
+      email: data.email,
+      identityVerified: data.identityVerified,
+      identityVerificationStatus: data.identityVerificationStatus,
+      identityVerifiedAt: data.identityVerifiedAt?.toDate?.(),
+      legalName: data.legalName,
+      city: data.city,
+      district: data.district,
+      interests: data.interests,
+      createdAt: data.createdAt?.toDate?.(),
+      updatedAt: data.updatedAt?.toDate?.(),
+    };
+
+    const stage = classifyOnboardingStage(profile);
+    if (stage === 'signed_up') signedUp++;
+    else if (stage === 'nice_done') niceDone++;
+    else if (stage === 'profile_partial') profilePartial++;
+    else completed++;
+
+    // Surface non-completed users who signed up in the last week.
+    if (stage !== 'completed' && profile.createdAt) {
+      const createdAtMs = profile.createdAt.getTime();
+      if (createdAtMs >= sevenDaysAgo) {
+        recentDropoffs.push({
+          uid: profile.id,
+          displayName: profile.displayName,
+          email: profile.email,
+          stage,
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt,
+          daysSinceCreated: Math.floor((Date.now() - createdAtMs) / (24 * 60 * 60 * 1000)),
+        });
+      }
+    }
+  }
+
+  // Oldest first — longest-stalled people are the most actionable
+  // ("they've been stuck for 6 days, time to reach out").
+  recentDropoffs.sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0));
+
+  const pct = (n: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : 0);
+
+  return {
+    totalSignedUp: total,
+    bySignedUp: signedUp,
+    byNiceDone: niceDone,
+    byProfilePartial: profilePartial,
+    byCompleted: completed,
+    pctSignedUp: pct(signedUp),
+    pctNiceDone: pct(niceDone),
+    pctProfilePartial: pct(profilePartial),
+    pctCompleted: pct(completed),
+    recentDropoffs,
+  };
+}
