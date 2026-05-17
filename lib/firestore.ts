@@ -826,6 +826,145 @@ export async function resolveSupportInquiry(
   });
 }
 
+// ─── Matching Monitoring Dashboard ──────────────────────────────────────────
+// Stats for the /dashboard/matching page added 2026-05-15.
+// Surfaces the entire wave-funnel (matched → wave sent → accepted →
+// conversation) plus per-user activity so we can see whether free + Plus
+// users are actually engaging with matching, not just receiving 200 OK
+// responses from the backend.
+
+export interface MatchingStats {
+  // Wave funnel
+  totalWaves: number;
+  pendingWaves: number;
+  acceptedWaves: number;
+  declinedWaves: number;
+  // Derived
+  acceptanceRate: number;          // accepted / (accepted + declined)
+  responseRate: number;            // (accepted + declined) / totalWaves
+  conversationStartRate: number;   // conversations / acceptedWaves
+  // Conversation
+  totalConversations: number;
+  conversationsLast7d: number;
+  // Wave throughput
+  wavesLast24h: number;
+  wavesLast7d: number;
+  // Top active senders (anonymized — first 8 chars of UID)
+  topSenders: Array<{ uidPrefix: string; count: number }>;
+  topReceivers: Array<{ uidPrefix: string; count: number }>;
+  // Match candidate coverage — % of users that have an embedding (= eligible
+  // to appear in someone's match list)
+  usersWithEmbedding: number;
+  totalUsers: number;
+}
+
+/**
+ * Compute wave-funnel + conversation stats. Pulls waves and conversations
+ * collections directly (no aggregate-only counts — we need to bucket by
+ * status). For ~10K waves this is fine; above that, push these into BigQuery
+ * scheduled views and cache the result.
+ */
+export async function getMatchingStats(): Promise<MatchingStats> {
+  const now = new Date();
+  const oneDayAgo = Timestamp.fromDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  const sevenDaysAgo = Timestamp.fromDate(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+
+  // Pull waves once; bucket client-side. status counts + funnel + top
+  // senders/receivers all derive from this single read.
+  const wavesSnap = await getDocs(collection(db, 'waves'));
+  let totalWaves = 0;
+  let pending = 0;
+  let accepted = 0;
+  let declined = 0;
+  let wavesLast24h = 0;
+  let wavesLast7d = 0;
+  const senderCount = new Map<string, number>();
+  const receiverCount = new Map<string, number>();
+
+  for (const d of wavesSnap.docs) {
+    const w = d.data();
+    totalWaves++;
+    const status = (w.status as string | undefined) ?? 'pending';
+    if (status === 'pending') pending++;
+    else if (status === 'accepted') accepted++;
+    else if (status === 'declined') declined++;
+
+    const sent = w.sentAt as Timestamp | undefined;
+    if (sent) {
+      if (sent.toMillis() >= oneDayAgo.toMillis()) wavesLast24h++;
+      if (sent.toMillis() >= sevenDaysAgo.toMillis()) wavesLast7d++;
+    }
+
+    const from = (w.fromUserId as string | undefined) ?? '';
+    const to = (w.toUserId as string | undefined) ?? '';
+    if (from) senderCount.set(from, (senderCount.get(from) ?? 0) + 1);
+    if (to) receiverCount.set(to, (receiverCount.get(to) ?? 0) + 1);
+  }
+
+  // Conversations
+  const [totalConvosCount, convosLast7dCount] = await Promise.all([
+    safeCount(collection(db, 'conversations'), 'conversations'),
+    safeCount(
+      query(
+        collection(db, 'conversations'),
+        where('createdAt', '>=', sevenDaysAgo),
+      ),
+      'conversations_7d',
+    ),
+  ]);
+
+  // Embedding coverage — how many users could realistically appear in match
+  // results today (their tag/profile has been processed by the Cloud Function
+  // and synced to backend pgvector).
+  const usersSnap = await getDocs(collection(db, 'users'));
+  let usersWithEmbedding = 0;
+  for (const d of usersSnap.docs) {
+    const data = d.data();
+    if (Array.isArray(data.embedding) && data.embedding.length > 0) {
+      usersWithEmbedding++;
+    }
+  }
+
+  // Derived ratios — guard against divide-by-zero so empty datasets show 0,
+  // not NaN.
+  const acceptanceDenom = accepted + declined;
+  const acceptanceRate =
+    acceptanceDenom > 0 ? Math.round((accepted / acceptanceDenom) * 100) : 0;
+  const responseRate =
+    totalWaves > 0 ? Math.round((acceptanceDenom / totalWaves) * 100) : 0;
+  const conversationStartRate =
+    accepted > 0 ? Math.round((totalConvosCount / accepted) * 100) : 0;
+
+  // Anonymize top sender/receiver UIDs — admin doesn't need to see who, just
+  // the distribution shape (concentrated few power users vs even spread).
+  const topSenders = Array.from(senderCount.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([uid, count]) => ({ uidPrefix: uid.slice(0, 8), count }));
+  const topReceivers = Array.from(receiverCount.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([uid, count]) => ({ uidPrefix: uid.slice(0, 8), count }));
+
+  return {
+    totalWaves,
+    pendingWaves: pending,
+    acceptedWaves: accepted,
+    declinedWaves: declined,
+    acceptanceRate,
+    responseRate,
+    conversationStartRate,
+    totalConversations: totalConvosCount,
+    conversationsLast7d: convosLast7dCount,
+    wavesLast24h,
+    wavesLast7d,
+    topSenders,
+    topReceivers,
+    usersWithEmbedding,
+    totalUsers: usersSnap.size,
+  };
+}
+
 // ─── Data Collection Dashboard ───────────────────────────────────────────────
 // Stats for the /dashboard/data-collection page added 2026-05-13.
 // Reads Firestore aggregates only (no Postgres) and is intentionally cheap to
