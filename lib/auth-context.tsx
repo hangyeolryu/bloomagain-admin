@@ -16,16 +16,56 @@ import { type AdminRole, type Permission, can } from '@/types';
 // Auth source of truth: admins/{email} Firestore collection only.
 // Doc must exist with active !== false. role field sets permission level.
 async function getAdminRole(firebaseUser: User): Promise<AdminRole | null> {
-  const email = firebaseUser.email?.toLowerCase() || '';
+  // Diagnostic dump — Firebase Auth is dropping email somewhere; log every
+  // surface where we might find it so we can see which one's populated.
+  console.log('[getAdminRole] firebaseUser:', {
+    uid: firebaseUser.uid,
+    email: firebaseUser.email,
+    displayName: firebaseUser.displayName,
+    providerData: firebaseUser.providerData,
+  });
+
+  // Try every possible email source in order of preference.
+  let email = (
+    firebaseUser.email
+    || firebaseUser.providerData.find((p) => p.email)?.email
+    || ''
+  ).toLowerCase();
+
+  if (!email) {
+    // Final fallback: pull email from the ID token claims directly.
+    try {
+      const tokenResult = await firebaseUser.getIdTokenResult(true);
+      console.log('[getAdminRole] id-token claims:', tokenResult.claims);
+      const claimEmail = tokenResult.claims.email;
+      if (typeof claimEmail === 'string') email = claimEmail.toLowerCase();
+    } catch (err) {
+      console.error('[getAdminRole] getIdTokenResult failed:', err);
+    }
+  }
+
+  if (!email) {
+    console.warn('[getAdminRole] no email found on firebaseUser, providerData, or ID token claims — aborting lookup');
+    return null;
+  }
   try {
     const adminDoc = await getDoc(doc(db, 'admins', email));
-    if (adminDoc.exists() && adminDoc.data()?.active !== false) {
-      return (adminDoc.data()?.role as AdminRole) ?? 'viewer';
+    if (!adminDoc.exists()) {
+      console.warn(`[getAdminRole] admins/${email} doc does not exist`);
+      return null;
     }
-  } catch {
-    // Firestore rules may reject
+    const data = adminDoc.data();
+    if (data?.active === false) {
+      console.warn(`[getAdminRole] admins/${email} is disabled (active: false)`);
+      return null;
+    }
+    return (data?.role as AdminRole) ?? 'viewer';
+  } catch (err) {
+    // Most common causes: bad API key / referrer restriction / network /
+    // Firestore rules. Logging the raw error so we can stop guessing.
+    console.error(`[getAdminRole] Firestore read failed for admins/${email}:`, err);
+    return null;
   }
-  return null;
 }
 
 interface AuthContextType {
@@ -70,6 +110,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
+    // GoogleAuthProvider's constructor only auto-adds the 'profile' scope.
+    // Without explicitly requesting 'email', Google's id_token omits the
+    // email claim — which breaks our admins/{email} lookup. The senior is
+    // signed in but admin role resolution fails because we never see their
+    // email. Add it explicitly so the OAuth consent screen requests it and
+    // the resulting token carries it.
+    provider.addScope('email');
     const credential = await signInWithPopup(auth, provider);
     const r = await getAdminRole(credential.user);
     if (!r) {

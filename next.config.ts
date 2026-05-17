@@ -15,6 +15,21 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // Allow Firebase Auth's signInWithPopup to detect when the OAuth popup
+  // closes. Default Next.js sets COOP=same-origin which blocks the
+  // window.closed poll → popup hangs even after Google sign-in succeeds.
+  // `same-origin-allow-popups` keeps the same-origin isolation for the main
+  // window but lets us read .closed on popups we opened ourselves.
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
