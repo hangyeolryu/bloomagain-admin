@@ -93,9 +93,19 @@ export async function getUsers(
   pageSize = 30,
   cursor?: QueryDocumentSnapshot,
 ): Promise<PaginatedResult<UserProfile>> {
+  // Newest first by sign-up time, then by last-touch as tiebreaker so users
+  // created in the same batch sort with the most recently active on top.
+  // Requires a composite (createdAt desc, updatedAt desc) Firestore index —
+  // Firebase will print a console link on first run if it's missing.
+  //
+  // NOTE: docs without a createdAt field are excluded from results. Old
+  // hand-crafted user docs predating sign-up timestamping won't appear; if
+  // we ever need to surface them, add a migration job that backfills
+  // createdAt from auth.createdAt or similar.
   const q = query(
     collection(db, 'users'),
-    orderBy('__name__'),
+    orderBy('createdAt', 'desc'),
+    orderBy('updatedAt', 'desc'),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),
   );
