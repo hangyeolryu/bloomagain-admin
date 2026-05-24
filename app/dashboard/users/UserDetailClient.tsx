@@ -42,10 +42,16 @@ export default function UserDetailClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState<UserActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
-  const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | 'delete' | null>(null);
+  const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | 'delete' | 'grantFounding' | null>(null);
   const [reason, setReason] = useState('');
   const [acting, setActing] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [grantResult, setGrantResult] = useState<{
+    foundingNumber: number | null;
+    trialEnd: string | null;
+    action: string;
+    assignedNow: boolean;
+  } | null>(null);
 
   useEffect(() => {
     getUser(id).then((p) => {
@@ -77,6 +83,54 @@ export default function UserDetailClient({ id }: { id: string }) {
       }
       setModal(null);
       setReason('');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const handleGrantFounding = async () => {
+    if (!profile) return;
+    setActing(true);
+    try {
+      const res = await fetch('/api/backend/grant-founding-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile.id }),
+      });
+      const data = await res.json() as {
+        error?: string;
+        founding_member_number?: number | null;
+        trial_end?: string | null;
+        trial_action?: string;
+        assigned_now?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? `서버 오류 (${res.status})`);
+      }
+      setGrantResult({
+        foundingNumber: data.founding_member_number ?? null,
+        trialEnd: data.trial_end ?? null,
+        action: data.trial_action ?? 'unknown',
+        assignedNow: data.assigned_now ?? false,
+      });
+      // Reflect the new badge on the open profile so the operator sees it
+      // without a page refresh. The backend has already mirrored to Firestore.
+      setProfile((p) =>
+        p
+          ? {
+              ...p,
+              founding_member_number:
+                data.founding_member_number ?? p.founding_member_number,
+              subscription_tier:
+                data.trial_action === 'granted_full' ||
+                data.trial_action === 'extended'
+                  ? 'PREMIUM'
+                  : p.subscription_tier,
+            }
+          : p,
+      );
+    } catch (err: unknown) {
+      alert(`부여 실패: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setActing(false);
     }
@@ -143,6 +197,12 @@ export default function UserDetailClient({ id }: { id: string }) {
               {isSuspended && <Badge variant="orange">정지됨</Badge>}
               {!isBlocked && !isSuspended && <Badge variant="green">활성</Badge>}
               {profile.isAdmin && <Badge variant="blue">관리자</Badge>}
+              {profile.founding_member_number != null && (
+                <Badge variant="blue">창립 #{profile.founding_member_number}</Badge>
+              )}
+              {profile.subscription_tier === 'PREMIUM' && (
+                <Badge variant="green">Premium</Badge>
+              )}
             </div>
             <p className="text-sm text-gray-500 mt-1 font-mono">{profile.id}</p>
             <p className="text-sm text-gray-500 mt-1">
@@ -189,6 +249,22 @@ export default function UserDetailClient({ id }: { id: string }) {
                   )}
                 </>
               )}
+              <button
+                onClick={() => { setGrantResult(null); setModal('grantFounding'); }}
+                disabled={!profile.identityVerified}
+                title={
+                  !profile.identityVerified
+                    ? 'NICE 본인인증을 마친 사용자만 부여 가능'
+                    : profile.founding_member_number != null
+                      ? `현재 #${profile.founding_member_number} — 다시 호출하면 trial 갱신`
+                      : '창립 회원 번호(1..500) + 6개월 Premium trial 부여'
+                }
+                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {profile.founding_member_number != null
+                  ? 'Trial 갱신'
+                  : '창립 회원 부여'}
+              </button>
               <button
                 onClick={() => { setDeleteConfirmText(''); setModal('delete'); }}
                 className="px-4 py-2 text-sm bg-gray-900 text-white rounded-xl hover:bg-black font-medium"
@@ -419,6 +495,97 @@ export default function UserDetailClient({ id }: { id: string }) {
               {acting ? '삭제 중...' : '영구 삭제'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Founding-member grant Modal */}
+      <Modal
+        isOpen={modal === 'grantFounding'}
+        onClose={() => { setModal(null); setGrantResult(null); }}
+        title={
+          profile.founding_member_number != null
+            ? '창립 회원 trial 갱신'
+            : '창립 회원 부여'
+        }
+      >
+        <div className="space-y-4">
+          {grantResult ? (
+            // After-action result view
+            <>
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-1.5">
+                <p className="text-sm font-semibold text-indigo-900">
+                  {grantResult.action === 'cap_reached'
+                    ? '⚠️ 창립 회원 정원 도달'
+                    : grantResult.assignedNow
+                      ? `🎉 창립 #${grantResult.foundingNumber} 부여 완료`
+                      : `ℹ️ 이미 #${grantResult.foundingNumber} — trial만 처리`}
+                </p>
+                <p className="text-xs text-indigo-800">
+                  처리 결과: <span className="font-mono">{grantResult.action}</span>
+                </p>
+                {grantResult.trialEnd && (
+                  <p className="text-xs text-indigo-800">
+                    Trial 종료: {new Date(grantResult.trialEnd).toLocaleString('ko-KR')}
+                  </p>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">
+                Postgres + Firestore 모두 반영되었습니다. 사용자 앱은 다음 새로고침에서 변경을 봅니다.
+              </p>
+              <button
+                onClick={() => { setModal(null); setGrantResult(null); }}
+                className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gray-900 hover:bg-black"
+              >
+                확인
+              </button>
+            </>
+          ) : (
+            // Pre-action confirmation view
+            <>
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                <p className="text-sm font-semibold text-indigo-900 mb-1">
+                  {profile.founding_member_number != null
+                    ? `현재 창립 #${profile.founding_member_number} 보유 중`
+                    : '창립 회원 슬롯 1개 소비'}
+                </p>
+                <p className="text-sm text-indigo-800 leading-relaxed">
+                  {profile.founding_member_number != null ? (
+                    <>
+                      이미 부여된 번호는 그대로 유지되고, 6개월 Premium trial이 <strong>현재 시각 + 180일</strong>로 갱신됩니다.
+                      기존 trial이 더 오래 남아있으면 변경되지 않습니다.
+                    </>
+                  ) : (
+                    <>
+                      <strong>{profile.displayName}</strong>에게 1..500 중 다음 번호와 <strong>6개월 Premium trial</strong>이 부여됩니다.
+                      Trial 시작 시점은 <strong>현재 시각</strong> 기준이며, NICE 인증 시점이 아닙니다 (out-of-band 백필).
+                    </>
+                  )}
+                </p>
+              </div>
+              <p className="text-xs text-gray-500">
+                NICE 인증 완료 시점: {profile.identityVerifiedAt ? formatDate(profile.identityVerifiedAt) : '-'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setModal(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleGrantFounding}
+                  disabled={acting}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {acting
+                    ? '처리 중...'
+                    : profile.founding_member_number != null
+                      ? 'Trial 갱신'
+                      : '부여하기'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>

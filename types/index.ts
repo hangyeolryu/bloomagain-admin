@@ -57,6 +57,13 @@ export interface UserProfile {
   identityVerifiedAt?: Date;
   legalName?: string;
   legalBirthYear?: number;
+  // Launch-cohort badge + subscription (mirrored from Cloud SQL via the
+  // FastAPI backend; snake_case to match the backend's Firestore writer).
+  // founding_member_number is permanent once assigned (1..500); subscription_tier
+  // reflects PREMIUM trial / paid / patron state, expiring automatically when
+  // the backend's expires_at passes (no client-side cleanup needed).
+  founding_member_number?: number;
+  subscription_tier?: 'FREE' | 'PREMIUM';
 }
 
 export interface Circle {
