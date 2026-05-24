@@ -23,6 +23,7 @@ import {
   increment,
   documentId,
   getCountFromServer,
+  writeBatch,
 } from 'firebase/firestore';
 
 // Cursor-based pagination result
@@ -31,7 +32,7 @@ export type PaginatedResult<T> = {
   lastDoc: QueryDocumentSnapshot | null;
 };
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus, SupportInquiry, SupportInquiryStatus } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus, SupportInquiry, SupportInquiryStatus, StreetInterview } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -257,7 +258,62 @@ export async function unblockCircle(id: string) {
 }
 
 export async function deleteCircle(id: string) {
-  await deleteDoc(doc(db, 'circles', id));
+  // Cascade-delete subcollections BEFORE the root doc so a mid-flight
+  // failure leaves something we can retry, not an orphaned subcollection
+  // with no parent. Firestore doesn't natively cascade — every layer of
+  // the tree has to be walked explicitly.
+  //
+  // Tree:
+  //   circles/{id}
+  //     └─ posts/{pid}
+  //          └─ comments/{cid}    (leaf)
+  //
+  // Without this, posts from a deleted circle keep surfacing in the
+  // mobile app's collectionGroup('posts') feed as "탈퇴한 회원" style
+  // ghosts forever — same class of bug as orphan user posts.
+
+  const circleRef = doc(db, 'circles', id);
+  const postsSnap = await getDocs(collection(circleRef, 'posts'));
+
+  // Delete each post's comments subcollection first (leaf level).
+  // Comments per post are typically small; one .get() per post is fine.
+  for (const postDoc of postsSnap.docs) {
+    const commentsSnap = await getDocs(collection(postDoc.ref, 'comments'));
+    if (commentsSnap.docs.length > 0) {
+      // 400 per batch — Firestore caps at 500, leaving slack for retries.
+      let batch = writeBatch(db);
+      let count = 0;
+      for (const c of commentsSnap.docs) {
+        batch.delete(c.ref);
+        count += 1;
+        if (count >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+      if (count > 0) await batch.commit();
+    }
+  }
+
+  // Then delete the posts themselves, batched.
+  if (postsSnap.docs.length > 0) {
+    let batch = writeBatch(db);
+    let count = 0;
+    for (const p of postsSnap.docs) {
+      batch.delete(p.ref);
+      count += 1;
+      if (count >= 400) {
+        await batch.commit();
+        batch = writeBatch(db);
+        count = 0;
+      }
+    }
+    if (count > 0) await batch.commit();
+  }
+
+  // Root doc last.
+  await deleteDoc(circleRef);
 }
 
 export async function removeMemberFromCircle(circleId: string, userId: string) {
@@ -836,6 +892,98 @@ export async function resolveSupportInquiry(
   });
 }
 
+// ─── Street Interviews (field marketing) ───────────────────────────────────
+// Added 2026-05-16 for the May trip. The interviewer fills out a 7-question
+// form on mobile, hits save, the form resets, on to the next person.
+
+/**
+ * Persist a single interview. Throws on permission failure so the UI shows
+ * a banner — silent drops would be invisible to the field interviewer.
+ */
+export async function saveStreetInterview(
+  data: Omit<StreetInterview, 'id' | 'conductedAt'>,
+): Promise<string> {
+  const ref = await addDoc(collection(db, 'street_interviews'), {
+    ...data,
+    conductedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+/**
+ * Recent interviews — used on the form page so the interviewer sees their
+ * count for the day and the last few entries (a confidence check that
+ * saves are actually landing). Limited to 20 to keep mobile fast.
+ */
+export async function getRecentStreetInterviews(
+  max: number = 20,
+): Promise<StreetInterview[]> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'street_interviews'),
+        orderBy('conductedAt', 'desc'),
+        limit(max),
+      ),
+    );
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        conductedAt: toDate(data.conductedAt) ?? undefined,
+        location: data.location ?? 'other',
+        interviewer: data.interviewer ?? '',
+        ageBand: data.ageBand ?? 'unknown',
+        gender: data.gender ?? 'undisclosed',
+        region: data.region ?? 'unknown',
+        knowsHobbyApps: data.knowsHobbyApps ?? 'unsure',
+        appsKnown: Array.isArray(data.appsKnown) ? data.appsKnown : [],
+        nonUseReasons: Array.isArray(data.nonUseReasons) ? data.nonUseReasons : [],
+        willingnessToUse: data.willingnessToUse ?? 'somewhat',
+        desiredFeatures: Array.isArray(data.desiredFeatures) ? data.desiredFeatures : [],
+        freeText: data.freeText ?? undefined,
+        createdBy: data.createdBy ?? '',
+      } as StreetInterview;
+    });
+  } catch (e) {
+    console.warn('[getRecentStreetInterviews] failed:', e);
+    return [];
+  }
+}
+
+/**
+ * Quick aggregate stats for the form page header — total count today and
+ * lifetime. Used as a progress / motivation indicator for the interviewer.
+ */
+export async function getStreetInterviewStats(): Promise<{
+  total: number;
+  today: number;
+  thisWeek: number;
+}> {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const [total, today, thisWeek] = await Promise.all([
+    safeCount(collection(db, 'street_interviews'), 'interviews_total'),
+    safeCount(
+      query(
+        collection(db, 'street_interviews'),
+        where('conductedAt', '>=', Timestamp.fromDate(startOfDay)),
+      ),
+      'interviews_today',
+    ),
+    safeCount(
+      query(
+        collection(db, 'street_interviews'),
+        where('conductedAt', '>=', Timestamp.fromDate(sevenDaysAgo)),
+      ),
+      'interviews_7d',
+    ),
+  ]);
+  return { total, today, thisWeek };
+}
+
 // ─── Matching Monitoring Dashboard ──────────────────────────────────────────
 // Stats for the /dashboard/matching page added 2026-05-15.
 // Surfaces the entire wave-funnel (matched → wave sent → accepted →
@@ -1282,4 +1430,239 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
     pctCompleted: pct(completed),
     recentDropoffs,
   };
+}
+
+// ─── Data Maintenance — Orphan Post Sweep ────────────────────────────────────
+//
+// `users/{uid}/posts` is a subcollection. The mobile app's public "내 주변에서"
+// feed uses a collectionGroup('posts') query, so any post whose parent user
+// doc was deleted without cascading the subcollection leaks through and
+// renders as "탈퇴한 회원". Going forward, governance_service.delete_account()
+// in the backend deletes the posts subcollection before the root user doc,
+// so new orphans don't accumulate — this sweep cleans up pre-existing
+// orphans from Firebase Console deletes, auth-only deletions, and older
+// code paths.
+
+export interface OrphanPostSweepResult {
+  scanned: number;
+  orphans: number;
+  deleted: number;
+  errors: number;
+  /** Sample of orphan post paths (capped to a small number for UI display). */
+  sample: Array<{ uid: string; postId: string; createdAt?: Date | null }>;
+  /** Walltime in ms. */
+  elapsedMs: number;
+}
+
+interface SweepOptions {
+  /** If true, count + collect samples but do NOT delete. */
+  dryRun: boolean;
+  /** Stop after this many posts scanned. 0 = no limit. Default 0. */
+  maxScan?: number;
+  /** Sample posts to include in result (for UI). Default 10. */
+  sampleSize?: number;
+}
+
+/**
+ * Scan every `users/*\/posts` doc and delete those whose parent user doc no
+ * longer exists. Per-uid existence is cached so a user with hundreds of
+ * orphan posts costs only one extra Firestore read.
+ *
+ * Batches deletes 400 at a time (Firestore caps at 500/batch, leaving slack
+ * for retries). Idempotent — safe to re-run.
+ */
+export async function sweepOrphanPosts(
+  options: SweepOptions
+): Promise<OrphanPostSweepResult> {
+  const { dryRun, maxScan = 0, sampleSize = 10 } = options;
+  const started = Date.now();
+
+  const parentExistsCache = new Map<string, boolean>();
+  const sample: OrphanPostSweepResult['sample'] = [];
+  const result: OrphanPostSweepResult = {
+    scanned: 0,
+    orphans: 0,
+    deleted: 0,
+    errors: 0,
+    sample,
+    elapsedMs: 0,
+  };
+
+  // Read ALL posts via collectionGroup. For our scale (early product, low
+  // thousands of posts) this is well within Firestore's read budget; if we
+  // ever cross into the tens-of-thousands range we'd switch to a paged
+  // cursor approach. Today the simple version wins.
+  const snap = await getDocs(collectionGroup(db, 'posts'));
+
+  // Queue of refs to delete; flushed in 400-doc batches.
+  let pendingBatch = writeBatch(db);
+  let pendingCount = 0;
+
+  const flushBatch = async () => {
+    if (pendingCount === 0) return;
+    try {
+      await pendingBatch.commit();
+      result.deleted += pendingCount;
+    } catch (err) {
+      console.error('[sweepOrphanPosts] batch commit failed', err);
+      result.errors += pendingCount;
+    }
+    pendingBatch = writeBatch(db);
+    pendingCount = 0;
+  };
+
+  for (const postDoc of snap.docs) {
+    if (maxScan > 0 && result.scanned >= maxScan) break;
+    result.scanned += 1;
+
+    try {
+      const userRef = postDoc.ref.parent.parent;
+      // Defensive: collectionGroup could in principle match a top-level
+      // "posts" collection or some `circles/{cid}/posts` we don't own.
+      // Constrain strictly to `users/{uid}/posts` to avoid any cross-
+      // collection collateral damage.
+      if (!userRef || userRef.parent.id !== 'users') continue;
+
+      const uid = userRef.id;
+      if (!parentExistsCache.has(uid)) {
+        const userSnap = await getDoc(userRef);
+        parentExistsCache.set(uid, userSnap.exists());
+      }
+      if (parentExistsCache.get(uid)) continue; // parent alive → keep
+
+      result.orphans += 1;
+      if (sample.length < sampleSize) {
+        const data = postDoc.data() as Record<string, unknown>;
+        const createdAtRaw = data.createdAt as Timestamp | undefined;
+        sample.push({
+          uid,
+          postId: postDoc.id,
+          createdAt: createdAtRaw ? createdAtRaw.toDate() : null,
+        });
+      }
+
+      if (!dryRun) {
+        pendingBatch.delete(postDoc.ref);
+        pendingCount += 1;
+        if (pendingCount >= 400) {
+          await flushBatch();
+        }
+      }
+    } catch (err) {
+      result.errors += 1;
+      console.error('[sweepOrphanPosts] error on post', postDoc.ref.path, err);
+    }
+  }
+
+  if (!dryRun) {
+    await flushBatch();
+  }
+
+  result.elapsedMs = Date.now() - started;
+  return result;
+}
+
+/**
+ * Same pattern as sweepOrphanPosts but for `circles/{cid}/posts` whose parent
+ * circle doc no longer exists. Going forward, deleteCircle() above cascades
+ * properly; this cleans up posts from circles deleted before that fix
+ * landed (or via Firebase Console / older code paths).
+ *
+ * Also deletes each post's `comments` subcollection — those are leaves of
+ * the same dead branch.
+ */
+export async function sweepOrphanCirclePosts(
+  options: SweepOptions
+): Promise<OrphanPostSweepResult> {
+  const { dryRun, maxScan = 0, sampleSize = 10 } = options;
+  const started = Date.now();
+
+  const parentExistsCache = new Map<string, boolean>();
+  const sample: OrphanPostSweepResult['sample'] = [];
+  const result: OrphanPostSweepResult = {
+    scanned: 0,
+    orphans: 0,
+    deleted: 0,
+    errors: 0,
+    sample,
+    elapsedMs: 0,
+  };
+
+  const snap = await getDocs(collectionGroup(db, 'posts'));
+
+  let pendingBatch = writeBatch(db);
+  let pendingCount = 0;
+
+  const flushBatch = async () => {
+    if (pendingCount === 0) return;
+    try {
+      await pendingBatch.commit();
+      result.deleted += pendingCount;
+    } catch (err) {
+      console.error('[sweepOrphanCirclePosts] batch commit failed', err);
+      result.errors += pendingCount;
+    }
+    pendingBatch = writeBatch(db);
+    pendingCount = 0;
+  };
+
+  for (const postDoc of snap.docs) {
+    if (maxScan > 0 && result.scanned >= maxScan) break;
+    result.scanned += 1;
+
+    try {
+      const parentRef = postDoc.ref.parent.parent;
+      // Only consider posts whose immediate parent is `circles/{cid}` —
+      // ignore `users/{uid}/posts` which is the other sweep's domain.
+      if (!parentRef || parentRef.parent.id !== 'circles') continue;
+
+      const cid = parentRef.id;
+      if (!parentExistsCache.has(cid)) {
+        const circleSnap = await getDoc(parentRef);
+        parentExistsCache.set(cid, circleSnap.exists());
+      }
+      if (parentExistsCache.get(cid)) continue;
+
+      result.orphans += 1;
+      if (sample.length < sampleSize) {
+        const data = postDoc.data() as Record<string, unknown>;
+        const createdAtRaw = data.createdAt as Timestamp | undefined;
+        sample.push({
+          uid: cid, // reuse the field — UI labels it generically
+          postId: postDoc.id,
+          createdAt: createdAtRaw ? createdAtRaw.toDate() : null,
+        });
+      }
+
+      if (!dryRun) {
+        // Delete this orphan post's comments subcollection first, then
+        // the post itself. Comments per post are small; reading them
+        // inline is fine.
+        const commentsSnap = await getDocs(
+          collection(postDoc.ref, 'comments')
+        );
+        for (const c of commentsSnap.docs) {
+          pendingBatch.delete(c.ref);
+          pendingCount += 1;
+          if (pendingCount >= 400) await flushBatch();
+        }
+
+        pendingBatch.delete(postDoc.ref);
+        pendingCount += 1;
+        if (pendingCount >= 400) await flushBatch();
+      }
+    } catch (err) {
+      result.errors += 1;
+      console.error(
+        '[sweepOrphanCirclePosts] error on post',
+        postDoc.ref.path,
+        err
+      );
+    }
+  }
+
+  if (!dryRun) await flushBatch();
+
+  result.elapsedMs = Date.now() - started;
+  return result;
 }

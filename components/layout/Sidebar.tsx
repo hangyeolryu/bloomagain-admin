@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: '대시보드', icon: '📊' },
   { href: '/dashboard/data-collection', label: '데이터 수집 현황', icon: '🌱' },
   { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞' },
+  { href: '/dashboard/interviews', label: '길거리 인터뷰', icon: '📋' },
   { href: '/dashboard/onboarding', label: '온보딩 드롭오프', icon: '🪜' },
   { href: '/dashboard/users', label: '사용자 관리', icon: '👥', permission: 'viewUsers' },
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
@@ -33,6 +34,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/announcements', label: '공지사항', icon: '📢', permission: 'manageCircles' },
   { href: '/dashboard/health', label: '백엔드 상태', icon: '💚' },
   { href: '/dashboard/sync-failures', label: '싱크 실패', icon: '🔁' },
+  { href: '/dashboard/data-maintenance', label: '데이터 유지보수', icon: '🧹', permission: 'manageUsers' },
   { href: '/dashboard/district-density', label: '지역 밀집도', icon: '🗺️' },
   { href: '/dashboard/admins', label: '관리자 계정', icon: '🔑', permission: 'manageAdmins' },
 ];
