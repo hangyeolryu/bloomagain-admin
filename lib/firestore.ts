@@ -90,23 +90,33 @@ function toDate(val: unknown): Date | undefined {
   return undefined;
 }
 
+/**
+ * Sort options exposed to the user-management UI. Each maps directly to a
+ * Firestore field on the `users` doc; both fields are written by the
+ * Flutter client (see firebase_service.dart for the lastActiveAt update
+ * path triggered by app foregrounding).
+ */
+export type UserSortKey = 'createdAt' | 'lastActiveAt';
+
 export async function getUsers(
   pageSize = 30,
   cursor?: QueryDocumentSnapshot,
+  sortBy: UserSortKey = 'createdAt',
 ): Promise<PaginatedResult<UserProfile>> {
-  // Newest first by sign-up time, then by last-touch as tiebreaker so users
-  // created in the same batch sort with the most recently active on top.
-  // Requires a composite (createdAt desc, updatedAt desc) Firestore index —
-  // Firebase will print a console link on first run if it's missing.
+  // Single-field orderBy keeps the index requirement minimal — Firestore
+  // builds a single-field index on every field by default, so changing
+  // sort dimensions doesn't require deploying composite indexes.
   //
-  // NOTE: docs without a createdAt field are excluded from results. Old
-  // hand-crafted user docs predating sign-up timestamping won't appear; if
-  // we ever need to surface them, add a migration job that backfills
-  // createdAt from auth.createdAt or similar.
+  // Caveat: Firestore's orderBy EXCLUDES documents missing the field.
+  // - sortBy='createdAt': old hand-crafted user docs without createdAt
+  //   won't appear (rare; predates sign-up timestamping).
+  // - sortBy='lastActiveAt': users who've never opened the app since the
+  //   lastActiveAt write path was added won't appear. This is usually
+  //   the desired behavior for a "최근 활동순" view (we don't want
+  //   inactive ghosts at the top), but it's worth knowing.
   const q = query(
     collection(db, 'users'),
-    orderBy('createdAt', 'desc'),
-    orderBy('updatedAt', 'desc'),
+    orderBy(sortBy, 'desc'),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),
   );

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getUsers, blockUser, unblockUser, updateUserStatus } from '@/lib/firestore';
+import { getUsers, blockUser, unblockUser, updateUserStatus, type UserSortKey } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { UserProfile, AccountStatus } from '@/types';
@@ -206,6 +206,22 @@ function formatDate(date?: Date) {
   return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** Compact relative-time formatter for the "마지막 접속" column. Falls back to
+ *  absolute date for anything over ~30 days so the admin can spot truly
+ *  dormant users at a glance without doing mental math. */
+function formatRelativeTime(date?: Date) {
+  if (!date) return '-';
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return '방금';
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}일 전`;
+  return formatDate(date);
+}
+
 export default function UsersPage() {
   const { user: adminUser } = useAuth();
   const router = useRouter();
@@ -215,6 +231,10 @@ export default function UsersPage() {
   const [hasMore, setHasMore]           = useState(false);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  // Server-side sort. Changing this resets the cursor and reloads page 1 —
+  // mixing rows fetched under different orderings would scramble the
+  // infinite-scroll order.
+  const [sortBy, setSortBy]             = useState<UserSortKey>('createdAt');
   const [actionModal, setActionModal]   = useState<{ user: UserProfile; type: 'block' | 'unblock' | 'suspend' } | null>(null);
   const [reason, setReason]             = useState('');
   const [acting, setActing]             = useState(false);
@@ -262,7 +282,7 @@ export default function UsersPage() {
     if (!hasMore || loadingMore || !lastDocRef.current) return;
     setLoadingMore(true);
     try {
-      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current);
+      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current, sortBy);
       lastDocRef.current = lastDoc;
       setAllUsers((prev) => [...prev, ...items]);
       setHasMore(items.length === PAGE_SIZE);
@@ -270,19 +290,25 @@ export default function UsersPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, checkNewUsers]);
+  }, [hasMore, loadingMore, checkNewUsers, sortBy]);
   loadMoreRef.current = loadMore;
 
-  // ── Initial load ──────────────────────────────────────────────────────────
+  // ── Initial load + sort change ────────────────────────────────────────────
+  // Re-runs whenever sortBy flips. Resets the cursor + list so we don't
+  // interleave rows from a previous ordering with the new one (would scramble
+  // the infinite-scroll order and double-show some users).
   useEffect(() => {
-    getUsers(PAGE_SIZE).then(async ({ items, lastDoc }) => {
+    setLoading(true);
+    lastDocRef.current = null;
+    setAllUsers([]);
+    getUsers(PAGE_SIZE, undefined, sortBy).then(async ({ items, lastDoc }) => {
       setAllUsers(items);
       lastDocRef.current = lastDoc;
       setHasMore(items.length === PAGE_SIZE);
       setLoading(false);
       await checkNewUsers(items);
     });
-  }, [checkNewUsers]);
+  }, [checkNewUsers, sortBy]);
 
   // ── IntersectionObserver ──────────────────────────────────────────────────
   // Must run after initial load: while `loading` is true we only render a spinner,
@@ -520,6 +546,15 @@ export default function UsersPage() {
           <option value="unverified">본인인증 미완료</option>
           <option value="pg_missing">⚠ PostgreSQL 미등록</option>
         </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as UserSortKey)}
+          title="정렬 기준 — 변경하면 목록이 처음부터 다시 로드됩니다"
+          className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+        >
+          <option value="createdAt">가입일 (최신순)</option>
+          <option value="lastActiveAt">마지막 접속 (최근순)</option>
+        </select>
         <button
           onClick={handleRecheck}
           disabled={pgChecking}
@@ -542,14 +577,37 @@ export default function UsersPage() {
                 <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">DB</th>
-                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">가입일</th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <button
+                    type="button"
+                    onClick={() => setSortBy('createdAt')}
+                    className={
+                      'hover:text-gray-900 transition-colors ' +
+                      (sortBy === 'createdAt' ? 'text-green-700 font-bold' : '')
+                    }
+                  >
+                    가입일{sortBy === 'createdAt' ? ' ↓' : ''}
+                  </button>
+                </th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <button
+                    type="button"
+                    onClick={() => setSortBy('lastActiveAt')}
+                    className={
+                      'hover:text-gray-900 transition-colors ' +
+                      (sortBy === 'lastActiveAt' ? 'text-green-700 font-bold' : '')
+                    }
+                  >
+                    마지막 접속{sortBy === 'lastActiveAt' ? ' ↓' : ''}
+                  </button>
+                </th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">작업</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -609,6 +667,12 @@ export default function UsersPage() {
                       />
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
+                    <td
+                      className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500"
+                      title={u.lastActiveAt ? u.lastActiveAt.toLocaleString('ko-KR') : undefined}
+                    >
+                      {formatRelativeTime(u.lastActiveAt)}
+                    </td>
                     <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <Link
