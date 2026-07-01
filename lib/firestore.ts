@@ -1348,10 +1348,24 @@ export type OnboardingStage =
  * 기록으로 교체됩니다.
  */
 export type OnboardingAttemptHint =
-  | 'failed_recorded'
-  | 'likely_attempted'
-  | 'never_attempted_signal'
+  | 'failed_recorded'      // FastAPI가 verification_attempts에 명시적 실패 기록
+  | 'likely_attempted'     // 확정 attempt 없지만 lastActiveAt이 시도 흔적 시사
+  | 'never_attempted_signal' // 확정 attempt 없고 lastActiveAt 정지 → 시도 안 함
   | 'unknown';
+
+/**
+ * Backend FastAPI 가 verification_attempts 컬렉션에 기록한 한 사용자의
+ * 가장 최근 시도 상태. `attempts_lookup` map으로 uid → 요약 을 미리
+ * 계산해서 각 dropoff 에 병합합니다.
+ */
+export interface VerificationAttemptSummary {
+  lastStage: 'init' | 'callback' | null;
+  lastStatus: 'started' | 'success' | 'failure' | null;
+  lastErrorReason: string | null;
+  lastAt: Date | null;
+  attemptCount: number;    // init + callback 총 이벤트 수
+  failureCount: number;    // status='failure'만
+}
 
 export interface OnboardingDeviceInfo {
   platform?: string; // 'iOS' | 'Android' | ...
@@ -1372,8 +1386,10 @@ export interface OnboardingDropoff {
   minutesSinceLastActive?: number;
   device?: OnboardingDeviceInfo;
   identityVerificationStatus?: string;
-  // signed_up 단계에서만 의미 있음 — 왜 인증 못했는지 추정.
+  // signed_up 단계에서만 의미 있음 — 왜 인증 못했는지 추정 or 확정.
   attemptHint?: OnboardingAttemptHint;
+  // FastAPI가 남긴 실제 시도 기록 요약. 있으면 확정 사유, 없으면 attemptHint 로 추정.
+  attemptSummary?: VerificationAttemptSummary;
 }
 
 export interface OnboardingFunnel {
@@ -1390,6 +1406,50 @@ export interface OnboardingFunnel {
   // Drop-offs created in last 7 days who never completed — sorted oldest
   // first so we surface the longest-stalled people on top.
   recentDropoffs: OnboardingDropoff[];
+}
+
+/**
+ * 최근 N일 verification_attempts를 pull해서 uid → summary map으로 접음.
+ * 컬렉션이 없거나 read 실패해도 빈 map을 리턴 (호출자는 fallback heuristic 사용).
+ * lastAt 기준으로 각 uid의 가장 최근 이벤트를 보존.
+ */
+async function loadRecentAttemptSummaries(
+  days: number
+): Promise<Map<string, VerificationAttemptSummary>> {
+  const summary = new Map<string, VerificationAttemptSummary>();
+  const from = Timestamp.fromDate(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+  try {
+    const q = query(collection(db, 'verification_attempts'), where('createdAt', '>=', from));
+    const snap = await getDocs(q);
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const uid = d.uid as string | undefined;
+      if (!uid) continue;
+      const at = (d.createdAt as Timestamp | undefined)?.toDate?.() ?? null;
+      const cur = summary.get(uid) ?? {
+        lastStage: null,
+        lastStatus: null,
+        lastErrorReason: null,
+        lastAt: null,
+        attemptCount: 0,
+        failureCount: 0,
+      };
+      cur.attemptCount++;
+      if (d.status === 'failure') cur.failureCount++;
+      if (!cur.lastAt || (at && at > cur.lastAt)) {
+        cur.lastStage = d.stage ?? null;
+        cur.lastStatus = d.status ?? null;
+        cur.lastErrorReason = d.errorReason ?? null;
+        cur.lastAt = at;
+      }
+      summary.set(uid, cur);
+    }
+  } catch (e) {
+    // Collection may not exist yet (before backend deploy), or read may fail.
+    // Return empty map — the caller falls back to lastActiveAt heuristic.
+    console.warn('[loadRecentAttemptSummaries] failed:', e);
+  }
+  return summary;
 }
 
 function classifyOnboardingStage(u: UserProfile): OnboardingStage {
@@ -1415,6 +1475,11 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
   const recentDropoffs: OnboardingDropoff[] = [];
 
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  // Backend가 verification_attempts에 남긴 지난 30일 시도들을 미리 pull해서
+  // uid별 요약. 30일 창은 미완료 사용자가 그 이전에 시도했다가 최근 재접속했을
+  // 케이스도 커버. 컬렉션이 없거나 read 실패해도 attemptSummary 없이 진행.
+  const attemptsSummary = await loadRecentAttemptSummaries(30);
 
   for (const d of usersSnap.docs) {
     const data = d.data();
@@ -1462,14 +1527,22 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
               }
             : undefined;
 
-        // Attempt hint — only meaningful in `signed_up` stage.
-        // Threshold "가입 후 10분 이상 후에 앱 재접속했다면 시도 흔적"은
-        // 45+ 사용자 speed 감안. NICE PASS 앱 왕복이 5-10분 걸리므로 이보다
-        // 크게 지나서 lastActiveAt 이 찍히면 사실상 시도 후 실패.
+        // Attempt hint — signed_up 단계에서만 의미. 우선순위:
+        //   1) verification_attempts 컬렉션에 실패 기록 있으면 확정 사유
+        //   2) users.identityVerificationStatus === 'failed'
+        //   3) lastActiveAt 기반 heuristic (backend 로깅 없던 시절 유저 커버)
+        const attemptSummary = attemptsSummary.get(profile.id);
         let attemptHint: OnboardingAttemptHint | undefined;
         if (stage === 'signed_up') {
-          if (profile.identityVerificationStatus === 'failed') {
+          if (
+            attemptSummary?.lastStatus === 'failure' ||
+            profile.identityVerificationStatus === 'failed'
+          ) {
             attemptHint = 'failed_recorded';
+          } else if (attemptSummary?.lastStatus === 'started') {
+            // Backend가 init 성공 로그 남겼는데 callback 성공 로그 없음 = 사용자가
+            // NICE 페이지 열고 완료 못하고 이탈. 시도는 확정 됨.
+            attemptHint = 'likely_attempted';
           } else if (lastActiveAt) {
             const gapMs = lastActiveAt.getTime() - createdAtMs;
             if (gapMs > 10 * 60 * 1000) attemptHint = 'likely_attempted';
@@ -1492,6 +1565,7 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
           device,
           identityVerificationStatus: profile.identityVerificationStatus,
           attemptHint,
+          attemptSummary,
         });
       }
     }

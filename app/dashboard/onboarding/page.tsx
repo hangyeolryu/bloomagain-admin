@@ -346,15 +346,32 @@ function DropoffTable({
                       {stageLabels[u.stage].label}
                     </span>
                     {u.stage === 'signed_up' && u.attemptHint && (
-                      <div
-                        className="text-[11px] mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
-                        style={{
-                          backgroundColor: `${attemptHintLabels[u.attemptHint].color}15`,
-                          color: attemptHintLabels[u.attemptHint].color,
-                        }}
-                        title={attemptHintLabels[u.attemptHint].hint}
-                      >
-                        {attemptHintLabels[u.attemptHint].label}
+                      <div className="mt-1.5 space-y-1">
+                        <div
+                          className="text-[11px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: `${attemptHintLabels[u.attemptHint].color}15`,
+                            color: attemptHintLabels[u.attemptHint].color,
+                          }}
+                          title={attemptHintLabels[u.attemptHint].hint}
+                        >
+                          {attemptHintLabels[u.attemptHint].label}
+                        </div>
+                        {u.attemptSummary && u.attemptSummary.lastAt && (
+                          <div className="text-[10px] text-gray-500 leading-tight">
+                            시도 {u.attemptSummary.attemptCount}회
+                            {u.attemptSummary.failureCount > 0 &&
+                              ` · 실패 ${u.attemptSummary.failureCount}회`}
+                            {u.attemptSummary.lastErrorReason && (
+                              <div
+                                className="font-mono text-red-600 truncate max-w-[220px]"
+                                title={u.attemptSummary.lastErrorReason}
+                              >
+                                {u.attemptSummary.lastErrorReason}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>
