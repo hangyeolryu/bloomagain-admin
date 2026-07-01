@@ -10,11 +10,41 @@
 //
 // Created 2026-05-17. Read-only.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { getOnboardingFunnel } from '@/lib/firestore';
-import type { OnboardingFunnel, OnboardingStage } from '@/lib/firestore';
+import type {
+  OnboardingAttemptHint,
+  OnboardingDropoff,
+  OnboardingFunnel,
+  OnboardingStage,
+} from '@/lib/firestore';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+
+// 인증 시도 추정 라벨. Phase 2에서 verification_attempts 실제 로그가
+// 들어오면 이 라벨은 확정 사유로 교체됩니다.
+const attemptHintLabels: Record<OnboardingAttemptHint, { label: string; color: string; hint: string }> = {
+  failed_recorded: {
+    label: '본인인증 실패 (기록됨)',
+    color: '#DC2626',
+    hint: 'identityVerificationStatus === "failed"',
+  },
+  likely_attempted: {
+    label: '시도 후 실패 (추정)',
+    color: '#EA580C',
+    hint: '가입 후 앱을 여러 번 열었음 — NICE 실패 · 이탈 가능성',
+  },
+  never_attempted_signal: {
+    label: '시도 안 함 (추정)',
+    color: '#6B7280',
+    hint: '가입 직후 lastActiveAt 이 거의 안 움직임 — 본인인증 화면 보고 이탈',
+  },
+  unknown: {
+    label: '판단 불가',
+    color: '#9CA3AF',
+    hint: 'lastActiveAt 없음',
+  },
+};
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -70,10 +100,13 @@ const stageLabels: Record<OnboardingStage, { label: string; color: string }> = {
   completed: { label: '완료 ✓', color: '#10B981' },
 };
 
+type DeviceFilter = 'all' | 'ios' | 'android' | 'other';
+
 export default function OnboardingFunnelPage() {
   const [data, setData] = useState<OnboardingFunnel | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [deviceFilter, setDeviceFilter] = useState<DeviceFilter>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -173,72 +206,198 @@ export default function OnboardingFunnelPage() {
         </div>
       </div>
 
-      {/* Recent dropoffs */}
-      <div>
-        <SectionHeading>최근 7일 미완료 사용자 ({data.recentDropoffs.length}명)</SectionHeading>
-        <p className="text-xs text-gray-500 mb-3">
-          가장 오래된 순. 며칠째 멈춰있는지 한눈에 보고, 필요시 카톡 등으로 follow-up.
-        </p>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {data.recentDropoffs.length === 0 ? (
-            <div className="p-8 text-center text-sm text-gray-500">
-              최근 7일 내 미완료 사용자 없음 — 깔끔합니다 ✨
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-4 py-3">사용자</th>
-                  <th className="text-left px-4 py-3">단계</th>
-                  <th className="text-right px-4 py-3">가입 후</th>
-                  <th className="text-left px-4 py-3 pl-6">이메일</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentDropoffs.map((u) => (
-                  <tr key={u.uid} className="border-t border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/dashboard/users/${u.uid}`}
-                        className="text-blue-600 hover:underline font-medium"
-                      >
-                        {u.displayName || `(이름 없음)`}
-                      </Link>
-                      <div className="text-xs text-gray-400 font-mono mt-0.5">
-                        {u.uid.slice(0, 12)}…
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className="inline-block px-2 py-1 rounded-md text-xs font-medium"
-                        style={{
-                          backgroundColor: `${stageLabels[u.stage].color}20`,
-                          color: stageLabels[u.stage].color,
-                        }}
-                      >
-                        {stageLabels[u.stage].label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">
-                      {u.daysSinceCreated}일 전
-                    </td>
-                    <td className="px-4 py-3 pl-6 text-gray-500 truncate max-w-[260px]">
-                      {u.email || '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      {/* Attempt hint summary + device filter (signed_up 단계만) */}
+      <DropoffTable
+        rows={data.recentDropoffs}
+        deviceFilter={deviceFilter}
+        onDeviceFilter={setDeviceFilter}
+      />
 
       {/* Footer hint */}
       <div className="text-xs text-gray-400 leading-relaxed">
-        Tip: NICE 이전 세부 단계 (어디서 정확히 멈췄나)는 Firebase Console →
-        Analytics → Explorations → Funnel Exploration에서{' '}
-        <span className="font-mono">onboarding_page_view</span> events를 step으로
-        구성하면 보입니다.
+        Tip: 표에서 <span className="font-mono">시도 후 실패 (추정)</span> 라벨은
+        가입 후 앱을 여러 번 열었지만 아직 인증 못 한 사람을 보여드립니다.
+        확정된 실패 사유는 NICE Cloud Function에 attempt 로깅을 붙이면
+        보이도록 준비 중입니다 (Phase 2). NICE 이전 세부 단계는 Firebase
+        Console → Analytics → Funnel Exploration에서{' '}
+        <span className="font-mono">onboarding_page_view</span> events로 구성.
+      </div>
+    </div>
+  );
+}
+
+// ── Dropoff table (extracted for readability) ───────────────────────────
+
+function DropoffTable({
+  rows,
+  deviceFilter,
+  onDeviceFilter,
+}: {
+  rows: OnboardingDropoff[];
+  deviceFilter: DeviceFilter;
+  onDeviceFilter: (f: DeviceFilter) => void;
+}) {
+  const filtered = useMemo(() => {
+    if (deviceFilter === 'all') return rows;
+    return rows.filter((u) => {
+      const p = (u.device?.platform ?? '').toLowerCase();
+      if (deviceFilter === 'ios') return p.includes('ios');
+      if (deviceFilter === 'android') return p.includes('android');
+      return !p.includes('ios') && !p.includes('android');
+    });
+  }, [rows, deviceFilter]);
+
+  // Signed_up 단계 안에서 인증 시도 추정 분포
+  const hintBreakdown = useMemo(() => {
+    const b = { failed_recorded: 0, likely_attempted: 0, never_attempted_signal: 0, unknown: 0 };
+    for (const u of rows) {
+      if (u.stage === 'signed_up' && u.attemptHint) b[u.attemptHint] += 1;
+    }
+    return b;
+  }, [rows]);
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+        <div>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            최근 7일 미완료 사용자 ({rows.length}명)
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">
+            가장 오래된 순. 며칠째 멈춰있는지 + 어느 기기·어떤 상태인지 한눈에.
+          </p>
+        </div>
+        <div className="flex gap-1 text-xs">
+          {(['all', 'ios', 'android', 'other'] as DeviceFilter[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => onDeviceFilter(f)}
+              className={`px-3 py-1.5 rounded-md border transition-colors ${
+                deviceFilter === f
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {f === 'all' ? '전체' : f === 'ios' ? 'iOS' : f === 'android' ? 'Android' : '기타'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* signed_up 상태의 이유 분포 요약 */}
+      {rows.some((u) => u.stage === 'signed_up' && u.attemptHint) && (
+        <div className="mb-3 bg-white rounded-lg border border-gray-100 p-3 flex flex-wrap gap-4 text-xs">
+          <span className="text-gray-500 font-semibold">본인인증 못한 사용자 왜?</span>
+          {(Object.entries(hintBreakdown) as [OnboardingAttemptHint, number][])
+            .filter(([, n]) => n > 0)
+            .map(([hint, n]) => (
+              <span key={hint} className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ backgroundColor: attemptHintLabels[hint].color }}
+                />
+                <span className="text-gray-700">{attemptHintLabels[hint].label}</span>
+                <span className="font-semibold tabular-nums text-gray-900">{n}</span>
+              </span>
+            ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">
+            {deviceFilter !== 'all'
+              ? '이 필터에 해당하는 사용자 없음.'
+              : '최근 7일 내 미완료 사용자 없음 — 깔끔합니다 ✨'}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-4 py-3">사용자</th>
+                <th className="text-left px-4 py-3">단계 · 인증 상태</th>
+                <th className="text-left px-4 py-3">기기</th>
+                <th className="text-right px-4 py-3">가입 후 · 마지막 접속</th>
+                <th className="text-left px-4 py-3 pl-6">이메일</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((u) => (
+                <tr key={u.uid} className="border-t border-gray-100 hover:bg-gray-50 align-top">
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/dashboard/users/${u.uid}`}
+                      className="text-blue-600 hover:underline font-medium"
+                    >
+                      {u.displayName || '(이름 없음)'}
+                    </Link>
+                    <div className="text-xs text-gray-400 font-mono mt-0.5">
+                      {u.uid.slice(0, 12)}…
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className="inline-block px-2 py-1 rounded-md text-xs font-medium"
+                      style={{
+                        backgroundColor: `${stageLabels[u.stage].color}20`,
+                        color: stageLabels[u.stage].color,
+                      }}
+                    >
+                      {stageLabels[u.stage].label}
+                    </span>
+                    {u.stage === 'signed_up' && u.attemptHint && (
+                      <div
+                        className="text-[11px] mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
+                        style={{
+                          backgroundColor: `${attemptHintLabels[u.attemptHint].color}15`,
+                          color: attemptHintLabels[u.attemptHint].color,
+                        }}
+                        title={attemptHintLabels[u.attemptHint].hint}
+                      >
+                        {attemptHintLabels[u.attemptHint].label}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-600">
+                    {u.device ? (
+                      <>
+                        <div className="font-medium text-gray-800">
+                          {u.device.platform ?? '—'}
+                          {u.device.osVersion ? ` ${u.device.osVersion}` : ''}
+                        </div>
+                        {u.device.model && (
+                          <div className="text-gray-500 truncate max-w-[180px]">{u.device.model}</div>
+                        )}
+                        {u.device.appVersion && (
+                          <div className="text-gray-400 mt-0.5 font-mono">
+                            앱 v{u.device.appVersion}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-gray-400">기록 없음</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-600 whitespace-nowrap">
+                    <div>{u.daysSinceCreated}일 전 가입</div>
+                    <div className="text-xs text-gray-400 mt-0.5">
+                      {u.minutesSinceLastActive === undefined
+                        ? '접속 기록 없음'
+                        : u.minutesSinceLastActive < 60
+                        ? `${u.minutesSinceLastActive}분 전 접속`
+                        : u.minutesSinceLastActive < 24 * 60
+                        ? `${Math.floor(u.minutesSinceLastActive / 60)}시간 전 접속`
+                        : `${Math.floor(u.minutesSinceLastActive / (24 * 60))}일 전 접속`}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 pl-6 text-gray-500 truncate max-w-[220px]">
+                    {u.email || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

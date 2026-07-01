@@ -1332,6 +1332,34 @@ export type OnboardingStage =
   | 'profile_partial'     // some profile fields but missing name OR interests
   | 'completed';          // displayName + (interests OR city) — usable account
 
+/**
+ * 왜 이 사람이 signed_up 단계에서 멈췄는지 *추정*. Firestore에 인증 시도
+ * 자체가 로깅되지 않아서 확정은 아니고 신호 조합:
+ *
+ * - failed_recorded: identityVerificationStatus === 'failed' 명시적 기록
+ *   (지금은 안 쓰지만 미래 대비 필드가 있음)
+ * - likely_attempted: 가입 후 앱을 여러 번 열었음 — NICE 실패나 중간 이탈
+ *   가능성 높음. lastActiveAt이 createdAt 대비 상당히 늦음 (>10분).
+ * - never_attempted_signal: 가입 직후 lastActiveAt이 거의 안 움직였음 —
+ *   본인인증 화면 보고 바로 껐거나 시도 안 함.
+ * - unknown: lastActiveAt 자체가 없어서 판단 불가.
+ *
+ * Phase 2 (Cloud Function attempt logging)이 들어오면 이 필드는 실제 시도
+ * 기록으로 교체됩니다.
+ */
+export type OnboardingAttemptHint =
+  | 'failed_recorded'
+  | 'likely_attempted'
+  | 'never_attempted_signal'
+  | 'unknown';
+
+export interface OnboardingDeviceInfo {
+  platform?: string; // 'iOS' | 'Android' | ...
+  model?: string;
+  osVersion?: string;
+  appVersion?: string;
+}
+
 export interface OnboardingDropoff {
   uid: string;
   displayName?: string;
@@ -1339,7 +1367,13 @@ export interface OnboardingDropoff {
   stage: OnboardingStage;
   createdAt?: Date;
   updatedAt?: Date;
+  lastActiveAt?: Date;
   daysSinceCreated: number;
+  minutesSinceLastActive?: number;
+  device?: OnboardingDeviceInfo;
+  identityVerificationStatus?: string;
+  // signed_up 단계에서만 의미 있음 — 왜 인증 못했는지 추정.
+  attemptHint?: OnboardingAttemptHint;
 }
 
 export interface OnboardingFunnel {
@@ -1409,6 +1443,42 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
     if (stage !== 'completed' && profile.createdAt) {
       const createdAtMs = profile.createdAt.getTime();
       if (createdAtMs >= sevenDaysAgo) {
+        const lastActiveAt = (data.lastActiveAt as Timestamp | undefined)?.toDate?.();
+        const minutesSinceLastActive = lastActiveAt
+          ? Math.floor((Date.now() - lastActiveAt.getTime()) / (60 * 1000))
+          : undefined;
+
+        // Device extraction. Flutter app writes `users.device: DeviceInfo`
+        // (see lib/models/device_info.dart) — we keep the shape flexible in
+        // case older accounts have differently named fields.
+        const rawDevice = data.device ?? {};
+        const device: OnboardingDeviceInfo | undefined =
+          rawDevice.platform || rawDevice.model || rawDevice.osVersion || rawDevice.appVersion
+            ? {
+                platform: rawDevice.platform,
+                model: rawDevice.model,
+                osVersion: rawDevice.osVersion,
+                appVersion: rawDevice.appVersion,
+              }
+            : undefined;
+
+        // Attempt hint — only meaningful in `signed_up` stage.
+        // Threshold "가입 후 10분 이상 후에 앱 재접속했다면 시도 흔적"은
+        // 45+ 사용자 speed 감안. NICE PASS 앱 왕복이 5-10분 걸리므로 이보다
+        // 크게 지나서 lastActiveAt 이 찍히면 사실상 시도 후 실패.
+        let attemptHint: OnboardingAttemptHint | undefined;
+        if (stage === 'signed_up') {
+          if (profile.identityVerificationStatus === 'failed') {
+            attemptHint = 'failed_recorded';
+          } else if (lastActiveAt) {
+            const gapMs = lastActiveAt.getTime() - createdAtMs;
+            if (gapMs > 10 * 60 * 1000) attemptHint = 'likely_attempted';
+            else attemptHint = 'never_attempted_signal';
+          } else {
+            attemptHint = 'unknown';
+          }
+        }
+
         recentDropoffs.push({
           uid: profile.id,
           displayName: profile.displayName,
@@ -1416,7 +1486,12 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
           stage,
           createdAt: profile.createdAt,
           updatedAt: profile.updatedAt,
+          lastActiveAt,
           daysSinceCreated: Math.floor((Date.now() - createdAtMs) / (24 * 60 * 60 * 1000)),
+          minutesSinceLastActive,
+          device,
+          identityVerificationStatus: profile.identityVerificationStatus,
+          attemptHint,
         });
       }
     }
