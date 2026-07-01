@@ -1442,6 +1442,143 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
   };
 }
 
+// ─── Overview Dashboard — Engagement + Device + Signup Trend ─────────────────
+// Combined stats used by /dashboard/stats. Each field can also be recomputed
+// from other helpers, but bundling into one read keeps the overview page snappy
+// and makes cache invariants (all pulled from a single users snapshot) obvious.
+
+export interface DeviceMix {
+  ios: number;
+  android: number;
+  web: number;
+  unknown: number;
+}
+
+export interface EngagementRollup {
+  totalUsers: number;
+  dau: number;           // active in last 24h based on lastActiveAt heartbeat
+  wau: number;           // last 7d
+  mau: number;           // last 30d
+  stickiness: number;    // DAU / MAU as a percentage — DAU >20% of MAU is healthy senior comm
+  newLast24h: number;    // users.createdAt in last 24h
+  newLast7d: number;
+  newLast30d: number;
+}
+
+export interface SignupTrendPoint {
+  date: string; // YYYY-MM-DD, local Asia/Seoul-ish (uses server local — admin is single-user)
+  count: number;
+}
+
+/**
+ * User-doc based engagement snapshot. All metrics come from `lastActiveAt` (a
+ * 30-min throttled heartbeat written from the Flutter app foreground) and
+ * `createdAt`, so DAU here means "unique users whose most recent foreground
+ * fell in the window". For per-day historical DAU with cross-day multi-count,
+ * we'd need a session log — GA4 has this but Firestore doesn't; the snapshot
+ * DAU is the honest number we can derive without extra instrumentation.
+ */
+export async function getEngagementRollup(): Promise<EngagementRollup> {
+  const now = Date.now();
+  const dayAgo = now - 24 * 60 * 60 * 1000;
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+  const snap = await getDocs(collection(db, 'users'));
+  let dau = 0;
+  let wau = 0;
+  let mau = 0;
+  let newLast24h = 0;
+  let newLast7d = 0;
+  let newLast30d = 0;
+
+  for (const d of snap.docs) {
+    const data = d.data();
+    const lastActive = (data.lastActiveAt as Timestamp | undefined)?.toMillis();
+    if (lastActive !== undefined) {
+      if (lastActive >= dayAgo) dau++;
+      if (lastActive >= weekAgo) wau++;
+      if (lastActive >= monthAgo) mau++;
+    }
+    const created = (data.createdAt as Timestamp | undefined)?.toMillis();
+    if (created !== undefined) {
+      if (created >= dayAgo) newLast24h++;
+      if (created >= weekAgo) newLast7d++;
+      if (created >= monthAgo) newLast30d++;
+    }
+  }
+
+  const stickiness = mau > 0 ? Math.round((dau / mau) * 100) : 0;
+
+  return {
+    totalUsers: snap.size,
+    dau,
+    wau,
+    mau,
+    stickiness,
+    newLast24h,
+    newLast7d,
+    newLast30d,
+  };
+}
+
+/**
+ * iOS/Android/Web split from `users.device.platform`. Users without a
+ * recorded device (very early accounts, web-first testers) land in `unknown`.
+ */
+export async function getDeviceMix(): Promise<DeviceMix> {
+  const snap = await getDocs(collection(db, 'users'));
+  const mix: DeviceMix = { ios: 0, android: 0, web: 0, unknown: 0 };
+  for (const d of snap.docs) {
+    const platform = String(d.data().device?.platform ?? '').toLowerCase();
+    if (platform.includes('ios')) mix.ios++;
+    else if (platform.includes('android')) mix.android++;
+    else if (platform.includes('web')) mix.web++;
+    else mix.unknown++;
+  }
+  return mix;
+}
+
+/**
+ * New-signup daily trend for the last N days. Bucketed by `createdAt` in
+ * the browser's local timezone. Zero-filled so the chart always shows the
+ * full window, not just days with signups.
+ */
+export async function getSignupTrend(days: number): Promise<SignupTrendPoint[]> {
+  const from = new Date();
+  from.setDate(from.getDate() - (days - 1));
+  from.setHours(0, 0, 0, 0);
+  const fromTs = Timestamp.fromDate(from);
+
+  const q = query(collection(db, 'users'), where('createdAt', '>=', fromTs));
+  const snap = await getDocs(q);
+
+  const bucket = new Map<string, number>();
+  // Zero-fill so every day in the window has an entry.
+  for (let i = 0; i < days; i++) {
+    const d = new Date(from);
+    d.setDate(d.getDate() + i);
+    bucket.set(toDateKey(d), 0);
+  }
+  snap.forEach((doc) => {
+    const ts = doc.data().createdAt as Timestamp | undefined;
+    if (!ts) return;
+    const key = toDateKey(ts.toDate());
+    if (bucket.has(key)) bucket.set(key, (bucket.get(key) ?? 0) + 1);
+  });
+
+  return Array.from(bucket.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ─── Data Maintenance — Orphan Post Sweep ────────────────────────────────────
 //
 // `users/{uid}/posts` is a subcollection. The mobile app's public "내 주변에서"
