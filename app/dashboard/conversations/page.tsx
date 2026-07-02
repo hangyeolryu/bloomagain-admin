@@ -19,6 +19,7 @@ type RawConv = {
   conversationType?: string;
   isActive?: boolean;
   blockedParticipants?: string[];
+  suspiciousMessageCount?: number;
 };
 
 function toConversation(r: RawConv): Conversation {
@@ -31,6 +32,7 @@ function toConversation(r: RawConv): Conversation {
     conversationType: r.conversationType ?? 'direct',
     isActive: r.isActive ?? true,
     blockedParticipants: r.blockedParticipants ?? [],
+    suspiciousMessageCount: r.suspiciousMessageCount ?? 0,
   };
 }
 
@@ -173,13 +175,20 @@ export default function ConversationsPage() {
                         </p>
                       </td>
                       <td className="px-4 py-2.5">
-                        {isBlocked ? (
-                          <Badge variant="red">차단 포함</Badge>
-                        ) : c.isActive ? (
-                          <Badge variant="green">활성</Badge>
-                        ) : (
-                          <Badge variant="gray">비활성</Badge>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {isBlocked ? (
+                            <Badge variant="red">차단 포함</Badge>
+                          ) : c.isActive ? (
+                            <Badge variant="green">활성</Badge>
+                          ) : (
+                            <Badge variant="gray">비활성</Badge>
+                          )}
+                          {(c.suspiciousMessageCount ?? 0) > 0 && (
+                            <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 whitespace-nowrap">
+                              ⚠️ {c.suspiciousMessageCount}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="hidden sm:table-cell px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(c.lastMessageAt)}

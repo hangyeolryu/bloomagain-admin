@@ -29,6 +29,7 @@ type ConvDetail = {
   conversationType: string;
   messages: Msg[];
   flags?: Flag[];
+  suspiciousMessageCount?: number;
 };
 
 function fmt(ms?: number | null) {
@@ -129,6 +130,11 @@ function ConversationView() {
               </Link>
             ))}
             <span className="ml-3">{data.messages.length}개 메시지</span>
+            {(data.suspiciousMessageCount ?? 0) > 0 && (
+              <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                ⚠️ 의심 {data.suspiciousMessageCount}
+              </span>
+            )}
             <button
               onClick={runAnalysis}
               disabled={analyzing}

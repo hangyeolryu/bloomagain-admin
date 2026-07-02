@@ -192,6 +192,7 @@ export interface Conversation {
   conversationType?: string;
   isActive?: boolean;
   blockedParticipants?: string[];
+  suspiciousMessageCount?: number;
 }
 
 export interface DashboardStats {
