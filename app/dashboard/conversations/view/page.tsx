@@ -34,6 +34,9 @@ function ConversationView() {
   const [data, setData]       = useState<ConvDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+  const [analyzing, setAnalyzing]   = useState(false);
+  const [analysis, setAnalysis]     = useState<string | null>(null);
+  const [analyzeErr, setAnalyzeErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -55,6 +58,26 @@ function ConversationView() {
         setLoading(false);
       });
   }, [id]);
+
+  async function runAnalysis() {
+    if (analyzing || !id) return;
+    setAnalyzing(true);
+    setAnalyzeErr(null);
+    setAnalysis(null);
+    try {
+      const res = await fetch(`/api/backend/conversations/${encodeURIComponent(id)}/analyze`, {
+        method: 'POST',
+      });
+      const body = (await res.json().catch(() => ({}))) as { analysis?: string | null; error?: string };
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (!body.analysis) throw new Error(body.error ?? '분석 결과가 비어 있습니다.');
+      setAnalysis(body.analysis);
+    } catch (e) {
+      setAnalyzeErr(e instanceof Error ? e.message : '분석에 실패했습니다.');
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   // For a 1:1 conversation, left-align the first participant, right-align the other.
   const firstParticipant = data?.participants?.[0];
@@ -95,8 +118,36 @@ function ConversationView() {
                 {uid.slice(0, 8)}…
               </Link>
             ))}
-            <span className="ml-auto">{data.messages.length}개 메시지</span>
+            <span className="ml-3">{data.messages.length}개 메시지</span>
+            <button
+              onClick={runAnalysis}
+              disabled={analyzing}
+              className="ml-auto rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {analyzing ? '분석 중…' : '🔍 대화 분석'}
+            </button>
           </div>
+
+          {analyzeErr && (
+            <div className="mb-4 rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-xs text-red-600">
+              분석 실패: {analyzeErr}
+            </div>
+          )}
+          {analysis && (
+            <div className="mb-4 rounded-xl bg-green-50/60 border border-green-100 px-4 py-3">
+              <p className="text-xs font-semibold text-green-700 mb-2">🔍 AI 대화 분석</p>
+              <div className="text-sm text-gray-800 space-y-1">
+                {analysis.split('\n').map((ln, i) =>
+                  ln.startsWith('## ') ? (
+                    <p key={i} className="font-bold text-gray-900 mt-2">{ln.replace(/^##\s*/, '')}</p>
+                  ) : ln.trim() ? (
+                    <p key={i} className="whitespace-pre-wrap">{ln}</p>
+                  ) : null,
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">Vertex Gemini · 참고용, 최종 판단은 운영자가</p>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             {data.messages.map((m) => {
