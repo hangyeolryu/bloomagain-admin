@@ -2,14 +2,54 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
-import { getConversations } from '@/lib/firestore';
-import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import type { Conversation } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
 
 const PAGE_SIZE = 30;
+
+// Raw shape from GET /api/backend/conversations (timestamps are epoch millis).
+type RawConv = {
+  id: string;
+  participants?: string[];
+  lastMessage?: string | null;
+  lastMessageAt?: number | null;
+  createdAt?: number | null;
+  conversationType?: string;
+  isActive?: boolean;
+  blockedParticipants?: string[];
+};
+
+function toConversation(r: RawConv): Conversation {
+  return {
+    id: r.id,
+    participants: r.participants ?? [],
+    lastMessage: r.lastMessage ?? undefined,
+    lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
+    createdAt: r.createdAt ? new Date(r.createdAt) : undefined,
+    conversationType: r.conversationType ?? 'direct',
+    isActive: r.isActive ?? true,
+    blockedParticipants: r.blockedParticipants ?? [],
+  };
+}
+
+async function fetchConversations(
+  cursor?: number | null,
+): Promise<{ items: Conversation[]; nextCursor: number | null }> {
+  const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
+  if (cursor != null) qs.set('cursor', String(cursor));
+  const res = await fetch(`/api/backend/conversations?${qs.toString()}`, { cache: 'no-store' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { items?: RawConv[]; nextCursor?: number | null };
+  return {
+    items: (data.items ?? []).map(toConversation),
+    nextCursor: data.nextCursor ?? null,
+  };
+}
 
 function formatDate(date?: Date) {
   if (!date) return '-';
@@ -21,19 +61,20 @@ export default function ConversationsPage() {
   const [loading, setLoading]             = useState(true);
   const [loadingMore, setLoadingMore]     = useState(false);
   const [hasMore, setHasMore]             = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
 
-  const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
+  const cursorRef   = useRef<number | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<() => void>(() => {});
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    if (!hasMore || loadingMore || cursorRef.current == null) return;
     setLoadingMore(true);
     try {
-      const { items, lastDoc } = await getConversations(PAGE_SIZE, lastDocRef.current);
-      lastDocRef.current = lastDoc;
+      const { items, nextCursor } = await fetchConversations(cursorRef.current);
+      cursorRef.current = nextCursor;
       setConversations((prev) => [...prev, ...items]);
-      setHasMore(items.length === PAGE_SIZE);
+      setHasMore(nextCursor != null);
     } catch (err) {
       console.error('[Conversations] loadMore failed:', err);
     } finally {
@@ -45,15 +86,16 @@ export default function ConversationsPage() {
 
   // Initial load
   useEffect(() => {
-    getConversations(PAGE_SIZE)
-      .then(({ items, lastDoc }) => {
+    fetchConversations()
+      .then(({ items, nextCursor }) => {
         setConversations(items);
-        lastDocRef.current = lastDoc;
-        setHasMore(items.length === PAGE_SIZE);
+        cursorRef.current = nextCursor;
+        setHasMore(nextCursor != null);
         setLoading(false);
       })
       .catch((err) => {
         console.error('[Conversations] query failed:', err);
+        setError(err instanceof Error ? err.message : '불러오기에 실패했습니다.');
         setLoading(false);
       });
   }, []);
@@ -82,6 +124,12 @@ export default function ConversationsPage() {
 
       {loading ? (
         <LoadingSpinner />
+      ) : error ? (
+        <div className="text-center py-16 text-red-500 bg-white rounded-2xl border border-red-100">
+          <p className="text-4xl mb-2">⚠️</p>
+          <p className="font-semibold">대화를 불러오지 못했어요</p>
+          <p className="text-xs text-gray-400 mt-1">{error}</p>
+        </div>
       ) : conversations.length === 0 ? (
         <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-100">
           <p className="text-4xl mb-2">💬</p>
@@ -98,6 +146,7 @@ export default function ConversationsPage() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
                   <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">마지막 활동</th>
                   <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">생성일</th>
+                  <th className="px-4 py-2.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -137,6 +186,14 @@ export default function ConversationsPage() {
                       </td>
                       <td className="hidden md:table-cell px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(c.createdAt)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <Link
+                          href={`/dashboard/conversations/view?id=${c.id}`}
+                          className="text-xs font-semibold text-green-600 hover:text-green-700 hover:underline"
+                        >
+                          대화 보기 →
+                        </Link>
                       </td>
                     </tr>
                   );
