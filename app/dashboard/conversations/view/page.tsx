@@ -14,11 +14,21 @@ type Msg = {
   sentAt?: number | null;
 };
 
+type Flag = {
+  userId?: string | null;
+  messagePreview: string;
+  detectedIssues: string[];
+  category: string;
+  riskScore?: number | null;
+  detectedAt?: number | null;
+};
+
 type ConvDetail = {
   conversationId: string;
   participants: string[];
   conversationType: string;
   messages: Msg[];
+  flags?: Flag[];
 };
 
 function fmt(ms?: number | null) {
@@ -127,6 +137,26 @@ function ConversationView() {
               {analyzing ? '분석 중…' : '🔍 대화 분석'}
             </button>
           </div>
+
+          {data.flags && data.flags.length > 0 && (
+            <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+              <p className="text-xs font-bold text-red-700 mb-2">
+                🚨 자동 탐지된 위험 {data.flags.length}건 (외부앱 유도 등 — 해당 메시지는 서버에서 삭제됨)
+              </p>
+              <div className="space-y-1.5">
+                {data.flags.map((f, i) => (
+                  <div key={i} className="text-xs text-red-800 bg-white/60 rounded-lg px-2.5 py-1.5">
+                    <span className="font-mono text-red-500">{f.userId ? `${f.userId.slice(0, 8)}…` : '?'}</span>
+                    {' · '}
+                    <span className="break-words">{f.messagePreview || '(미리보기 없음)'}</span>
+                    {f.detectedIssues?.length > 0 && (
+                      <span className="text-red-400"> · [{f.detectedIssues.join(', ')}]</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {analyzeErr && (
             <div className="mb-4 rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-xs text-red-600">
