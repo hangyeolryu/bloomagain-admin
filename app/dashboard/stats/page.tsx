@@ -17,12 +17,14 @@ import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
+  getActivityPatterns,
   getDataCollectionStats,
   getDeviceMix,
   getEngagementRollup,
   getMatchingStats,
   getOnboardingFunnel,
   getSignupTrend,
+  type ActivityPatterns,
   type DataCollectionStats,
   type DeviceMix,
   type EngagementRollup,
@@ -105,6 +107,36 @@ function Bar({ label, value, total, color }: { label: string; value: number; tot
   );
 }
 
+function PeakHourChart({ data }: { data: { hour: number; count: number }[] }) {
+  const max = Math.max(1, ...data.map((d) => d.count));
+  return (
+    <div className="flex items-end gap-[3px] h-32 pt-2">
+      {data.map((d) => {
+        const h = Math.max(2, (d.count / max) * 100);
+        // 6/12/18 시 눈금만 표시 — 24개 다 라벨링하면 답답함.
+        const showTick = d.hour === 0 || d.hour === 6 || d.hour === 12 || d.hour === 18;
+        return (
+          <div
+            key={d.hour}
+            className="flex-1 min-w-0 flex flex-col items-center"
+            title={`${d.hour}시: ${d.count}명 활동`}
+          >
+            <div
+              className="w-full bg-purple-400 hover:bg-purple-500 transition-colors rounded-t"
+              style={{ height: `${h}%` }}
+            />
+            {showTick && (
+              <span className="text-[9px] text-gray-400 mt-1 whitespace-nowrap">
+                {d.hour}시
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SignupChart({ data }: { data: SignupTrendPoint[] }) {
   const max = Math.max(1, ...data.map((d) => d.count));
   return (
@@ -137,6 +169,7 @@ export default function StatsOverviewPage() {
   const [funnel, setFunnel] = useState<OnboardingFunnel | null>(null);
   const [matching, setMatching] = useState<MatchingStats | null>(null);
   const [dataCol, setDataCol] = useState<DataCollectionStats | null>(null);
+  const [activity, setActivity] = useState<ActivityPatterns | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,13 +177,14 @@ export default function StatsOverviewPage() {
       try {
         // Parallel — most helpers read `users` collection, but Firestore SDK
         // pipelines these fine over one connection.
-        const [e, d, t, f, m, dc] = await Promise.all([
+        const [e, d, t, f, m, dc, ap] = await Promise.all([
           getEngagementRollup(),
           getDeviceMix(),
           getSignupTrend(30),
           getOnboardingFunnel(),
           getMatchingStats(),
           getDataCollectionStats(),
+          getActivityPatterns(7),
         ]);
         if (cancelled) return;
         setEngagement(e);
@@ -159,6 +193,7 @@ export default function StatsOverviewPage() {
         setFunnel(f);
         setMatching(m);
         setDataCol(dc);
+        setActivity(ap);
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
       } finally {
@@ -244,6 +279,76 @@ export default function StatsOverviewPage() {
         />
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <SignupChart data={trend} />
+        </div>
+      </section>
+
+      {/* ── 활동 시간대 & 참여 유형 ─────────────────────── */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <SectionHeading
+            title="Peak hour — 활동 시간대 (최근 7일)"
+            hint="users/{uid}/activity_daily.hoursActive 집계 · 각 시간대에 접속한 unique 유저 수"
+          />
+          <div className="bg-white rounded-xl border border-gray-100 p-4">
+            {activity && activity.totalActiveUsers > 0 ? (
+              <>
+                <PeakHourChart data={activity.peakHours} />
+                <div className="text-[11px] text-gray-500 mt-3 flex justify-between">
+                  <span>최근 7일 활성 사용자 <span className="font-semibold text-gray-900">{activity.totalActiveUsers}</span>명</span>
+                  <span>평균 heartbeat <span className="font-semibold text-gray-900">{activity.avgHeartbeatsPerUser}</span> / 사용자</span>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                아직 활동 데이터가 없어요. 앱 배포 후 유저들이 앱을 열면
+                <br/>여기 시간대별 히스토그램이 뜹니다.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <SectionHeading
+            title="참여 유형 (최근 7일)"
+            hint="최근 7일 활동자들을 최고 참여 액션으로 분류"
+          />
+          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
+            {activity && activity.totalActiveUsers > 0 ? (
+              <>
+                <Bar
+                  label="💬 메시지까지 보냄"
+                  value={activity.engagementBuckets.messageSender}
+                  total={activity.totalActiveUsers}
+                  color="#1F4E3D"
+                />
+                <Bar
+                  label="🗨️ 대화 열어봄"
+                  value={activity.engagementBuckets.conversationOpener}
+                  total={activity.totalActiveUsers}
+                  color="#22C55E"
+                />
+                <Bar
+                  label="👋 웨이브 보냄"
+                  value={activity.engagementBuckets.waveSender}
+                  total={activity.totalActiveUsers}
+                  color="#F59E0B"
+                />
+                <Bar
+                  label="👀 열기만 함"
+                  value={activity.engagementBuckets.visitOnly}
+                  total={activity.totalActiveUsers}
+                  color="#9CA3AF"
+                />
+                <div className="pt-2 text-[11px] text-gray-500 border-t border-gray-100">
+                  💡 "열기만 함" 비율이 크면 홈 화면에 할 일이 없다는 신호. 재활성화 push나 그룹 대화 추천이 필요합니다.
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                활동 데이터 대기 중.
+              </div>
+            )}
+          </div>
         </div>
       </section>
 

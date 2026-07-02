@@ -1728,6 +1728,148 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// ─── Activity Patterns (from users/{uid}/activity_daily) ─────────────────────
+// Flutter AnalyticsService writes a per-day rollup doc per user with the
+// hours-active set + per-action counters. Aggregating them gives us the
+// "when do our users open the app" and "what do they do when they're in"
+// signals — the two questions that drive push timing + product priority.
+
+export interface PeakHourPoint {
+  hour: number; // 0-23
+  count: number; // unique users active during that hour (across window)
+}
+
+export interface EngagementBuckets {
+  // Each bucket counts distinct users whose top action in the window falls
+  // there. Ordered least → most engaged so the visual reads left-to-right.
+  visitOnly: number;      // opened app, no other tracked action
+  waveSender: number;     // sent at least one wave
+  conversationOpener: number; // opened a chat but hasn't sent yet
+  messageSender: number;  // sent at least one message (deepest engagement)
+}
+
+export interface ActivityPatterns {
+  windowDays: number;
+  totalActiveUsers: number;  // distinct users with any activity_daily doc in window
+  peakHours: PeakHourPoint[];
+  engagementBuckets: EngagementBuckets;
+  // "sessions" ≈ heartbeatCount summed across the window; not a true session
+  // count (heartbeat is 30-min throttled) but a decent proxy for time-in-app.
+  avgHeartbeatsPerUser: number;
+}
+
+function yyyymmdd(d: Date): string {
+  return (
+    d.getFullYear().toString().padStart(4, '0') +
+    (d.getMonth() + 1).toString().padStart(2, '0') +
+    d.getDate().toString().padStart(2, '0')
+  );
+}
+
+/**
+ * Aggregate the last N days of `activity_daily` docs across all users.
+ * Firestore collection-group query with a single string-range filter on
+ * `dayKey` runs without a composite index. Returns zeroed defaults on
+ * failure so the page still renders while data is accumulating.
+ */
+export async function getActivityPatterns(
+  days: number,
+): Promise<ActivityPatterns> {
+  const fromKey = yyyymmdd(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+
+  const hourCounts = new Array<number>(24).fill(0);
+  const uidsInWindow = new Set<string>();
+  const uidsWithHour = new Array<Set<string>>(24)
+    .fill(null as unknown as Set<string>)
+    .map(() => new Set<string>());
+
+  const bucketUsers = {
+    messageSender: new Set<string>(),
+    conversationOpener: new Set<string>(),
+    waveSender: new Set<string>(),
+    visitOnly: new Set<string>(),
+  };
+  let totalHeartbeats = 0;
+
+  try {
+    const q = query(
+      collectionGroup(db, 'activity_daily'),
+      where('dayKey', '>=', fromKey),
+    );
+    const snap = await getDocs(q);
+    for (const doc of snap.docs) {
+      // Parent path: users/{uid}/activity_daily/{yyyymmdd}
+      const uid = doc.ref.parent.parent?.id;
+      if (!uid) continue;
+      uidsInWindow.add(uid);
+
+      const data = doc.data();
+      const hoursActive = Array.isArray(data.hoursActive) ? data.hoursActive : [];
+      for (const raw of hoursActive) {
+        const h = Number(raw);
+        if (Number.isInteger(h) && h >= 0 && h < 24) {
+          uidsWithHour[h].add(uid);
+        }
+      }
+
+      const heartbeats = Number(data.heartbeatCount ?? 0);
+      if (Number.isFinite(heartbeats)) totalHeartbeats += heartbeats;
+
+      // Bucket the user at their highest engagement tier. A single user with
+      // both waves and messages counts once as "messageSender" (the highest).
+      const messages = Number(data.messagesSent ?? 0);
+      const conversations = Number(data.conversationsOpened ?? 0);
+      const waves = Number(data.wavesSent ?? 0);
+      if (messages > 0) bucketUsers.messageSender.add(uid);
+      else if (conversations > 0) bucketUsers.conversationOpener.add(uid);
+      else if (waves > 0) bucketUsers.waveSender.add(uid);
+    }
+  } catch (e) {
+    console.warn('[getActivityPatterns] failed:', e);
+    return {
+      windowDays: days,
+      totalActiveUsers: 0,
+      peakHours: hourCounts.map((_, hour) => ({ hour, count: 0 })),
+      engagementBuckets: {
+        visitOnly: 0,
+        waveSender: 0,
+        conversationOpener: 0,
+        messageSender: 0,
+      },
+      avgHeartbeatsPerUser: 0,
+    };
+  }
+
+  for (let h = 0; h < 24; h++) hourCounts[h] = uidsWithHour[h].size;
+
+  // Visit-only bucket = active user not caught by any deeper tier.
+  for (const uid of uidsInWindow) {
+    if (
+      !bucketUsers.messageSender.has(uid) &&
+      !bucketUsers.conversationOpener.has(uid) &&
+      !bucketUsers.waveSender.has(uid)
+    ) {
+      bucketUsers.visitOnly.add(uid);
+    }
+  }
+
+  return {
+    windowDays: days,
+    totalActiveUsers: uidsInWindow.size,
+    peakHours: hourCounts.map((count, hour) => ({ hour, count })),
+    engagementBuckets: {
+      visitOnly: bucketUsers.visitOnly.size,
+      waveSender: bucketUsers.waveSender.size,
+      conversationOpener: bucketUsers.conversationOpener.size,
+      messageSender: bucketUsers.messageSender.size,
+    },
+    avgHeartbeatsPerUser:
+      uidsInWindow.size > 0
+        ? Math.round((totalHeartbeats / uidsInWindow.size) * 10) / 10
+        : 0,
+  };
+}
+
 // ─── Data Maintenance — Orphan Post Sweep ────────────────────────────────────
 //
 // `users/{uid}/posts` is a subcollection. The mobile app's public "내 주변에서"
