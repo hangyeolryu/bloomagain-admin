@@ -574,7 +574,7 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
-                <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
+                <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">자기소개</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">DB</th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -647,15 +647,12 @@ export default function UsersPage() {
                     <td className="hidden sm:table-cell px-4 py-2.5 text-xs text-gray-600">
                       {formatAge(u.yearOfBirth)} / {u.city || '-'}
                     </td>
-                    <td className="hidden lg:table-cell px-4 py-2.5">
-                      <div className="flex flex-wrap gap-1">
-                        {(u.interests || []).slice(0, 2).map((i) => (
-                          <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{i}</span>
-                        ))}
-                        {(u.interests || []).length > 2 && (
-                          <span className="text-xs text-gray-400">+{u.interests!.length - 2}</span>
-                        )}
-                      </div>
+                    <td className="hidden lg:table-cell px-4 py-2.5 max-w-xs">
+                      {u.about ? (
+                        <p className="text-xs text-gray-600 line-clamp-2" title={u.about}>{u.about}</p>
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">{getStatusBadge(u)}</td>
                     <td className="hidden sm:table-cell px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
