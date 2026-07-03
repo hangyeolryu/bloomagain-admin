@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react';
  * Flutter WebView entry point for NICE 본인확인.
  *
  * Flow:
- *   1. Page loads → calls /api/nice/init with return_url pointing back here
+ *   1. Page loads → calls /api/nice/init with return_url pointing back here,
+ *      plus user_id when the Flutter WebView opened us with ?uid=<firebaseUid>
+ *      (binds the NICE session so only that user can redeem the token)
  *   2. POSTs to NICE (nice_pass) or redirects to auth_url (legacy)
  *   3. NICE runs verification in the same WebView window
  *   4. NICE redirects back to /verify/callback/ with token_version_id, enc_data, integrity_value
@@ -30,10 +32,31 @@ export default function VerifyStartPage() {
         // which domain to redirect back to, regardless of Origin header behaviour.
         const returnUrl = `${window.location.origin}/verify/callback/`;
 
+        // Firebase UID appended by the Flutter WebView (?uid=). Forwarding it
+        // binds the NICE session to the signed-in user; absent (old app builds,
+        // direct browser hits) the backend falls back to an unbound session.
+        const uid =
+          new URLSearchParams(window.location.search).get('uid')?.trim() ?? '';
+
+        // Persist for /verify/callback/ — NICE's redirect drops our query
+        // params, and the legacy store-result bridge needs the uid too.
+        try {
+          if (uid && uid.length <= 128) {
+            sessionStorage.setItem('nice_verify_uid', uid);
+          } else {
+            sessionStorage.removeItem('nice_verify_uid');
+          }
+        } catch {
+          // Storage unavailable (rare WebView config) — init binding still works.
+        }
+
         const res = await fetch('/api/nice/init', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ return_url: returnUrl }),
+          body: JSON.stringify({
+            return_url: returnUrl,
+            ...(uid && uid.length <= 128 && { user_id: uid }),
+          }),
         });
 
         const json = await res.json();

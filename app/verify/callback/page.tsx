@@ -100,10 +100,20 @@ function CallbackInner() {
               session_key: sessionKey!,
             };
 
+        // Firebase UID stashed by /verify/ (came in as ?uid= from the Flutter
+        // WebView). The proxy forwards it to the store-result bridge, which
+        // now requires user_id to bind the minted verification token.
+        let uid = '';
+        try {
+          uid = sessionStorage.getItem('nice_verify_uid')?.trim() ?? '';
+        } catch {
+          // Storage unavailable — proceed without binding context.
+        }
+
         const res = await fetch('/api/nice/result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, ...(uid && { user_id: uid }) }),
         });
         const json = await res.json();
 
@@ -111,6 +121,11 @@ function CallbackInner() {
           throw new Error(json.error ?? '결과 조회 실패');
         }
 
+        try {
+          sessionStorage.removeItem('nice_verify_uid');
+        } catch {
+          // ignore
+        }
         setData(json.data);
         setStatus('success');
         notifyResult({ success: true, verification_token: json.verification_token, data: json.data });
