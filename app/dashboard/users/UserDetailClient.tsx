@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity } from '@/lib/firestore';
+import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity, logIdentityPiiAccess } from '@/lib/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { UserProfile, UserActivity } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
+import SendMessageModal from '@/components/user/SendMessageModal';
 
 function InfoRow({ label, value }: { label: string; value?: string | number | boolean | null }) {
   return (
@@ -35,14 +36,44 @@ function formatDate(date?: Date) {
   return date.toLocaleString('ko-KR');
 }
 
+function genderLabel(g?: string) {
+  if (!g) return '-';
+  const v = g.toLowerCase();
+  if (['male', 'm', '남', '남성'].includes(v)) return '남성';
+  if (['female', 'f', '여', '여성'].includes(v)) return '여성';
+  return g;
+}
+
+function ageLabel(p: UserProfile) {
+  const y = p.yearOfBirth ?? p.legalBirthYear;
+  if (!y) return '-';
+  return `${y}년생 · ${new Date().getFullYear() - y}세`;
+}
+
+function regionLabel(p: UserProfile) {
+  if (!p.city && !p.district) return '-';
+  return `${p.city ?? ''}${p.district ? ` ${p.district}` : ''}`.trim();
+}
+
+/** Mask a legal name, keeping only the first character: 홍길동 → 홍○○, 김민 → 김○. */
+function maskName(name?: string | null) {
+  if (!name) return name ?? undefined;
+  const trimmed = name.trim();
+  if (trimmed.length <= 1) return trimmed;
+  return trimmed[0] + '○'.repeat(trimmed.length - 1);
+}
+
 export default function UserDetailClient({ id }: { id: string }) {
-  const { user: adminUser, can } = useAuth();
+  const { user: adminUser, role, can } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [nameRevealed, setNameRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState<UserActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
   const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | 'delete' | 'grantFounding' | null>(null);
+  const [dmModalOpen, setDmModalOpen] = useState(false);
+  const [dmToast, setDmToast] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [acting, setActing] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -163,6 +194,26 @@ export default function UserDetailClient({ id }: { id: string }) {
     }
   };
 
+  // Reveal the full legal name once, writing a PII-access audit record. The
+  // name stays masked (홍○○) until an operator explicitly asks to see it.
+  const revealIdentity = async () => {
+    if (nameRevealed) return;
+    setNameRevealed(true);
+    if (!adminUser || !profile) return;
+    try {
+      await logIdentityPiiAccess({
+        viewerUid: adminUser.uid,
+        viewerEmail: adminUser.email ?? null,
+        viewerRole: role ?? null,
+        targetUserId: profile.id,
+        fields: ['legalName'],
+      });
+    } catch (err) {
+      // Non-blocking: don't trap the operator if the log write fails.
+      console.error('PII access log failed', err);
+    }
+  };
+
   if (loading) return <LoadingSpinner />;
   if (!profile) return (
     <div className="text-center py-16 text-gray-400">
@@ -173,6 +224,8 @@ export default function UserDetailClient({ id }: { id: string }) {
 
   const isBlocked = profile.isBlacklisted || profile.accountStatus === 'blocked';
   const isSuspended = profile.accountStatus === 'suspended';
+  // Legal name is masked (홍○○) until an operator reveals it via revealIdentity.
+  const legalNameDisplay = nameRevealed ? profile.legalName : maskName(profile.legalName);
 
   return (
     <div className="max-w-3xl">
@@ -187,9 +240,18 @@ export default function UserDetailClient({ id }: { id: string }) {
       {/* Profile Header */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
         <div className="flex items-start gap-5">
-          <div className="w-20 h-20 rounded-2xl bg-green-100 flex items-center justify-center text-3xl font-bold text-green-700 flex-shrink-0">
-            {profile.displayName?.[0] || '?'}
-          </div>
+          {profile.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.photoUrl}
+              alt={profile.displayName || ''}
+              className="w-20 h-20 rounded-2xl object-cover flex-shrink-0 border border-gray-100"
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-green-100 flex items-center justify-center text-3xl font-bold text-green-700 flex-shrink-0">
+              {profile.displayName?.[0] || '?'}
+            </div>
+          )}
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-bold text-gray-900">{profile.displayName || '이름 없음'}</h1>
@@ -205,18 +267,43 @@ export default function UserDetailClient({ id }: { id: string }) {
               )}
             </div>
             <p className="text-sm text-gray-500 mt-1 font-mono">{profile.id}</p>
+            {profile.legalName && (
+              <p className="text-sm text-gray-700 mt-1 flex items-center gap-2 flex-wrap">
+                <span>
+                  실명 <span className="font-semibold">{legalNameDisplay}</span>
+                  {profile.legalBirthYear ? ` · ${profile.legalBirthYear}년생` : ''}
+                  {profile.identityVerified ? ' · ✓ 본인인증' : ''}
+                </span>
+                {!nameRevealed && (
+                  <button
+                    onClick={revealIdentity}
+                    className="text-xs px-2 py-0.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    title="실명 전체를 표시합니다. 이 열람은 감사 로그에 기록됩니다."
+                  >
+                    🔒 실명 보기
+                  </button>
+                )}
+              </p>
+            )}
             <p className="text-sm text-gray-500 mt-1">
               {profile.city}{profile.district ? `, ${profile.district}` : ''} ·{' '}
               {profile.yearOfBirth ? `${new Date().getFullYear() - profile.yearOfBirth}세` : '나이 미상'}
+              {profile.email ? ` · ${profile.email}` : ''}
             </p>
             {profile.about && (
-              <p className="text-sm text-gray-700 mt-2 italic">"{profile.about}"</p>
+              <p className="text-sm text-gray-700 mt-2 italic">&ldquo;{profile.about}&rdquo;</p>
             )}
           </div>
 
           {/* Action Buttons — manageUsers only */}
           {can('manageUsers') && (
             <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setDmModalOpen(true)}
+                className="px-4 py-2 text-sm bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
+              >
+                메시지 보내기
+              </button>
               {isBlocked ? (
                 <button
                   onClick={() => setModal('unblock')}
@@ -280,11 +367,36 @@ export default function UserDetailClient({ id }: { id: string }) {
         {/* Basic Info */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-4">기본 정보</h2>
+          <InfoRow label="실명" value={legalNameDisplay} />
+          <InfoRow label="표시 이름" value={profile.displayName} />
+          <InfoRow label="이메일" value={profile.email} />
+          <InfoRow label="성별" value={genderLabel(profile.gender)} />
+          <InfoRow label="생년 / 나이" value={ageLabel(profile)} />
+          <InfoRow label="지역" value={regionLabel(profile)} />
           <InfoRow label="가입일" value={formatDate(profile.createdAt)} />
           <InfoRow label="마지막 활동" value={formatDate(profile.lastActiveAt)} />
+          <InfoRow label="정보 수정일" value={formatDate(profile.updatedAt)} />
           <InfoRow label="앱 버전" value={profile.appVersion} />
           <InfoRow label="FCM 알림" value={profile.notificationEnabled ? '활성화' : '비활성화'} />
-          <InfoRow label="인증 완료" value={profile.verified ? '✅ 완료' : '❌ 미완료'} />
+          <InfoRow label="FCM 토큰" value={profile.fcmToken ? '등록됨' : '없음'} />
+          <InfoRow label="가입 인증(verified)" value={profile.verified ? '✅ 완료' : '❌ 미완료'} />
+          <InfoRow label="관리자" value={profile.isAdmin ? '예' : '아니오'} />
+          <InfoRow label="구독 등급" value={profile.subscription_tier || 'FREE'} />
+          <InfoRow
+            label="창립 회원 번호"
+            value={profile.founding_member_number != null ? `#${profile.founding_member_number}` : '-'}
+          />
+        </div>
+
+        {/* Identity / NICE verification */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <h2 className="font-semibold text-gray-900 mb-4">본인인증 (NICE)</h2>
+          <InfoRow label="인증 여부" value={profile.identityVerified ? '✅ 인증됨' : '❌ 미인증'} />
+          <InfoRow label="인증 상태" value={profile.identityVerificationStatus} />
+          <InfoRow label="인증 일시" value={formatDate(profile.identityVerifiedAt)} />
+          <InfoRow label="실명" value={legalNameDisplay} />
+          <InfoRow label="법적 생년" value={profile.legalBirthYear} />
+          <InfoRow label="성별" value={genderLabel(profile.gender)} />
         </div>
 
         {/* Interests */}
@@ -314,18 +426,23 @@ export default function UserDetailClient({ id }: { id: string }) {
           <InfoRow label="블랙리스트" value={profile.isBlacklisted ? '⚠️ 예' : '아니오'} />
           {profile.blacklistReason && <InfoRow label="차단 사유" value={profile.blacklistReason} />}
           {profile.blacklistedAt && <InfoRow label="차단 일시" value={formatDate(profile.blacklistedAt)} />}
+          {profile.blacklistedBy && <InfoRow label="차단 처리자" value={profile.blacklistedBy} />}
+          <InfoRow label="위험 점수" value={profile.riskScore ?? 0} />
           <InfoRow label="신고 횟수" value={profile.reportCount ?? 0} />
           <InfoRow label="의심 메시지 수" value={profile.suspiciousMessageCount ?? 0} />
+          <InfoRow label="로맨스 사기 횟수" value={profile.romanceScamCount ?? 0} />
+          <InfoRow label="성매매 유인 횟수" value={profile.sexualSolicitationCount ?? 0} />
+          <InfoRow label="행동 이상 점수(vBeh)" value={profile.vBehScore ?? 0} />
         </div>
 
         {/* Accessibility */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-4">접근성 설정</h2>
-          <InfoRow label="글씨 크기" value={(profile as any).accessibility?.fontSize || '-'} />
-          <InfoRow label="큰 텍스트" value={(profile as any).accessibility?.largeTextMode ? '활성화' : '비활성화'} />
-          <InfoRow label="음성 안내" value={(profile as any).accessibility?.voiceGuidanceEnabled ? '활성화' : '비활성화'} />
-          <InfoRow label="고대비 모드" value={(profile as any).accessibility?.highContrastMode ? '활성화' : '비활성화'} />
-          <InfoRow label="손떨림 모드" value={(profile as any).accessibility?.tremorModeEnabled ? '✅ 활성화' : '비활성화'} />
+          <InfoRow label="글씨 크기" value={profile.accessibility?.fontSize || '-'} />
+          <InfoRow label="큰 텍스트" value={profile.accessibility?.largeTextMode ? '활성화' : '비활성화'} />
+          <InfoRow label="음성 안내" value={profile.accessibility?.voiceGuidanceEnabled ? '활성화' : '비활성화'} />
+          <InfoRow label="고대비 모드" value={profile.accessibility?.highContrastMode ? '활성화' : '비활성화'} />
+          <InfoRow label="손떨림 모드" value={profile.accessibility?.tremorModeEnabled ? '✅ 활성화' : '비활성화'} />
         </div>
 
         {/* Activity */}
@@ -497,6 +614,38 @@ export default function UserDetailClient({ id }: { id: string }) {
           </div>
         </div>
       </Modal>
+
+      {/* Send DM Modal */}
+      <SendMessageModal
+        isOpen={dmModalOpen}
+        onClose={() => setDmModalOpen(false)}
+        targetUser={{
+          id: profile.id,
+          displayName: profile.displayName,
+          city: profile.city,
+          yearOfBirth: profile.yearOfBirth,
+        }}
+        onSent={({ chatWriteStatus, pushStatus, error: err }) => {
+          const chatPart =
+            chatWriteStatus === 'written' ? '💬 채팅에 저장' : '⚠️ 채팅 저장 실패';
+          const pushPart =
+            pushStatus === 'delivered'
+              ? '· 🔔 푸시 도착'
+              : pushStatus === 'skipped'
+                ? '· 푸시 건너뜀'
+                : '· 🔔 푸시 실패';
+          const errPart = err ? ` — ${err.slice(0, 120)}` : '';
+          setDmToast(`${chatPart} ${pushPart}${errPart}`.trim());
+          setTimeout(() => setDmToast(null), 8000);
+        }}
+      />
+
+      {/* Toast for DM result */}
+      {dmToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-lg text-sm max-w-md">
+          {dmToast}
+        </div>
+      )}
 
       {/* Founding-member grant Modal */}
       <Modal

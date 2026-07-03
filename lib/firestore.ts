@@ -24,6 +24,7 @@ import {
   documentId,
   getCountFromServer,
   writeBatch,
+  serverTimestamp,
 } from 'firebase/firestore';
 
 // Cursor-based pagination result
@@ -150,6 +151,34 @@ export async function getUser(uid: string): Promise<UserProfile | null> {
 
 export async function updateUserStatus(uid: string, status: string) {
   await updateDoc(doc(db, 'users', uid), { accountStatus: status, updatedAt: Timestamp.now() });
+}
+
+/**
+ * Append a tamper-evident audit record when an admin reveals a user's identity
+ * PII (실명 등). Writes to the append-only `admin_pii_access_logs` collection —
+ * Firestore rules allow create-only (no client update/delete) and require
+ * viewerUid == request.auth.uid, so an operator can't forge another admin's id
+ * or erase their own access. Reviewed out-of-band (Firebase console / backend).
+ *
+ * Best-effort: never throws to the caller — a logging hiccup must not block the
+ * operator, but failures are surfaced to the console for monitoring.
+ */
+export async function logIdentityPiiAccess(params: {
+  viewerUid: string;
+  viewerEmail: string | null;
+  viewerRole: string | null;
+  targetUserId: string;
+  fields: string[];
+}): Promise<void> {
+  await addDoc(collection(db, 'admin_pii_access_logs'), {
+    viewerUid: params.viewerUid,
+    viewerEmail: params.viewerEmail,
+    viewerRole: params.viewerRole,
+    targetUserId: params.targetUserId,
+    fields: params.fields,
+    action: 'reveal_identity',
+    viewedAt: serverTimestamp(),
+  });
 }
 
 export async function blockUser(uid: string, reason: string, adminUid: string) {

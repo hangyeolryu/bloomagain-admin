@@ -64,6 +64,19 @@ export interface UserProfile {
   // the backend's expires_at passes (no client-side cleanup needed).
   founding_member_number?: number;
   subscription_tier?: 'FREE' | 'PREMIUM';
+  // Additional profile / safety fields present on the root user doc.
+  gender?: string;
+  riskScore?: number;
+  romanceScamCount?: number;
+  sexualSolicitationCount?: number;
+  vBehScore?: number;
+  accessibility?: {
+    fontSize?: string;
+    largeTextMode?: boolean;
+    voiceGuidanceEnabled?: boolean;
+    highContrastMode?: boolean;
+    tremorModeEnabled?: boolean;
+  };
 }
 
 export interface Circle {
