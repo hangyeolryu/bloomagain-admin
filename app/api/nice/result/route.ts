@@ -24,12 +24,28 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.text();
+    const rawBody = await request.text();
+
+    // The callback page includes user_id (Firebase UID from the app's ?uid=).
+    // It's for our store-result bridge below, not for the NICE backend —
+    // strip it before forwarding upstream.
+    let userId = '';
+    let upstreamBody = rawBody;
+    try {
+      const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+      if (typeof parsed.user_id === 'string' && parsed.user_id.trim()) {
+        userId = parsed.user_id.trim().slice(0, 128);
+        delete parsed.user_id;
+        upstreamBody = JSON.stringify(parsed);
+      }
+    } catch {
+      // Non-JSON body — forward as-is; bridge will run without user_id.
+    }
 
     const upstream = await fetch(`${backendUrl}/nice/result`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body,
+      body: upstreamBody,
     });
 
     const raw = await upstream.text();
@@ -57,8 +73,16 @@ export async function POST(request: NextRequest) {
 
     // Legacy nice-backend: returns {success, data:{ci,di,...}} without verification_token.
     // Bridge: call main backend to store the result and get a one-time token.
+    // The main backend requires user_id here (an unbound completed token would be
+    // redeemable by anyone), so without it we skip the call — same fall-through as
+    // a failed store (verification_token stays null and the client shows an error).
     const data = json.data as Record<string, string> | undefined;
-    if (json.success && data?.ci && MAIN_BACKEND_URL && BACKEND_API_KEY) {
+    if (json.success && data?.ci && MAIN_BACKEND_URL && BACKEND_API_KEY && !userId) {
+      console.error(
+        '[/api/nice/result] legacy bridge skipped: user_id missing — app must open /verify/?uid=<firebaseUid> (old app build?)'
+      );
+    }
+    if (json.success && data?.ci && MAIN_BACKEND_URL && BACKEND_API_KEY && userId) {
       try {
         const storeResp = await fetch(`${MAIN_BACKEND_URL}/api/v1/nice/store-result`, {
           method: 'POST',
@@ -75,6 +99,7 @@ export async function POST(request: NextRequest) {
             mobile_no: data.mobile_no,
             gender: data.gender,
             nation_info: data.nation_info,
+            user_id: userId,
           }),
         });
 

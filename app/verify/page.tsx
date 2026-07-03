@@ -38,6 +38,18 @@ export default function VerifyStartPage() {
         const uid =
           new URLSearchParams(window.location.search).get('uid')?.trim() ?? '';
 
+        // Persist for /verify/callback/ — NICE's redirect drops our query
+        // params, and the legacy store-result bridge needs the uid too.
+        try {
+          if (uid && uid.length <= 128) {
+            sessionStorage.setItem('nice_verify_uid', uid);
+          } else {
+            sessionStorage.removeItem('nice_verify_uid');
+          }
+        } catch {
+          // Storage unavailable (rare WebView config) — init binding still works.
+        }
+
         const res = await fetch('/api/nice/init', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
