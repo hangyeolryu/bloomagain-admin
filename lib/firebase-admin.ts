@@ -1,19 +1,15 @@
-import * as admin from 'firebase-admin';
+// DISABLED (2026-07-01): firebase-admin is incompatible with this repo's
+// Next.js 16 + Turbopack + Firebase Hosting SSR build pipeline. Marking it as
+// external via `serverExternalPackages` fails at runtime because the deployed
+// Cloud Run container has no node_modules, and letting Turbopack bundle it
+// pollutes the shared server chunk with an external `firebase-admin-<hash>`
+// require that breaks every route on cold start (see Cloud Run logs from
+// 2026-07-01T10:36 / 10:43). All admin-side Firebase Admin operations must
+// go through the FastAPI backend proxy pattern used by /api/backend/*, or
+// through a Cloud Function callable, until we sort out a bundling story.
+//
+// The exports below are kept as null so old imports don't reference-error
+// during transitional edits.
 
-// Initialise once (Next.js hot-reload safe).
-// Uses Application Default Credentials on Cloud Run / Firebase Hosting.
-// For local dev: set GOOGLE_APPLICATION_CREDENTIALS to a service-account key file.
-let initialised = false;
-try {
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    });
-  }
-  initialised = true;
-} catch (err) {
-  console.error('[firebase-admin] initializeApp failed:', err);
-}
-
-export const adminAuth      = initialised ? admin.auth()      : null;
-export const adminFirestore = initialised ? admin.firestore() : null;
+export const adminAuth = null;
+export const adminFirestore = null;

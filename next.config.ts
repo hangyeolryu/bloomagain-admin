@@ -11,7 +11,18 @@ const nextConfig: NextConfig = {
     BACKEND_API_KEY: process.env.BACKEND_API_KEY ?? '',
     // FastAPI base URL for POST /nice/init and /nice/result (must be inlined for Firebase)
     NICE_BACKEND_URL: process.env.NICE_BACKEND_URL ?? '',
+    // Override the dedicated "티타 관리자" chat sender at deploy time. When
+    // unset the admin-DM route falls back to the hardcoded staging uid.
+    TITA_OFFICIAL_SENDER_UID: process.env.TITA_OFFICIAL_SENDER_UID ?? '',
   },
+  // NOTE (2026-07-01): tried `serverExternalPackages: ['firebase-admin']` to
+  // avoid bundling grpc/native modules, but Firebase Hosting's
+  // frameworksBackend deployment doesn't ship node_modules for external
+  // packages — the route crashed at cold start with
+  //   Cannot find module 'firebase-admin-<hash>'
+  // and that same "external module" reference bled into every other route's
+  // shared chunk, taking down /api/admin/backend-health etc. as collateral.
+  // Left unset so Next.js bundles firebase-admin normally.
   images: {
     unoptimized: true,
   },

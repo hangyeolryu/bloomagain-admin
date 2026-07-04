@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔' },
   { href: '/dashboard/waves', label: '웨이브', icon: '👋' },
   { href: '/dashboard/conversations', label: '대화', icon: '💬' },
+  { href: '/dashboard/admin-dms', label: '어드민 DM 관리', icon: '✉️' },
   { href: '/dashboard/identity', label: 'NICE 본인확인', icon: '🪪' },
   { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️' },
   { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫' },
