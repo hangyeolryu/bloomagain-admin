@@ -454,6 +454,7 @@ export default function UsersPage() {
         !u.displayName?.toLowerCase().includes(q) &&
         !u.legalName?.toLowerCase().includes(q) &&
         !u.city?.toLowerCase().includes(q) &&
+        !u.district?.toLowerCase().includes(q) &&
         !u.id.toLowerCase().includes(q)
       ) return false;
     }
