@@ -99,6 +99,31 @@ function toDate(val: unknown): Date | undefined {
  */
 export type UserSortKey = 'createdAt' | 'lastActiveAt';
 
+// CRIT 1: legalName / legalBirthYear / sosContacts live in the owner-only
+// users/{uid}/private/identity doc — root copies were removed by the
+// deleteRoot backfill (2026-07-04) and 3.0.5 clients stop writing them
+// entirely. Admins read the private doc via the isAdmin collectionGroup
+// rule. Overlay it (private-preferred, root-fallback) so 실명 keeps showing
+// in the users list and detail views.
+async function overlayPrivatePii<T extends { id: string }>(u: T): Promise<T> {
+  try {
+    const snap = await getDoc(doc(db, 'users', u.id, 'private', 'identity'));
+    if (!snap.exists()) return u;
+    const p = snap.data();
+    return {
+      ...u,
+      ...(p.legalName ? { legalName: p.legalName } : {}),
+      ...(p.legalBirthYear ? { legalBirthYear: p.legalBirthYear } : {}),
+      ...(Array.isArray(p.sosContacts) && p.sosContacts.length
+        ? { sosContacts: p.sosContacts }
+        : {}),
+    };
+  } catch {
+    // Rules denial / transient error — show the root-only view rather than fail.
+    return u;
+  }
+}
+
 export async function getUsers(
   pageSize = 30,
   cursor?: QueryDocumentSnapshot,
@@ -122,16 +147,19 @@ export async function getUsers(
     limit(pageSize),
   );
   const snap = await getDocs(q);
+  const items = snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    createdAt: toDate(d.data().createdAt),
+    updatedAt: toDate(d.data().updatedAt),
+    lastActiveAt: toDate(d.data().lastActiveAt),
+    blacklistedAt: toDate(d.data().blacklistedAt),
+    identityVerifiedAt: toDate(d.data().identityVerifiedAt),
+  })) as UserProfile[];
   return {
-    items: snap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: toDate(d.data().createdAt),
-      updatedAt: toDate(d.data().updatedAt),
-      lastActiveAt: toDate(d.data().lastActiveAt),
-      blacklistedAt: toDate(d.data().blacklistedAt),
-      identityVerifiedAt: toDate(d.data().identityVerifiedAt),
-    })) as UserProfile[],
+    // One private/identity read per row (page of ~30) — acceptable at
+    // current scale; revisit with a server-side join if pages grow.
+    items: await Promise.all(items.map(overlayPrivatePii)),
     lastDoc: snap.docs[snap.docs.length - 1] ?? null,
   };
 }
@@ -139,14 +167,14 @@ export async function getUsers(
 export async function getUser(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return null;
-  return {
+  return overlayPrivatePii({
     id: snap.id,
     ...snap.data(),
     createdAt: toDate(snap.data().createdAt),
     updatedAt: toDate(snap.data().updatedAt),
     lastActiveAt: toDate(snap.data().lastActiveAt),
     identityVerifiedAt: toDate(snap.data().identityVerifiedAt),
-  } as UserProfile;
+  } as UserProfile);
 }
 
 export async function updateUserStatus(uid: string, status: string) {
