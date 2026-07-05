@@ -20,7 +20,7 @@ import type { UserProfile } from '@/types';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  targetUser: Pick<UserProfile, 'id' | 'displayName' | 'city' | 'yearOfBirth'>;
+  targetUser: Pick<UserProfile, 'id' | 'displayName' | 'city' | 'district' | 'yearOfBirth'>;
   onSent?: (result: {
     chatWriteStatus: 'written' | 'failed';
     pushStatus: 'delivered' | 'skipped' | 'failed';
@@ -35,6 +35,7 @@ type TemplateKey =
   | 'dating_tone_warning'
   | 'welcome_new_user'
   | 'first_meetup_invite'
+  | 'titatime_invite'
   | 'seed_member_thanks'
   | 'custom';
 
@@ -111,6 +112,28 @@ ${u.displayName || '회원'} 님 오시면 정말 좋을 것 같아서요.
 부담 없이 편하실 때 답 주시면 됩니다.
 
 — 유한결`,
+  },
+  {
+    key: 'titatime_invite',
+    label: '티타임 초대 (3~4인)',
+    description: '결이 맞는 3~4명 소규모 티타임 초대 (동네·낮·카페)',
+    title: '${displayName} 님, 티타임에 초대드려요',
+    body: (u) => `${u.displayName || '회원'} 님, 안녕하세요. 티타 운영팀이에요.
+
+${u.district ? `${u.district}에서` : u.city ? `${u.city}에서` : '가까운 동네에서'} 결이 잘 맞는 세 분과
+차 한 잔 나누는 작은 자리 "티타임"을 준비했어요.
+
+· 서너 명, 90분, 낮 시간 카페
+· 본인인증 된 또래 여성분들만
+· 만남·소개가 아니라 편하게 친구 사귀는 자리예요
+
+${u.displayName || '회원'} 님 결큐 답변이 잘 맞는 분들이라
+오시면 대화가 잘 통하실 것 같아서요.
+
+혹시 관심 있으시면 편하실 때 답 주세요.
+날짜·장소 맞춰서 안내드릴게요 🍵
+
+— 티타 운영팀`,
   },
   {
     key: 'seed_member_thanks',

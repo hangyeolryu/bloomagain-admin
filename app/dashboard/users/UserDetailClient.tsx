@@ -623,6 +623,7 @@ export default function UserDetailClient({ id }: { id: string }) {
           id: profile.id,
           displayName: profile.displayName,
           city: profile.city,
+          district: profile.district,
           yearOfBirth: profile.yearOfBirth,
         }}
         onSent={({ chatWriteStatus, pushStatus, error: err }) => {
