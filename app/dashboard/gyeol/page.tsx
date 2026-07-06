@@ -52,10 +52,13 @@ export default function GyeolDashboardPage() {
   if (!stats) return null;
 
   const t = stats.totals;
-  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  // 비율은 0~100%로 클램프한다. start 전송이 유실되거나(네트워크) 한 유저가
+  // iOS/Android 둘 다 누르면 비율이 100%를 넘을 수 있어 표시가 깨진다.
+  const pct = (n: number) => `${Math.round(Math.min(1, Math.max(0, n)) * 100)}%`;
   const typeMax = stats.typeDistribution[0]?.count ?? 0;
   const srcMax = stats.bySource[0]?.count ?? 0;
-  const dailyMax = Math.max(1, ...stats.daily.map((d) => d.start));
+  // 막대 스케일은 start·complete 통합 최댓값 기준 (complete>start여도 안 넘침).
+  const dayMax = Math.max(1, ...stats.daily.flatMap((d) => [d.start, d.complete]));
 
   return (
     <div className="max-w-5xl space-y-8 p-6">
@@ -113,17 +116,33 @@ export default function GyeolDashboardPage() {
         {stats.daily.length === 0 ? (
           <p className="text-sm text-gray-400">아직 데이터가 없어요.</p>
         ) : (
-          <div className="flex items-end gap-1.5" style={{ height: 120 }}>
-            {stats.daily.map((d) => (
-              <div key={d.date} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${d.date} · 시작 ${d.start} / 완료 ${d.complete}`}>
-                <div className="flex w-full flex-col justify-end" style={{ height: 90 }}>
-                  <div className="w-full rounded-t bg-green-600/30" style={{ height: `${(d.start / dailyMax) * 100}%` }}>
-                    <div className="w-full rounded-t bg-green-600" style={{ height: d.start ? `${(d.complete / d.start) * 100}%` : 0 }} />
+          <div className="flex gap-1.5 rounded-lg border border-gray-100 bg-gray-50/50 p-3" style={{ height: 150 }}>
+            {stats.daily.map((d) => {
+              const barH = (v: number) =>
+                `${Math.min(100, (v / dayMax) * 100)}%`;
+              return (
+                <div
+                  key={d.date}
+                  className="flex flex-1 flex-col gap-1"
+                  title={`${d.date} · 시작 ${d.start} / 완료 ${d.complete}`}
+                >
+                  <div className="relative w-full flex-1">
+                    {/* 연한 넓은 막대 = 시작, 진한 좁은 막대 = 완료 (둘 다 바닥 정렬) */}
+                    <div
+                      className="absolute bottom-0 left-0 w-full rounded-t bg-green-200"
+                      style={{ height: barH(d.start) }}
+                    />
+                    <div
+                      className="absolute bottom-0 left-1/2 w-1/2 -translate-x-1/2 rounded-t bg-green-600"
+                      style={{ height: barH(d.complete) }}
+                    />
+                  </div>
+                  <div className="text-center text-[9px] text-gray-400">
+                    {d.date.slice(5)}
                   </div>
                 </div>
-                <div className="text-[9px] text-gray-400">{d.date.slice(5)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         <p className="mt-2 text-xs text-gray-400">진한 막대 = 완료, 연한 막대 = 시작</p>
