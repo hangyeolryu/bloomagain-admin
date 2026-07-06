@@ -2161,3 +2161,95 @@ export async function sweepOrphanCirclePosts(
   result.elapsedMs = Date.now() - started;
   return result;
 }
+
+// ─── 결 유형 테스트 (무가입) 이벤트 집계 ────────────────────────────────────
+//
+// 마케팅 웹(tita-app.com/gyeol)의 무가입 결 유형 테스트 이벤트를 백엔드가
+// `gyeol_test_events` 컬렉션에 적재한다(익명 — 개인식별정보 없음). 여기서
+// 집계해 대시보드에 "몇 명·어떤 유형·어디서·다운 전환"을 보여준다.
+//
+// 규모 주의: 클라이언트에서 최근 N건만 읽어 집계한다(현재 2000건 캡). 초기
+// 볼륨엔 충분. 커지면 백엔드 집계 엔드포인트로 이관.
+
+export interface GyeolStats {
+  totals: { start: number; complete: number; share: number; download: number };
+  completionRate: number; // complete / start
+  downloadRate: number; // download / complete
+  typeDistribution: { type: string; count: number }[]; // completes 기준, 내림차순
+  bySource: { source: string; count: number }[]; // completes 기준, 내림차순
+  daily: { date: string; start: number; complete: number }[]; // 최근 14일
+  recent: { createdAt?: Date; phase: string; type: string | null; source: string | null }[];
+  capped: boolean; // 2000건 캡에 걸렸는지
+}
+
+const GYEOL_TYPE_NAMES: Record<string, string> = {
+  FDP: '다정한 정원사', FDL: '따뜻한 즉흥파', FBP: '동네 분위기 메이커',
+  FBL: '흥 많은 마당발', SDP: '조용한 진심', SDL: '느긋한 사색가',
+  SBP: '선을 지키는 다정', SBL: '편안한 산책 친구',
+};
+
+export function gyeolTypeLabel(code: string | null): string {
+  if (!code) return '—';
+  return GYEOL_TYPE_NAMES[code] ? `${GYEOL_TYPE_NAMES[code]} (${code})` : code;
+}
+
+export async function getGyeolStats(): Promise<GyeolStats> {
+  const CAP = 2000;
+  const snap = await getDocs(
+    query(collection(db, 'gyeol_test_events'), orderBy('createdAt', 'desc'), limit(CAP))
+  );
+
+  const totals = { start: 0, complete: 0, share: 0, download: 0 };
+  const typeCount = new Map<string, number>();
+  const sourceCount = new Map<string, number>();
+  const dayMap = new Map<string, { start: number; complete: number }>();
+  const recent: GyeolStats['recent'] = [];
+
+  snap.forEach((d) => {
+    const data = d.data() as DocumentData;
+    const phase = String(data.phase ?? '');
+    if (phase in totals) totals[phase as keyof typeof totals] += 1;
+
+    const type = (data.gyeolType ?? null) as string | null;
+    const source = (data.source ?? null) as string | null;
+    const createdAt = toDate(data.createdAt);
+
+    if (phase === 'complete') {
+      if (type) typeCount.set(type, (typeCount.get(type) ?? 0) + 1);
+      const s = source || '(직접/알수없음)';
+      sourceCount.set(s, (sourceCount.get(s) ?? 0) + 1);
+    }
+    if ((phase === 'start' || phase === 'complete') && createdAt) {
+      const key = createdAt.toISOString().slice(0, 10);
+      const row = dayMap.get(key) ?? { start: 0, complete: 0 };
+      if (phase === 'start') row.start += 1;
+      else row.complete += 1;
+      dayMap.set(key, row);
+    }
+    if (recent.length < 40) {
+      recent.push({ createdAt, phase, type, source });
+    }
+  });
+
+  const typeDistribution = [...typeCount.entries()]
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count);
+  const bySource = [...sourceCount.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count);
+  const daily = [...dayMap.entries()]
+    .map(([date, v]) => ({ date, ...v }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-14);
+
+  return {
+    totals,
+    completionRate: totals.start ? totals.complete / totals.start : 0,
+    downloadRate: totals.complete ? totals.download / totals.complete : 0,
+    typeDistribution,
+    bySource,
+    daily,
+    recent,
+    capped: snap.size >= CAP,
+  };
+}
