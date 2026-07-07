@@ -17,6 +17,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: '대시보드', icon: '📊' },
   { href: '/dashboard/stats', label: '통계 오버뷰', icon: '📈' },
+  { href: '/dashboard/docs', label: '문서', icon: '📚' },
   { href: '/dashboard/gyeol', label: '결 유형 테스트', icon: '🍵' },
   { href: '/dashboard/titatime', label: '티타임 가격 실험', icon: '🫖' },
   { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️' },
