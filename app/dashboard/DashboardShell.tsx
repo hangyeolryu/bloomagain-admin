@@ -21,7 +21,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="font-semibold text-gray-800 text-sm">다시, 봄 관리자</span>
+          <span className="font-semibold text-gray-800 text-sm">티타 관리자</span>
         </div>
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">{children}</main>
       </div>

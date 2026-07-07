@@ -52,7 +52,7 @@ export default function DashboardPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">대시보드</h1>
-        <p className="text-gray-500 text-sm mt-1">다시, 봄 서비스 현황 요약</p>
+        <p className="text-gray-500 text-sm mt-1">티타 서비스 현황 요약</p>
       </div>
 
       {stats && (

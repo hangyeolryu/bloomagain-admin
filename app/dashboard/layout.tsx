@@ -47,9 +47,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-green-100 rounded-lg flex items-center justify-center">
-              <span className="text-sm">🌸</span>
+              <span className="text-sm">🍵</span>
             </div>
-            <span className="font-bold text-gray-900 text-sm">다시, 봄</span>
+            <span className="font-bold text-gray-900 text-sm">티타</span>
           </div>
         </header>
 

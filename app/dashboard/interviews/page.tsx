@@ -296,8 +296,8 @@ export default function InterviewsPage() {
         />
       </FormSection>
 
-      {/* ── Q4. 다시봄 설명 후 의향 ── */}
-      <FormSection num="3️⃣" title='"다시봄 같은 앱이 있다면" 사용 의향' required>
+      {/* ── Q4. 티타 설명 후 의향 ── */}
+      <FormSection num="3️⃣" title='"티타 같은 앱이 있다면" 사용 의향' required>
         <p className="text-xs text-gray-500 mb-3 -mt-1">
           💡 설명 예시: &ldquo;50대 이상만, 본인인증 받고, AI가 사기 차단, 동네 친구·모임
           추천하는 앱이에요.&rdquo;

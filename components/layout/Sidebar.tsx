@@ -68,10 +68,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       <div className="p-5 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center">
-            <span className="text-lg">🌸</span>
+            <span className="text-lg">🍵</span>
           </div>
           <div>
-            <p className="font-bold text-gray-900 text-sm">다시, 봄</p>
+            <p className="font-bold text-gray-900 text-sm">티타</p>
             <p className="text-xs text-gray-500">관리자 대시보드</p>
           </div>
         </div>
