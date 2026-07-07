@@ -10,7 +10,13 @@
 import { useEffect, useState } from 'react';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { getGyeolStats, gyeolTypeLabel, type GyeolStats } from '@/lib/firestore';
+import {
+  getGyeolStats,
+  gyeolTypeLabel,
+  GYEOL_GENDER_LABELS,
+  GYEOL_COMFORT_LABELS,
+  type GyeolStats,
+} from '@/lib/firestore';
 
 function Tile({ label, value, hint, strong }: { label: string; value: string | number; hint?: string; strong?: boolean }) {
   return (
@@ -57,6 +63,9 @@ export default function GyeolDashboardPage() {
   const pct = (n: number) => `${Math.round(Math.min(1, Math.max(0, n)) * 100)}%`;
   const typeMax = stats.typeDistribution[0]?.count ?? 0;
   const srcMax = stats.bySource[0]?.count ?? 0;
+  const genderMax = stats.genderDistribution[0]?.count ?? 0;
+  const comfortMax = stats.comfortDistribution[0]?.count ?? 0;
+  const genderKnown = stats.genderDistribution.reduce((s, d) => s + d.count, 0);
   // 막대 스케일은 start·complete 통합 최댓값 기준 (complete>start여도 안 넘침).
   const dayMax = Math.max(1, ...stats.daily.flatMap((d) => [d.start, d.complete]));
 
@@ -93,6 +102,46 @@ export default function GyeolDashboardPage() {
             ))}
           </div>
         )}
+      </section>
+
+      {/* 성비 + 편안함 (여성-우선 핵심 지표) */}
+      <section>
+        <h2 className="mb-1 text-sm font-semibold text-gray-900">성별 · 누구와 편한지</h2>
+        <p className="mb-3 text-xs text-gray-400">
+          완료 시점 선택(익명·선택) · 여성-우선 성비와 매칭 필터 근거
+        </p>
+        <div className="grid gap-6 md:grid-cols-2">
+          <div>
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-xs font-medium text-gray-500">성별</span>
+              <span className="text-sm font-semibold text-green-700 tabular-nums">
+                여성 {genderKnown > 0 ? `${Math.round(stats.femaleShare * 100)}%` : '—'}
+                <span className="ml-1 text-xs font-normal text-gray-400">(응답 {genderKnown})</span>
+              </span>
+            </div>
+            {stats.genderDistribution.length === 0 ? (
+              <p className="text-sm text-gray-400">아직 응답이 없어요.</p>
+            ) : (
+              <div className="space-y-2">
+                {stats.genderDistribution.map((d) => (
+                  <Bar key={d.gender} label={GYEOL_GENDER_LABELS[d.gender] ?? d.gender} count={d.count} max={genderMax} />
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <span className="mb-2 block text-xs font-medium text-gray-500">누구와 함께가 편한지</span>
+            {stats.comfortDistribution.length === 0 ? (
+              <p className="text-sm text-gray-400">아직 응답이 없어요.</p>
+            ) : (
+              <div className="space-y-2">
+                {stats.comfortDistribution.map((d) => (
+                  <Bar key={d.comfort} label={GYEOL_COMFORT_LABELS[d.comfort] ?? d.comfort} count={d.count} max={comfortMax} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* 유입 소스 */}

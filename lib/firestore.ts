@@ -2177,10 +2177,20 @@ export interface GyeolStats {
   downloadRate: number; // download / complete
   typeDistribution: { type: string; count: number }[]; // completes 기준, 내림차순
   bySource: { source: string; count: number }[]; // completes 기준, 내림차순
+  genderDistribution: { gender: string; count: number }[]; // completes 기준 (f/m/na)
+  comfortDistribution: { comfort: string; count: number }[]; // completes 기준 (same/any/opp)
+  femaleShare: number; // f / (f+m), 성비 핵심 지표 (na 제외)
   daily: { date: string; start: number; complete: number }[]; // 최근 14일
   recent: { createdAt?: Date; phase: string; type: string | null; source: string | null }[];
   capped: boolean; // 2000건 캡에 걸렸는지
 }
+
+export const GYEOL_GENDER_LABELS: Record<string, string> = {
+  f: '여성', m: '남성', na: '선택 안 함',
+};
+export const GYEOL_COMFORT_LABELS: Record<string, string> = {
+  same: '동성 친구가 편해요', any: '상관없어요, 결만 맞으면', opp: '이성 친구도 좋아요',
+};
 
 const GYEOL_TYPE_NAMES: Record<string, string> = {
   FDP: '다정한 정원사', FDL: '따뜻한 즉흥파', FBP: '동네 분위기 메이커',
@@ -2202,6 +2212,8 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const totals = { start: 0, complete: 0, share: 0, download: 0 };
   const typeCount = new Map<string, number>();
   const sourceCount = new Map<string, number>();
+  const genderCount = new Map<string, number>();
+  const comfortCount = new Map<string, number>();
   const dayMap = new Map<string, { start: number; complete: number }>();
   const recent: GyeolStats['recent'] = [];
 
@@ -2212,12 +2224,16 @@ export async function getGyeolStats(): Promise<GyeolStats> {
 
     const type = (data.gyeolType ?? null) as string | null;
     const source = (data.source ?? null) as string | null;
+    const gender = (data.gender ?? null) as string | null;
+    const comfort = (data.comfort ?? null) as string | null;
     const createdAt = toDate(data.createdAt);
 
     if (phase === 'complete') {
       if (type) typeCount.set(type, (typeCount.get(type) ?? 0) + 1);
       const s = source || '(직접/알수없음)';
       sourceCount.set(s, (sourceCount.get(s) ?? 0) + 1);
+      if (gender) genderCount.set(gender, (genderCount.get(gender) ?? 0) + 1);
+      if (comfort) comfortCount.set(comfort, (comfortCount.get(comfort) ?? 0) + 1);
     }
     if ((phase === 'start' || phase === 'complete') && createdAt) {
       const key = createdAt.toISOString().slice(0, 10);
@@ -2237,6 +2253,16 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const bySource = [...sourceCount.entries()]
     .map(([source, count]) => ({ source, count }))
     .sort((a, b) => b.count - a.count);
+  // 유형 순서 고정(f, any, opp / f, m, na)으로 뒀다면 좋지만, 단순 내림차순으로.
+  const genderDistribution = [...genderCount.entries()]
+    .map(([gender, count]) => ({ gender, count }))
+    .sort((a, b) => b.count - a.count);
+  const comfortDistribution = [...comfortCount.entries()]
+    .map(([comfort, count]) => ({ comfort, count }))
+    .sort((a, b) => b.count - a.count);
+  const fCount = genderCount.get('f') ?? 0;
+  const mCount = genderCount.get('m') ?? 0;
+  const femaleShare = fCount + mCount > 0 ? fCount / (fCount + mCount) : 0;
   const daily = [...dayMap.entries()]
     .map(([date, v]) => ({ date, ...v }))
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -2248,6 +2274,9 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     downloadRate: totals.complete ? totals.download / totals.complete : 0,
     typeDistribution,
     bySource,
+    genderDistribution,
+    comfortDistribution,
+    femaleShare,
     daily,
     recent,
     capped: snap.size >= CAP,
