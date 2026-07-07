@@ -2282,3 +2282,89 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     capped: snap.size >= CAP,
   };
 }
+
+// ─── 티타임 가격 스모크 테스트 ─────────────────────────────────────────
+// 마케팅 웹 /titatime 방문자를 가격 암(free/9900/19000)에 랜덤 배정하고
+// "이 자리 신청하기" 클릭(=지불 의사의 행동 신호)을 backend가
+// `titatime_events`에 적재한다. 여기서 암별 view→apply 전환을 집계 —
+// "45+가 유료 티타임에 신청할까"를 인터뷰가 아니라 행동으로 읽는 실험.
+
+export interface TitatimeStats {
+  totals: { view: number; apply: number; download: number };
+  byArm: {
+    arm: string;
+    views: number;
+    applies: number;
+    downloads: number;
+    applyRate: number; // applies / views
+  }[];
+  byDistrict: { district: string; applies: number }[];
+  recent: {
+    createdAt?: Date;
+    phase: string;
+    arm: string | null;
+    district: string | null;
+    source: string | null;
+  }[];
+  capped: boolean;
+}
+
+export const TITATIME_ARM_LABELS: Record<string, string> = {
+  free: '무료 (첫 모임)', '9900': '9,900원', '19000': '19,000원',
+};
+
+export async function getTitatimeStats(): Promise<TitatimeStats> {
+  const CAP = 2000;
+  const snap = await getDocs(
+    query(collection(db, 'titatime_events'), orderBy('createdAt', 'desc'), limit(CAP))
+  );
+
+  const totals = { view: 0, apply: 0, download: 0 };
+  const armMap = new Map<string, { views: number; applies: number; downloads: number }>();
+  const districtCount = new Map<string, number>();
+  const recent: TitatimeStats['recent'] = [];
+
+  snap.forEach((d) => {
+    const data = d.data() as DocumentData;
+    const phase = String(data.phase ?? '');
+    if (phase in totals) totals[phase as keyof typeof totals] += 1;
+
+    const arm = (data.priceArm ?? null) as string | null;
+    const district = (data.district ?? null) as string | null;
+    const source = (data.source ?? null) as string | null;
+    const createdAt = toDate(data.createdAt);
+
+    if (arm) {
+      const row = armMap.get(arm) ?? { views: 0, applies: 0, downloads: 0 };
+      if (phase === 'view') row.views += 1;
+      else if (phase === 'apply') row.applies += 1;
+      else if (phase === 'download') row.downloads += 1;
+      armMap.set(arm, row);
+    }
+    if (phase === 'apply' && district) {
+      districtCount.set(district, (districtCount.get(district) ?? 0) + 1);
+    }
+    if (recent.length < 40) {
+      recent.push({ createdAt, phase, arm, district, source });
+    }
+  });
+
+  const byArm = [...armMap.entries()]
+    .map(([arm, v]) => ({
+      ...v,
+      arm,
+      applyRate: v.views > 0 ? v.applies / v.views : 0,
+    }))
+    // 무료 → 저가 → 고가 순으로 고정 (지불의사 계단이 한눈에 보이게)
+    .sort((a, b) => {
+      const order = ['free', '9900', '19000'];
+      const ia = order.indexOf(a.arm);
+      const ib = order.indexOf(b.arm);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+  const byDistrict = [...districtCount.entries()]
+    .map(([district, applies]) => ({ district, applies }))
+    .sort((a, b) => b.applies - a.applies);
+
+  return { totals, byArm, byDistrict, recent, capped: snap.size >= CAP };
+}
