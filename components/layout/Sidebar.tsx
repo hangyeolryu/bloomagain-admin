@@ -40,6 +40,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫' },
   { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️' },
   { href: '/dashboard/support', label: '고객 문의', icon: '🎧' },
+  { href: '/dashboard/ai-review', label: 'AI 검수', icon: '🧠' },
   { href: '/dashboard/announcements', label: '공지사항', icon: '📢', permission: 'manageCircles' },
   { href: '/dashboard/health', label: '백엔드 상태', icon: '💚' },
   { href: '/dashboard/sync-failures', label: '싱크 실패', icon: '🔁' },
