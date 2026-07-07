@@ -27,6 +27,7 @@ interface BotTurn {
   role: 'user' | 'assistant';
   content: string;
   escalated?: boolean;
+  filed?: boolean;
   latencyMs?: number;
 }
 
@@ -257,6 +258,7 @@ function BotReviewSection() {
   const [turns, setTurns] = useState<BotTurn[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [fileForReal, setFileForReal] = useState(false);
 
   const send = async (text: string) => {
     const message = text.trim();
@@ -267,14 +269,15 @@ function BotReviewSection() {
     setSending(true);
     try {
       const call = httpsCallable<
-        { action: string; message: string; history: { role: string; content: string }[] },
-        { reply: string; escalated: boolean; latencyMs: number }
+        { action: string; message: string; history: { role: string; content: string }[]; fileForReal: boolean },
+        { reply: string; escalated: boolean; filed: boolean; latencyMs: number }
       >(fns(), 'runLlmPlayground', { timeout: 60_000 });
-      const r = await call({ action: 'bot_reply', message, history });
+      const r = await call({ action: 'bot_reply', message, history, fileForReal });
       setTurns((prev) => [...prev, {
         role: 'assistant',
         content: r.data.reply,
         escalated: r.data.escalated,
+        filed: r.data.filed,
         latencyMs: r.data.latencyMs,
       }]);
     } catch (e) {
@@ -300,6 +303,15 @@ function BotReviewSection() {
       <p className="text-sm text-gray-500 mt-0.5">
         실서비스와 같은 프롬프트로 답합니다. 접수 발행 시 배지로 표시됩니다.
       </p>
+      <label className="mt-2 flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={fileForReal}
+          onChange={(e) => setFileForReal(e.target.checked)}
+          className="rounded"
+        />
+        접수 실제 발행 (E2E 테스트 — 진짜 inquiries 기록 + 어드민 푸시가 갑니다)
+      </label>
 
       <div className="flex flex-wrap gap-1.5 mt-3">
         {BOT_PRESETS.map((p) => (
@@ -325,7 +337,9 @@ function BotReviewSection() {
               {t.content}
               {t.escalated && (
                 <p className="mt-1.5 text-[11px] font-bold text-orange-600">
-                  🔔 문의접수 발행됨 — 실제 대화라면 어드민 알림 + inquiries 기록
+                  {t.filed
+                    ? '🔔 문의접수 실제 발행됨 — inquiries 기록 + 어드민 푸시 전송'
+                    : '🔔 문의접수 발행됨 (검수 모드라 기록 안 함 — 실제 유저 대화에서는 접수+알림 발생)'}
                 </p>
               )}
               {t.latencyMs != null && (
