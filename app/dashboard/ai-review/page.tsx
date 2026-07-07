@@ -62,12 +62,118 @@ export default function AiReviewPage() {
         subtitle="LLM 파이프라인 자동 진단과 봇·안전 도우미 대화형 검수. 검수는 드라이런 — 실제 문의 접수·알림이 발생하지 않습니다."
       />
       <DiagnosticsSection />
+      <UsageSection />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <BotReviewSection />
         <ScamReviewSection />
       </div>
       <PromptSection />
     </div>
+  );
+}
+
+// ── 기능별 사용량/비용 ────────────────────────────────────────────────────
+
+interface FeatureUsage {
+  feature: string;
+  total_calls: number;
+  cached_calls: number;
+  cache_hit_rate: number;
+  prompt_tokens: number;
+  output_tokens: number;
+  avg_latency_ms: number;
+}
+
+function UsageSection() {
+  const [days, setDays] = useState(7);
+  const [rows, setRows] = useState<FeatureUsage[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (d: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const call = httpsCallable<{ action: string; days: number }, { features: FeatureUsage[] }>(
+        fns(), 'runLlmPlayground', { timeout: 30_000 });
+      const r = await call({ action: 'usage', days: d });
+      setRows(r.data.features);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="font-semibold text-gray-900">💰 기능별 LLM 사용량</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            llm_call_logs 집계 — 캐시 히트율·토큰 소모로 비용 흐름을 봅니다. (OpenAI 폴백 폐기 판단 근거)
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {[1, 7, 30].map((d) => (
+            <button
+              key={d}
+              onClick={() => {
+                setDays(d);
+                load(d);
+              }}
+              disabled={loading}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors disabled:opacity-50 ${
+                days === d && rows !== null
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {d}일
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && <p className="mt-3 text-sm text-red-600">❌ {error}</p>}
+      {loading && <p className="mt-3 text-sm text-gray-400">불러오는 중...</p>}
+
+      {rows && !loading && (
+        rows.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-500">해당 기간에 LLM 호출이 없습니다.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                  <th className="py-2 pr-4">기능</th>
+                  <th className="py-2 pr-4 text-right">호출</th>
+                  <th className="py-2 pr-4 text-right">캐시 히트율</th>
+                  <th className="py-2 pr-4 text-right">입력 토큰</th>
+                  <th className="py-2 pr-4 text-right">출력 토큰</th>
+                  <th className="py-2 text-right">평균 지연</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {rows.map((r) => (
+                  <tr key={r.feature}>
+                    <td className="py-2 pr-4 font-mono text-xs">{r.feature}</td>
+                    <td className="py-2 pr-4 text-right">{r.total_calls.toLocaleString()}</td>
+                    <td className="py-2 pr-4 text-right">
+                      {(r.cache_hit_rate * 100).toFixed(0)}%
+                      <span className="text-gray-400"> ({r.cached_calls})</span>
+                    </td>
+                    <td className="py-2 pr-4 text-right">{r.prompt_tokens.toLocaleString()}</td>
+                    <td className="py-2 pr-4 text-right">{r.output_tokens.toLocaleString()}</td>
+                    <td className="py-2 text-right">{r.avg_latency_ms}ms</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </section>
   );
 }
 
