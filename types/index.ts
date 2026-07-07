@@ -127,6 +127,18 @@ export interface Report {
   resolvedAt?: Date;
   resolvedBy?: string;
   resolution?: string;
+  /** LLM 처리 초안 — functions onReportCreated가 신고된 대화를 분석해 작성.
+   *  참고용: 최종 조치는 어드민이 실행한다. */
+  aiDraft?: {
+    status: 'ready' | 'failed' | 'skipped';
+    violation?: 'yes' | 'no' | 'unclear';
+    severity?: 'low' | 'medium' | 'high';
+    summary?: string;
+    evidence?: string[];
+    recommendation?: 'dismiss' | 'warn' | 'suspend' | 'monitor';
+    recommendationReason?: string;
+    note?: string;
+  };
 }
 
 export interface AdminAlert {
