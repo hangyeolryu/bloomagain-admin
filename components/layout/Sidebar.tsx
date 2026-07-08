@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/stats', label: '통계 오버뷰', icon: '📈' },
   { href: '/dashboard/gyeol', label: '결 유형 테스트', icon: '🍵' },
   { href: '/dashboard/titatime', label: '티타임 가격 실험', icon: '🫖' },
+  { href: '/dashboard/moim-builder', label: '찻자리 편성', icon: '🪑' },
   { href: '/dashboard/briefing', label: '사업계획·IP 브리핑', icon: '📑' },
   { href: '/dashboard/data-collection', label: '데이터 수집 현황', icon: '🌱' },
   { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞' },
