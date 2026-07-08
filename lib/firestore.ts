@@ -2368,3 +2368,146 @@ export async function getTitatimeStats(): Promise<TitatimeStats> {
 
   return { totals, byArm, byDistrict, recent, capped: snap.size >= CAP };
 }
+
+// ── 자동 결모임 — 자리표 수요 · 제안 성사 현황 ─────────────────────────────
+// 데이터: users/*/gyeol_moim_tickets (collectionGroup, 어드민 read 룰) +
+// gyeol_moim_proposals (backend /moim/assemble이 생성, Cloud Function이
+// 수락 집계·방 생성). 성립 안 되는 만남 자리표는 그대로 동네 수요 지도.
+
+export interface MoimStats {
+  tickets: {
+    total: number;
+    active: number;
+    paused: number;
+    chat: number; // active 중 대화 자리
+    meet: number; // active 중 만나는 자리
+    thisWeek: number; // active 중 '이번 주 안엔'
+  };
+  meetDemand: { district: string; count: number; couple: number }[];
+  topicDemand: { topic: string; count: number }[];
+  proposals: {
+    total: number;
+    proposed: number;
+    roomCreated: number;
+    expired: number;
+    notFormed: number;
+    inviteAcceptRate: number | null; // 응답 슬롯 중 수락 비율
+    responseRate: number | null; // 초대 슬롯 중 응답 비율
+    avgMinPair: number | null; // 방 생성된 제안의 평균 minPair (캘리브레이션)
+  };
+  recentProposals: {
+    createdAt: Date | null;
+    type: string;
+    district: string | null;
+    members: number;
+    accepted: number;
+    responded: number;
+    status: string;
+    minPair: number | null;
+  }[];
+  capped: boolean;
+}
+
+export async function getMoimStats(): Promise<MoimStats> {
+  const CAP = 2000;
+
+  const ticketSnap = await getDocs(
+    query(collectionGroup(db, 'gyeol_moim_tickets'), limit(CAP))
+  );
+  const tickets = { total: 0, active: 0, paused: 0, chat: 0, meet: 0, thisWeek: 0 };
+  const districtCount = new Map<string, { count: number; couple: number }>();
+  const topicCount = new Map<string, number>();
+  ticketSnap.forEach((d) => {
+    const t = d.data() as DocumentData;
+    tickets.total += 1;
+    if (t.active !== true) {
+      tickets.paused += 1;
+      return;
+    }
+    tickets.active += 1;
+    if (t.type === 'meet') {
+      tickets.meet += 1;
+      const district = String(t.district ?? '(동네 미설정)');
+      const row = districtCount.get(district) ?? { count: 0, couple: 0 };
+      row.count += 1;
+      if (t.party === 'couple') row.couple += 1;
+      districtCount.set(district, row);
+    } else {
+      tickets.chat += 1;
+    }
+    if (t.urgency === 'this_week') tickets.thisWeek += 1;
+    for (const topic of (t.topics as string[] | undefined) ?? []) {
+      topicCount.set(topic, (topicCount.get(topic) ?? 0) + 1);
+    }
+  });
+
+  const proposalSnap = await getDocs(
+    query(collection(db, 'gyeol_moim_proposals'), orderBy('createdAt', 'desc'), limit(CAP))
+  );
+  const proposals = {
+    total: 0, proposed: 0, roomCreated: 0, expired: 0, notFormed: 0,
+    inviteAcceptRate: null as number | null,
+    responseRate: null as number | null,
+    avgMinPair: null as number | null,
+  };
+  let slots = 0;
+  let responded = 0;
+  let accepted = 0;
+  let minPairSum = 0;
+  let minPairN = 0;
+  const recentProposals: MoimStats['recentProposals'] = [];
+  proposalSnap.forEach((d) => {
+    const p = d.data() as DocumentData;
+    proposals.total += 1;
+    const status = String(p.status ?? 'proposed');
+    if (status === 'proposed') proposals.proposed += 1;
+    else if (status === 'room_created') proposals.roomCreated += 1;
+    else if (status === 'expired') proposals.expired += 1;
+    else if (status === 'not_formed') proposals.notFormed += 1;
+
+    const members = (p.members as string[] | undefined) ?? [];
+    const accepts = (p.accepts as Record<string, boolean> | undefined) ?? {};
+    const respondedHere = Object.keys(accepts).length;
+    const acceptedHere = Object.values(accepts).filter((v) => v === true).length;
+    slots += members.length;
+    responded += respondedHere;
+    accepted += acceptedHere;
+
+    const minPair = typeof p.scores?.minPair === 'number' ? p.scores.minPair : null;
+    if (status === 'room_created' && minPair !== null) {
+      minPairSum += minPair;
+      minPairN += 1;
+    }
+    if (recentProposals.length < 40) {
+      recentProposals.push({
+        createdAt: toDate(p.createdAt) ?? null,
+        type: String(p.type ?? 'chat'),
+        district: (p.district as string | null) ?? null,
+        members: members.length,
+        accepted: acceptedHere,
+        responded: respondedHere,
+        status,
+        minPair,
+      });
+    }
+  });
+  proposals.responseRate = slots > 0 ? responded / slots : null;
+  proposals.inviteAcceptRate = responded > 0 ? accepted / responded : null;
+  proposals.avgMinPair = minPairN > 0 ? minPairSum / minPairN : null;
+
+  const meetDemand = [...districtCount.entries()]
+    .map(([district, v]) => ({ district, ...v }))
+    .sort((a, b) => b.count - a.count);
+  const topicDemand = [...topicCount.entries()]
+    .map(([topic, count]) => ({ topic, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    tickets,
+    meetDemand,
+    topicDemand,
+    proposals,
+    recentProposals,
+    capped: ticketSnap.size >= CAP || proposalSnap.size >= CAP,
+  };
+}
