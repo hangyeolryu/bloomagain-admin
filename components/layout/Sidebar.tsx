@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/titatime', label: '티타임 가격 실험', icon: '🫖' },
   { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️' },
   { href: '/dashboard/moim-builder', label: '찻자리 편성 (QA)', icon: '🪑' },
+  { href: '/dashboard/marketing', label: '마케팅 운영', icon: '📣' },
   { href: '/dashboard/briefing', label: '사업계획·IP 브리핑', icon: '📑' },
   { href: '/dashboard/data-collection', label: '데이터 수집 현황', icon: '🌱' },
   { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞' },
