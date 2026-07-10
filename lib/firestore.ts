@@ -789,6 +789,48 @@ export async function getUserActivity(uid: string): Promise<UserActivity> {
   };
 }
 
+// ─── 결큐 per-user progress ──────────────────────────────────────────────────
+
+export interface UserGyeolQAnswer {
+  questionId: number;
+  selectedOptionId: string;
+  answeredAt: string | null; // ISO string as stored by the app
+  tags: string[];
+}
+
+export interface UserGyeolQ {
+  total: number;
+  gatePassed: boolean;   // 3+ answers → 결큐 게이트 통과
+  moimEligible: boolean; // 7+ answers → 자동 결모임 후보 자격
+  lastAnsweredAt: string | null;
+  answers: UserGyeolQAnswer[]; // newest first
+  allTags: string[];
+}
+
+export async function getUserGyeolQ(uid: string): Promise<UserGyeolQ> {
+  const snap = await getDocs(collection(db, 'users', uid, 'dailyQuestions'));
+  const answers: UserGyeolQAnswer[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      questionId: Number(data.questionId ?? d.id),
+      selectedOptionId: String(data.selectedOptionId ?? ''),
+      answeredAt: typeof data.answeredAt === 'string' ? data.answeredAt : null,
+      tags: Array.isArray(data.tags) ? (data.tags as string[]) : [],
+    };
+  });
+  answers.sort((a, b) => (b.answeredAt ?? '').localeCompare(a.answeredAt ?? ''));
+  const tagSet = new Set<string>();
+  answers.forEach((a) => a.tags.forEach((t) => tagSet.add(t)));
+  return {
+    total: answers.length,
+    gatePassed: answers.length >= 3,
+    moimEligible: answers.length >= 7,
+    lastAnsweredAt: answers[0]?.answeredAt ?? null,
+    answers,
+    allTags: [...tagSet],
+  };
+}
+
 // ─── Waves ────────────────────────────────────────────────────────────────────
 
 export async function getWaves(

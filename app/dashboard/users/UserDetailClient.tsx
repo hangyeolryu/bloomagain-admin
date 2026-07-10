@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity, logIdentityPiiAccess } from '@/lib/firestore';
+import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity, getUserGyeolQ, logIdentityPiiAccess, type UserGyeolQ } from '@/lib/firestore';
+import questionMeta from '@/lib/gyeolq-questions.json';
 import { useAuth } from '@/lib/auth-context';
 import type { UserProfile, UserActivity } from '@/types';
 import Badge from '@/components/ui/Badge';
@@ -34,6 +35,14 @@ function ActivityStat({ label, value, icon }: { label: string; value: number; ic
 function formatDate(date?: Date) {
   if (!date) return '-';
   return date.toLocaleString('ko-KR');
+}
+
+const QUESTION_META = questionMeta as Record<string, { t: string; o: Record<string, string>; c: string }>;
+
+function formatIso(iso: string | null) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleString('ko-KR');
 }
 
 function genderLabel(g?: string) {
@@ -71,6 +80,8 @@ export default function UserDetailClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState<UserActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
+  const [gyeolq, setGyeolq] = useState<UserGyeolQ | null>(null);
+  const [gyeolqLoading, setGyeolqLoading] = useState(true);
   const [modal, setModal] = useState<'block' | 'unblock' | 'suspend' | 'activate' | 'delete' | 'grantFounding' | null>(null);
   const [dmModalOpen, setDmModalOpen] = useState(false);
   const [dmToast, setDmToast] = useState<string | null>(null);
@@ -93,6 +104,10 @@ export default function UserDetailClient({ id }: { id: string }) {
       setActivity(a);
       setActivityLoading(false);
     }).catch(() => setActivityLoading(false));
+    getUserGyeolQ(id).then((g) => {
+      setGyeolq(g);
+      setGyeolqLoading(false);
+    }).catch(() => setGyeolqLoading(false));
   }, [id]);
 
   const handleAction = async () => {
@@ -264,6 +279,15 @@ export default function UserDetailClient({ id }: { id: string }) {
               )}
               {profile.subscription_tier === 'PREMIUM' && (
                 <Badge variant="green">Premium</Badge>
+              )}
+              {gyeolq && (
+                gyeolq.moimEligible ? (
+                  <Badge variant="green">🌱 결큐 {gyeolq.total} · 결모임 자격</Badge>
+                ) : gyeolq.gatePassed ? (
+                  <Badge variant="blue">🌱 결큐 {gyeolq.total} · 게이트 통과</Badge>
+                ) : (
+                  <Badge variant="orange">🌱 결큐 {gyeolq.total}/3 · 게이트 미통과</Badge>
+                )
               )}
             </div>
             <p className="text-sm text-gray-500 mt-1 font-mono">{profile.id}</p>
@@ -443,6 +467,104 @@ export default function UserDetailClient({ id }: { id: string }) {
           <InfoRow label="음성 안내" value={profile.accessibility?.voiceGuidanceEnabled ? '활성화' : '비활성화'} />
           <InfoRow label="고대비 모드" value={profile.accessibility?.highContrastMode ? '활성화' : '비활성화'} />
           <InfoRow label="손떨림 모드" value={profile.accessibility?.tremorModeEnabled ? '✅ 활성화' : '비활성화'} />
+        </div>
+
+        {/* 결큐 progress */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:col-span-2">
+          <h2 className="font-semibold text-gray-900 mb-4">🌱 결큐 진행</h2>
+          {gyeolqLoading ? (
+            <div className="flex items-center justify-center py-6 text-gray-400 text-sm gap-2">
+              <span className="animate-spin">⏳</span> 불러오는 중...
+            </div>
+          ) : gyeolq ? (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <ActivityStat label="총 답변" value={gyeolq.total} icon="🌱" />
+                <div className="flex flex-col items-center justify-center bg-gray-50 rounded-xl py-4 px-3 gap-1">
+                  <span className="text-2xl">{gyeolq.gatePassed ? '✅' : '🚧'}</span>
+                  <span className={`text-sm font-bold ${gyeolq.gatePassed ? 'text-green-700' : 'text-orange-600'}`}>
+                    {gyeolq.gatePassed ? '통과' : `${gyeolq.total}/3`}
+                  </span>
+                  <span className="text-xs text-gray-500 text-center leading-tight">게이트 (3문항)</span>
+                </div>
+                <div className="flex flex-col items-center justify-center bg-gray-50 rounded-xl py-4 px-3 gap-1">
+                  <span className="text-2xl">{gyeolq.moimEligible ? '✅' : '🚧'}</span>
+                  <span className={`text-sm font-bold ${gyeolq.moimEligible ? 'text-green-700' : 'text-orange-600'}`}>
+                    {gyeolq.moimEligible ? '자격 충족' : `${gyeolq.total}/7`}
+                  </span>
+                  <span className="text-xs text-gray-500 text-center leading-tight">자동 결모임 (7문항)</span>
+                </div>
+                <div className="flex flex-col items-center justify-center bg-gray-50 rounded-xl py-4 px-3 gap-1">
+                  <span className="text-2xl">🕐</span>
+                  <span className="text-xs font-semibold text-gray-900 text-center leading-tight">
+                    {gyeolq.lastAnsweredAt ? formatIso(gyeolq.lastAnsweredAt) : '-'}
+                  </span>
+                  <span className="text-xs text-gray-500 text-center leading-tight">마지막 답변</span>
+                </div>
+              </div>
+
+              {/* Progress bar toward 결모임 eligibility */}
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>0</span>
+                  <span className={gyeolq.gatePassed ? 'text-green-600 font-semibold' : ''}>게이트 3</span>
+                  <span className={gyeolq.moimEligible ? 'text-green-600 font-semibold' : ''}>결모임 7</span>
+                </div>
+                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${gyeolq.moimEligible ? 'bg-green-500' : gyeolq.gatePassed ? 'bg-blue-500' : 'bg-orange-400'}`}
+                    style={{ width: `${Math.min(100, (gyeolq.total / 7) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Accumulated tags */}
+              {gyeolq.allTags.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs text-gray-500 mb-2">누적 결 태그 ({gyeolq.allTags.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {gyeolq.allTags.map((t) => (
+                      <span key={t} className="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-full border border-green-100">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent answers */}
+              {gyeolq.answers.length > 0 ? (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">최근 답변 (최대 10개)</p>
+                  <div className="space-y-1.5">
+                    {gyeolq.answers.slice(0, 10).map((a) => {
+                      const meta = QUESTION_META[String(a.questionId)];
+                      return (
+                        <div key={`${a.questionId}-${a.answeredAt}`} className="flex items-start justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                          <div className="min-w-0">
+                            <p className="text-gray-800 truncate">
+                              <span className="text-gray-400 mr-1">#{a.questionId}</span>
+                              {meta?.t ?? '(질문 정보 없음)'}
+                            </p>
+                            <p className="text-xs text-green-700 mt-0.5">
+                              → {meta?.o?.[a.selectedOptionId] ?? a.selectedOptionId}
+                            </p>
+                          </div>
+                          <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
+                            {a.answeredAt ? formatIso(a.answeredAt).split(' 오')[0] : '-'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 py-2 text-center">아직 결큐 답변이 없습니다.</p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 py-4 text-center">결큐 데이터를 불러올 수 없습니다.</p>
+          )}
         </div>
 
         {/* Activity */}
