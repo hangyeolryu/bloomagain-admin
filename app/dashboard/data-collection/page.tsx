@@ -73,10 +73,12 @@ const PIPELINE_STATUS: Array<{ name: string; status: 'ok' | 'warn' | 'todo'; det
   { name: 'Cloud Function getUserEmbeddingHttp', status: 'ok', detail: 'Vertex AI text-embedding-005 호출, 768d 생성' },
   { name: 'Riverpod matchedUsersProvider 새로고침', status: 'ok', detail: '답변 후 즉시 invalidate' },
   { name: '모임 추천 (Firestore tags 직접)', status: 'ok', detail: '_userDailyQuestionTags overlap weight 1' },
-  { name: 'Backend /api/v1/matching/embedding 동기화', status: 'warn', detail: '⚠ Pre-existing dim mismatch: Cloud Func 768d ↔ Backend Vector(384d) — silent fail' },
-  { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'todo', detail: '셋업 가이드 작성 완료 — 콘솔 활성화 필요 (bigquery_setup_guide.md)' },
-  { name: 'Looker Studio 대시보드', status: 'todo', detail: 'BQ 활성화 후 5개 view 기반 대시보드 생성' },
-  { name: 'survey_responses 테이블 (Postgres)', status: 'todo', detail: 'Alembic 021 — LSIS-6 라이센스 회신 후 생성' },
+  { name: 'Backend /api/v1/matching/embedding 동기화', status: 'ok', detail: '✅ 768d 정렬 완료 (Alembic 021, 2026-07) — dim mismatch 해소, 자동 결모임이 이 임베딩을 사용' },
+  { name: '자동 결모임 조립 (/moim/assemble)', status: 'ok', detail: '자리표 → 상호 top-K + 결 임계값 조립 → 제안 → 티타지기 방. ⚠ Cloud Scheduler 잡 등록 확인 필요 (수동 트리거는 가능)' },
+  { name: '결큐 질문 원격화 (gyeolQuestionBank)', status: 'warn', detail: '코드 완료 — rules 배포 + 앱 v3.0.9 출시 후 활성. 그때까지 번들 질문만 사용' },
+  { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'ok', detail: 'bloomagain_raw (Seoul) 라이브 2026-05-17~ — GA4 + Firestore + Cloud SQL federated' },
+  { name: 'Looker Studio 대시보드', status: 'todo', detail: '보류 — 어드민 인사이트가 운영 질문을 대체. B2G 분기 리포트 단계에서 재평가' },
+  { name: 'survey_responses 테이블 (Postgres)', status: 'todo', detail: 'LSIS-6 라이센스 회신 대기 (외부 블로커) — 회신 후 마이그레이션 생성 (021은 embedding에 사용됨, 다음 번호로)' },
 ];
 
 function licenseBadge(status: LicenseStatus) {
