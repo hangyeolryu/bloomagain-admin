@@ -1213,6 +1213,18 @@ export interface DataCollectionStats {
   topTags: Array<{ tag: string; count: number }>;
   // Daily Question category distribution
   categoryCounts: Record<string, number>;
+  // ── 결큐 인사이트 (2026-07-10 추가) ──
+  // 답변 깊이 — 결 게이트(3답)·결모임 자격(7답) 기준선이 제품 임계값과 일치
+  gateEligible: number;             // 답변 ≥ 3 사용자 (결 게이트 통과)
+  moimEligible: number;             // 답변 ≥ 7 사용자 (결모임 조립 자격)
+  depthBuckets: Array<{ label: string; count: number }>;
+  // 최근 14일 일별 답변 수 (오래된 날 → 오늘 순)
+  dailyTrend: Array<{ date: string; count: number }>;
+  // 질문별 응답 분포 — 답변 수 상위 질문의 선택지 쏠림 확인용
+  questionStats: Array<{ id: string; total: number; options: Record<string, number> }>;
+  // 온보딩 "어디서 알게 되셨어요?" 응답 집계 (users/*/analytics_milestones)
+  acquisitionChannels: Array<{ channel: string; count: number }>;
+  acquisitionAnswered: number;      // 응답한 사용자 수 (스킵 제외)
 }
 
 /**
@@ -1260,32 +1272,108 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     }
   }
 
-  // 2) Aggregate counts via collectionGroup. These are O(1) reads — they only
-  //    return the count, not the docs. Both indexes must exist (Firebase will
-  //    surface a console error with the create-index URL if not).
-  const [totalDailyAnswers, totalMiniPulseResponses] = await Promise.all([
-    safeCount(collection(db, 'users'), '__placeholder__').then(async () => {
-      // Use collectionGroup for daily answers
-      try {
-        const cg = collectionGroup(db, 'dailyQuestions');
-        const snap = await getCountFromServer(cg);
-        return snap.data().count;
-      } catch (e) {
-        console.warn('[data-collection] dailyQuestions count failed:', e);
-        return 0;
+  // 2) 결큐 답변 전체를 collectionGroup으로 한 번에 읽는다. 카운트만 뽑던
+  //    이전 방식과 달리 문서를 다 가져오는 이유: 일별 추이·답변 깊이·질문별
+  //    선택지 분포가 전부 개별 답변에서만 나온다. 문서가 작아(4필드) 수천
+  //    건까지는 한 페이지 로드로 충분. (규칙: {path=**}/dailyQuestions admin
+  //    read — 2026-07-10 추가. 그 전엔 permission-denied로 조용히 0이었다.)
+  let totalDailyAnswers = 0;
+  const perUserAnswers = new Map<string, number>();
+  const trendCounter = new Map<string, number>();
+  const questionCounter = new Map<string, { total: number; options: Record<string, number> }>();
+  try {
+    const cg = collectionGroup(db, 'dailyQuestions');
+    const snap = await getDocs(cg);
+    for (const d of snap.docs) {
+      // 경로: users/{uid}/dailyQuestions/{qid} — 루트 /dailyQuestions(질문
+      // 정의) 문서도 같은 collectionGroup에 걸리므로 depth로 걸러낸다.
+      const segs = d.ref.path.split('/');
+      if (segs.length !== 4 || segs[0] !== 'users') continue;
+      totalDailyAnswers++;
+      const uid = segs[1];
+      perUserAnswers.set(uid, (perUserAnswers.get(uid) ?? 0) + 1);
+      const data = d.data();
+      const answeredAt = typeof data.answeredAt === 'string' ? data.answeredAt.slice(0, 10) : null;
+      if (answeredAt) trendCounter.set(answeredAt, (trendCounter.get(answeredAt) ?? 0) + 1);
+      const qid = String(data.questionId ?? d.id);
+      const opt = typeof data.selectedOptionId === 'string' ? data.selectedOptionId : '?';
+      const q = questionCounter.get(qid) ?? { total: 0, options: {} };
+      q.total++;
+      q.options[opt] = (q.options[opt] ?? 0) + 1;
+      questionCounter.set(qid, q);
+    }
+  } catch (e) {
+    console.warn('[data-collection] dailyQuestions fetch failed:', e);
+  }
+
+  // 답변 깊이 버킷 — 제품 임계값(게이트 3 / 결모임 7)에 맞춘 경계
+  let gateEligible = 0;
+  let moimEligible = 0;
+  const bucketDefs: Array<{ label: string; min: number; max: number }> = [
+    { label: '1~2', min: 1, max: 2 },
+    { label: '3~6 (게이트 통과)', min: 3, max: 6 },
+    { label: '7~19 (결모임 자격)', min: 7, max: 19 },
+    { label: '20+', min: 20, max: Infinity },
+  ];
+  const bucketCounts = bucketDefs.map(() => 0);
+  for (const n of perUserAnswers.values()) {
+    if (n >= 3) gateEligible++;
+    if (n >= 7) moimEligible++;
+    const i = bucketDefs.findIndex((b) => n >= b.min && n <= b.max);
+    if (i >= 0) bucketCounts[i]++;
+  }
+  const answeredUsers = perUserAnswers.size;
+  const depthBuckets = [
+    { label: '0 (미참여)', count: Math.max(0, usersSnap.size - answeredUsers) },
+    ...bucketDefs.map((b, i) => ({ label: b.label, count: bucketCounts[i] })),
+  ];
+
+  // 최근 14일 추이 (빈 날은 0으로 채움)
+  const dailyTrend: Array<{ date: string; count: number }> = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    dailyTrend.push({ date: key, count: trendCounter.get(key) ?? 0 });
+  }
+
+  // 질문별 응답 분포 — 답변 수 상위 20개
+  const questionStats = Array.from(questionCounter.entries())
+    .map(([id, v]) => ({ id, total: v.total, options: v.options }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 20);
+
+  // 3-b) 온보딩 가입 경로 — users/*/analytics_milestones/milestones 의
+  //      acquisition_channel. 스킵한 사용자는 문서가 없거나 필드가 없다.
+  const acqCounter = new Map<string, number>();
+  let acquisitionAnswered = 0;
+  try {
+    const cg = collectionGroup(db, 'analytics_milestones');
+    const snap = await getDocs(cg);
+    for (const d of snap.docs) {
+      const ch = d.data().acquisition_channel;
+      if (typeof ch === 'string' && ch.trim()) {
+        acquisitionAnswered++;
+        acqCounter.set(ch, (acqCounter.get(ch) ?? 0) + 1);
       }
-    }),
-    (async () => {
-      try {
-        const cg = collectionGroup(db, 'mini_pulses');
-        const snap = await getCountFromServer(cg);
-        return snap.data().count;
-      } catch (e) {
-        console.warn('[data-collection] mini_pulses count failed:', e);
-        return 0;
-      }
-    })(),
-  ]);
+    }
+  } catch (e) {
+    console.warn('[data-collection] acquisition fetch failed:', e);
+  }
+  const acquisitionChannels = Array.from(acqCounter.entries())
+    .map(([channel, count]) => ({ channel, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const totalMiniPulseResponses = await (async () => {
+    try {
+      const cg = collectionGroup(db, 'mini_pulses');
+      const snap = await getCountFromServer(cg);
+      return snap.data().count;
+    } catch (e) {
+      console.warn('[data-collection] mini_pulses count failed:', e);
+      return 0;
+    }
+  })();
 
   // 3) Mini Pulse with lonely_high tag — sample the most recent 200 docs to
   //    avoid loading everything. Good enough for a dashboard signal.
@@ -1371,6 +1459,13 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     miniPulsesWithLonelyHigh,
     topTags,
     categoryCounts,
+    gateEligible,
+    moimEligible,
+    depthBuckets,
+    dailyTrend,
+    questionStats,
+    acquisitionChannels,
+    acquisitionAnswered,
   };
 }
 

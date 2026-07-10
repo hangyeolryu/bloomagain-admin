@@ -19,6 +19,25 @@ import { getDataCollectionStats } from '@/lib/firestore';
 import type { DataCollectionStats } from '@/lib/firestore';
 import StatsCard from '@/components/ui/StatsCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import questionMeta from '@/lib/gyeolq-questions.json';
+
+// 결큐 문항 메타 (앱 assets/json/questions.json에서 생성한 슬림 사본).
+// id → { t: 질문, o: {A: 보기, B: 보기}, c: 카테고리 }
+const QUESTIONS = questionMeta as Record<string, { t: string; o: Record<string, string>; c: string }>;
+
+// 온보딩 가입 경로 값 → 라벨 (앱 acquisition_channels.dart와 동일 어휘)
+const ACQ_LABELS: Record<string, string> = {
+  band: '🟢 네이버 밴드',
+  kakao: '💬 카카오톡',
+  danggeun: '🥕 당근',
+  youtube: '▶️ 유튜브',
+  instagram: '📷 인스타그램',
+  threads: '🧵 스레드',
+  search: '🔍 검색 (네이버·구글)',
+  friend: '🤝 지인 추천',
+  offline: '📍 오프라인 (강연·모임)',
+  other: '✨ 기타',
+};
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -107,6 +126,72 @@ function CategoryBarChart({ data }: { data: Record<string, number> }) {
   );
 }
 
+// 최근 14일 답변 추이 — 세로 미니 바. 요일 리듬(주말↑?)과 침묵 구간이
+// 한눈에 보이는 게 목적이라 축·그리드 없이 막대+날짜만.
+function TrendChart({ data }: { data: Array<{ date: string; count: number }> }) {
+  const max = Math.max(1, ...data.map((d) => d.count));
+  return (
+    <div className="flex items-end gap-1.5 h-32">
+      {data.map((d) => {
+        const day = d.date.slice(8);
+        return (
+          <div key={d.date} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+            <span className="text-[10px] text-gray-500 tabular-nums">{d.count > 0 ? d.count : ''}</span>
+            <div
+              className="w-full rounded-t bg-gradient-to-t from-emerald-500 to-green-400"
+              style={{ height: `${Math.max(2, (d.count / max) * 88)}px` }}
+              title={`${d.date}: ${d.count}건`}
+            />
+            <span className="text-[10px] text-gray-400 tabular-nums">{day}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 질문 하나의 선택지 분포 — A/B 스택 바 + 쏠림 표시.
+// 80% 이상 쏠리면 변별력이 낮다(모두가 같은 답 → 매칭 신호 0)는 경고 뱃지.
+function QuestionSplitRow({ q }: { q: { id: string; total: number; options: Record<string, number> } }) {
+  const meta = QUESTIONS[q.id];
+  const entries = Object.entries(q.options).sort((a, b) => a[0].localeCompare(b[0]));
+  const colors = ['bg-emerald-500', 'bg-amber-400', 'bg-sky-400', 'bg-rose-400'];
+  const topShare = Math.max(...entries.map(([, c]) => c)) / Math.max(1, q.total);
+  return (
+    <div className="py-3 border-b border-gray-100 last:border-0">
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <p className="text-sm font-medium text-gray-800 min-w-0">
+          <span className="text-gray-400 font-mono text-xs mr-1.5">#{q.id}</span>
+          {meta?.t ?? '(문항 정보 없음)'}
+        </p>
+        <span className="text-xs text-gray-500 tabular-nums flex-shrink-0">{q.total}명</span>
+      </div>
+      <div className="flex h-5 rounded overflow-hidden bg-gray-100">
+        {entries.map(([opt, count], i) => (
+          <div
+            key={opt}
+            className={`${colors[i % colors.length]} flex items-center justify-center text-[10px] font-bold text-white`}
+            style={{ width: `${(count / Math.max(1, q.total)) * 100}%` }}
+            title={`${opt}: ${meta?.o?.[opt] ?? ''} — ${count}명`}
+          >
+            {count / Math.max(1, q.total) >= 0.18 ? `${opt} ${Math.round((count / q.total) * 100)}%` : ''}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+        {entries.map(([opt]) => (
+          <span key={opt} className="text-[11px] text-gray-500 truncate max-w-full">
+            <b className="text-gray-600">{opt}</b> {meta?.o?.[opt] ?? '?'}
+          </span>
+        ))}
+        {topShare >= 0.8 && q.total >= 5 && (
+          <span className="text-[11px] font-semibold text-amber-600">⚠ 쏠림 {Math.round(topShare * 100)}% — 변별력 낮음</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TagCloud({ tags }: { tags: Array<{ tag: string; count: number }> }) {
   if (tags.length === 0) {
     return <p className="text-sm text-gray-400 italic">아직 수집된 태그가 없습니다.</p>;
@@ -164,9 +249,9 @@ export default function DataCollectionPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">데이터 수집 현황</h1>
+        <h1 className="text-2xl font-bold text-gray-900">결큐 인사이트</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Daily Question · Mini Pulse · 라이센스 · 파이프라인 헬스 한눈에 보기
+          결큐 답변·추이·질문별 분포·가입 경로 · Mini Pulse · 라이센스 · 파이프라인
         </p>
         <p className="text-xs text-gray-400 mt-1">
           참고 문서:&nbsp;
@@ -232,7 +317,78 @@ export default function DataCollectionPage() {
             color="bg-fuchsia-50"
             delta="태그 보유 사용자 기준"
           />
+          <StatsCard
+            label="결 게이트 통과"
+            value={stats.gateEligible}
+            icon="🚪"
+            color="bg-teal-50"
+            delta="답변 3개 이상 — 사람 리스트 열림"
+          />
+          <StatsCard
+            label="결모임 자격"
+            value={stats.moimEligible}
+            icon="🫖"
+            color="bg-emerald-50"
+            delta="답변 7개 이상 — 자동 조립 풀 입장"
+          />
         </div>
+      </div>
+
+      {/* ── 결큐 인사이트: 추이 · 깊이 ── */}
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <SectionHeading>최근 14일 답변 추이</SectionHeading>
+          <TrendChart data={stats.dailyTrend} />
+          <p className="text-xs text-gray-400 mt-2">
+            결큐가 매일의 습관이 되고 있는지 — 빈 날이 이어지면 푸시·배너 점검.
+          </p>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <SectionHeading>답변 깊이 분포 (사용자 수)</SectionHeading>
+          <CategoryBarChart data={Object.fromEntries(stats.depthBuckets.map((b) => [b.label, b.count]))} />
+          <p className="text-xs text-gray-400 mt-2">
+            제품 임계값 기준: 3답 = 결 게이트 통과 · 7답 = 결모임 조립 자격.
+            &ldquo;1~2&rdquo; 구간이 두터우면 게이트 직전 이탈 — 첫 3문항 흐름 점검.
+          </p>
+        </div>
+      </div>
+
+      {/* ── 결큐 인사이트: 질문별 분포 ── */}
+      <div className="mb-6 bg-white rounded-2xl border border-gray-200 p-5">
+        <SectionHeading>질문별 응답 분포 (답변 많은 순 상위 20)</SectionHeading>
+        {stats.questionStats.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">아직 답변 데이터가 없습니다.</p>
+        ) : (
+          <div>
+            {stats.questionStats.map((q) => (
+              <QuestionSplitRow key={q.id} q={q} />
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-gray-400 mt-3">
+          고르게 갈리는 질문(50:50에 가까움)이 매칭 신호가 강한 질문.
+          ⚠ 쏠림 표시가 붙은 질문은 변별력이 낮으니 문항 교체·표현 수정 후보.
+        </p>
+      </div>
+
+      {/* ── 가입 경로 (온보딩 "어디서 알게 되셨어요?") ── */}
+      <div className="mb-6 bg-white rounded-2xl border border-gray-200 p-5">
+        <SectionHeading>
+          가입 경로 — 온보딩 &ldquo;어디서 알게 되셨어요?&rdquo; ({stats.acquisitionAnswered}명 응답)
+        </SectionHeading>
+        {stats.acquisitionChannels.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">아직 응답이 없습니다 (선택 단계라 스킵 가능).</p>
+        ) : (
+          <CategoryBarChart
+            data={Object.fromEntries(
+              stats.acquisitionChannels.map((c) => [ACQ_LABELS[c.channel] ?? `✨ ${c.channel}`, c.count]),
+            )}
+          />
+        )}
+        <p className="text-xs text-gray-400 mt-2">
+          채널별 유입 → 어느 채널에 콘텐츠·광고를 더 실을지의 근거.
+          W4 리텐션을 채널별로 가르는 게 다음 단계 (GTM 대시보드 문서 참조).
+        </p>
       </div>
 
       {/* ── Mini Pulse ── */}
