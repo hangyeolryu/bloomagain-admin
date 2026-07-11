@@ -128,11 +128,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithKakao = async () => {
-    // 앱과 같은 Firebase OIDC 프로바이더(oidc.kakao)를 그대로 사용 —
-    // 카카오 콘솔의 리디렉트 URI(…firebaseapp.com/__/auth/handler)도 공유한다.
+    // 주의: oidc.kakao(모바일용)는 네이티브 앱 키 기준이라 웹 authorize 요청이
+    // KOE033으로 거부된다. 웹은 REST API 키 기준의 oidc.kakao_web을 쓴다
+    // (앱 auth_service.dart의 provider 매핑과 동일한 이름).
     // account_email 동의를 요청해야 id_token에 email이 실려 admins/{email}
     // 권한 조회가 가능하다.
-    const provider = new OAuthProvider('oidc.kakao');
+    const provider = new OAuthProvider('oidc.kakao_web');
     provider.addScope('openid');
     provider.addScope('account_email');
     const credential = await signInWithPopup(auth, provider);
