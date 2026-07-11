@@ -13,6 +13,8 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getOfficialAdminUid } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -53,13 +55,21 @@ function ThreadInner() {
   const [loading, setLoading] = useState(true);
   const [targetName, setTargetName] = useState<string>('...');
   const [targetUid, setTargetUid] = useState<string>('');
+  const [officialUid, setOfficialUid] = useState<string>('');
   const [conversationLoaded, setConversationLoaded] = useState(false);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
-  // Load conversation → resolve the other participant's profile
+  // Load conversation → resolve the other participant's profile.
+  // 상대는 "공식 계정도, 내 세션도 아닌 참가자" — 공식 계정 기준으로 먼저 찾고,
+  // 옛 대화(다른 어드민 uid 발신)는 내 세션 uid 기준으로 폴백한다.
   useEffect(() => {
     if (!conversationId) return;
     (async () => {
       try {
+        const official = (await getOfficialAdminUid()) ?? auth.currentUser?.uid ?? '';
+        setOfficialUid(official);
         const convSnap = await getDoc(doc(db, 'conversations', conversationId));
         if (!convSnap.exists()) {
           setConversationLoaded(true);
@@ -67,7 +77,10 @@ function ThreadInner() {
         }
         const data = convSnap.data();
         const participants = (data.participants as string[]) ?? [];
-        const other = participants.find((p) => p !== auth.currentUser?.uid);
+        const other =
+          participants.find(
+            (p) => p !== official && p !== auth.currentUser?.uid,
+          ) ?? participants.find((p) => p !== auth.currentUser?.uid);
         if (other) {
           setTargetUid(other);
           const userSnap = await getDoc(doc(db, 'users', other));
@@ -80,6 +93,28 @@ function ThreadInner() {
       }
     })();
   }, [conversationId]);
+
+  const handleReply = async () => {
+    const body = reply.trim();
+    if (!body || !targetUid) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const functions = getFunctions(undefined, 'asia-northeast3');
+      const sendDm = httpsCallable(functions, 'sendOfficialDm');
+      await sendDm({
+        targetUserId: targetUid,
+        title: '티타에서 안내드립니다',
+        body,
+        templateKey: 'custom',
+      });
+      setReply(''); // onSnapshot이 새 메시지를 실시간 반영한다
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
+  };
 
   // Real-time messages so read receipts update the moment the user opens the
   // chat in-app. Reverse chronological in Firestore, we reverse client-side
@@ -130,9 +165,12 @@ function ThreadInner() {
     );
   }
 
-  const adminUid = auth.currentUser?.uid;
-  const adminMessages = messages.filter((m) => m.senderId === adminUid);
-  const targetMessages = messages.filter((m) => m.senderId !== adminUid);
+  // 어드민 측 = 상대가 보낸 것도, 시스템 메시지도 아닌 전부 (공식 계정 +
+  // 과거 다른 어드민 uid 발신을 모두 어드민 말풍선으로 묶는다)
+  const adminMessages = messages.filter(
+    (m) => m.senderId !== targetUid && m.senderId !== '',
+  );
+  const targetMessages = messages.filter((m) => m.senderId === targetUid);
   const readByTarget = adminMessages.filter((m) => m.isRead).length;
 
   return (
@@ -173,7 +211,17 @@ function ThreadInner() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="space-y-4">
             {messages.map((m) => {
-              const isAdmin = m.senderId === adminUid;
+              const isSystem = m.senderId === '';
+              const isAdmin = !isSystem && m.senderId !== targetUid;
+              if (isSystem) {
+                return (
+                  <div key={m.id} className="flex justify-center">
+                    <div className="max-w-[85%] rounded-xl bg-amber-50 border border-amber-100 px-4 py-2 text-xs text-amber-800 whitespace-pre-wrap break-words">
+                      {m.content}
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div
                   key={m.id}
@@ -215,6 +263,34 @@ function ThreadInner() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* 답장 — 서버 sendOfficialDm이 공식 계정으로 발신 + 푸시까지 처리 */}
+      {conversationLoaded && targetUid && (
+        <div className="mt-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          {sendError && (
+            <p className="mb-2 text-sm text-red-600">전송 실패: {sendError}</p>
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              placeholder={`${targetName}님에게 공식 계정(${officialUid.slice(0, 8)}…)으로 답장…`}
+              rows={2}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+            />
+            <button
+              onClick={() => void handleReply()}
+              disabled={sending || !reply.trim()}
+              className="px-5 py-2.5 text-sm bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium disabled:opacity-40"
+            >
+              {sending ? '전송 중…' : '보내기'}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-gray-400">
+            유저 앱 채팅에 저장되고 푸시 알림까지 발송됩니다.
+          </p>
         </div>
       )}
     </div>

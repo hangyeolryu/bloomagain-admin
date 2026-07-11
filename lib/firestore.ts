@@ -164,6 +164,38 @@ export async function getUsers(
   };
 }
 
+/**
+ * 공식 어드민 계정 uid — 모든 어드민 발신 대화가 이 계정으로 모인다.
+ * functions/index.js getOfficialAdminUid와 같은 규칙:
+ * app_config/official_account.uid 우선, 폴백은 가장 오래된 비리뷰어 관리자.
+ * (app_config 읽기는 firestore.rules의 admin read 허용 필요 — 규칙 미배포로
+ * 읽기가 거부되면 조용히 폴백을 탄다.)
+ */
+export async function getOfficialAdminUid(): Promise<string | null> {
+  try {
+    const cfg = await getDoc(doc(db, 'app_config', 'official_account'));
+    const uid = cfg.exists() ? (cfg.data().uid as string | undefined) : undefined;
+    if (uid) return uid;
+  } catch {
+    /* rules 미배포 등 — 폴백으로 진행 */
+  }
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'users'), where('isAdmin', '==', true)),
+    );
+    const candidates = snap.docs
+      .filter((d) => d.data().isReviewerAccount !== true)
+      .sort(
+        (a, b) =>
+          (toDate(a.data().createdAt)?.getTime() ?? 0) -
+          (toDate(b.data().createdAt)?.getTime() ?? 0),
+      );
+    return candidates[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getUser(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return null;

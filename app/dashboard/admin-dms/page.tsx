@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { getOfficialAdminUid } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -134,13 +135,19 @@ export default function AdminDmsPage() {
   const [adminUid, setAdminUid] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
 
-  // Auth state comes in asynchronously — wait for the first non-null user
-  // before firing the Firestore query. Otherwise the first render kicks off
-  // with adminUid=null and the query silently returns nothing.
+  // Auth state comes in asynchronously — wait for the first non-null user,
+  // then resolve the OFFICIAL account uid (app_config/official_account).
+  // 어떤 어드민 세션으로 로그인했든 대화는 공식 계정 기준으로 모여 보인다.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
-      setAdminUid(u?.uid ?? null);
       setAdminEmail(u?.email ?? null);
+      if (!u) {
+        setAdminUid(null);
+        return;
+      }
+      void getOfficialAdminUid().then((official) => {
+        setAdminUid(official ?? u.uid);
+      });
     });
     return () => unsub();
   }, []);
@@ -184,9 +191,10 @@ export default function AdminDmsPage() {
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 mb-5 text-sm text-blue-700">
         <span className="text-lg">ℹ️</span>
         <div>
-          현재 로그인한 계정 <code className="font-mono text-xs">{adminUid?.slice(0, 12) ?? '…'}</code>이
-          "보낸이"로 표시된 DM만 나옵니다. 티타 관리자 계정으로 발송한 내역을
-          보려면 그 계정으로 로그인하세요.
+          모든 어드민 DM은 공식 계정{' '}
+          <code className="font-mono text-xs">{adminUid?.slice(0, 12) ?? '…'}</code>
+          으로 발신·집계됩니다 — 어떤 계정으로 로그인해도 같은 목록이 보여요.
+          (공식 계정 지정: Firestore <code className="font-mono text-xs">app_config/official_account</code>)
         </div>
       </div>
 
