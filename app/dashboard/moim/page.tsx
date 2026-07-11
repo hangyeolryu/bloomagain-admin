@@ -8,9 +8,20 @@
 //   (7일 생존율 데이터가 쌓이면 문턱을 조정한다 — 스펙 §3-B)
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { getMoimStats, type MoimStats } from '@/lib/firestore';
+
+const SLOT_LABEL: Record<string, string> = {
+  day: '낮', evening: '저녁', weekend: '주말',
+};
+function fmtDateTime(d: Date | null) {
+  if (!d) return '—';
+  return d.toLocaleString('ko-KR', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
 
 function Tile({ label, value, hint, strong }: { label: string; value: string | number; hint?: string; strong?: boolean }) {
   return (
@@ -82,6 +93,81 @@ export default function MoimDashboardPage() {
             <Tile label="만나는 자리 (동네 풀)" value={t.meet} />
             <Tile label="'이번 주 안엔'" value={t.thisWeek} hint="긴급 시드 우선" />
           </div>
+        </section>
+
+        {/* 최근 등록된 자리표 — 누가·뭘·언제 */}
+        <section className="rounded-xl border border-gray-200 bg-white p-4">
+          <h2 className="mb-1 text-sm font-bold text-gray-900">최근 등록된 자리표 (누가·뭘·언제)</h2>
+          <p className="mb-3 text-xs text-gray-500">
+            등록자·자리 종류·조건을 등록 최신순으로. 이름을 누르면 그 회원 상세로 이동해요.
+          </p>
+          {stats.recentTickets.length === 0 ? (
+            <p className="text-sm text-gray-400">아직 등록된 자리표가 없어요.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
+                    <th className="py-2 pr-3">등록자</th>
+                    <th className="py-2 pr-3">종류</th>
+                    <th className="py-2 pr-3">조건</th>
+                    <th className="py-2 pr-3">상태</th>
+                    <th className="py-2">등록 시각</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.recentTickets.map((r, i) => {
+                    const cond: string[] = [];
+                    if (r.type === 'meet') {
+                      if (r.district) cond.push(r.district);
+                      cond.push(r.party === 'couple' ? '부부·동반' : '혼자');
+                      if (r.timeSlots.length)
+                        cond.push(r.timeSlots.map((s) => SLOT_LABEL[s] ?? s).join('·'));
+                    }
+                    if (r.topics.length) cond.push(r.topics.join('·'));
+                    if (r.urgency === 'this_week') cond.push('이번 주 안엔');
+                    return (
+                      <tr key={`${r.uid}-${i}`} className="border-b border-gray-50 last:border-0">
+                        <td className="py-2.5 pr-3">
+                          <Link
+                            href={`/dashboard/users/view?id=${r.uid}`}
+                            className="font-medium text-green-700 hover:underline"
+                          >
+                            {r.displayName}
+                          </Link>
+                          <span className="ml-1 font-mono text-[10px] text-gray-400">
+                            {r.uid.slice(0, 6)}…
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              r.type === 'meet'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-blue-50 text-blue-700'
+                            }`}
+                          >
+                            {r.type === 'meet' ? '🍵 만나는 자리' : '💬 대화 자리'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-3 text-gray-700">
+                          {cond.length ? cond.join(' · ') : '—'}
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          {r.active ? (
+                            <span className="text-green-600">대기 중</span>
+                          ) : (
+                            <span className="text-gray-400">쉬는 중</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 text-gray-500">{fmtDateTime(r.createdAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         {/* 제안 성사 */}

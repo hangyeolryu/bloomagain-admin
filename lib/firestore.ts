@@ -2574,6 +2574,19 @@ export interface MoimStats {
     status: string;
     minPair: number | null;
   }[];
+  // 최근 등록된 자리표 — 누가·뭘·언제 (등록자 이름/uid 포함)
+  recentTickets: {
+    uid: string;
+    displayName: string;
+    type: string; // 'chat' | 'meet'
+    active: boolean;
+    party: string | null; // meet만: solo/couple
+    district: string | null;
+    timeSlots: string[];
+    topics: string[];
+    urgency: string;
+    createdAt: Date | null;
+  }[];
   capped: boolean;
 }
 
@@ -2586,9 +2599,17 @@ export async function getMoimStats(): Promise<MoimStats> {
   const tickets = { total: 0, active: 0, paused: 0, chat: 0, meet: 0, thisWeek: 0 };
   const districtCount = new Map<string, { count: number; couple: number }>();
   const topicCount = new Map<string, number>();
+  // 자리표 문서 경로: users/{uid}/gyeol_moim_tickets/{id} → 부모의 부모가 등록자.
+  const ticketRows: {
+    uid: string;
+    data: DocumentData;
+    createdAt: Date | null;
+  }[] = [];
   ticketSnap.forEach((d) => {
     const t = d.data() as DocumentData;
     tickets.total += 1;
+    const uid = d.ref.parent.parent?.id ?? '(알 수 없음)';
+    ticketRows.push({ uid, data: t, createdAt: toDate(t.createdAt) ?? null });
     if (t.active !== true) {
       tickets.paused += 1;
       return;
@@ -2608,6 +2629,39 @@ export async function getMoimStats(): Promise<MoimStats> {
     for (const topic of (t.topics as string[] | undefined) ?? []) {
       topicCount.set(topic, (topicCount.get(topic) ?? 0) + 1);
     }
+  });
+
+  // 최근 등록순 상위 40장의 등록자 이름을 한 번에 조회 (중복 uid 제거).
+  ticketRows.sort(
+    (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
+  );
+  const recentSlice = ticketRows.slice(0, 40);
+  const nameByUid = new Map<string, string>();
+  await Promise.all(
+    [...new Set(recentSlice.map((r) => r.uid))].map(async (uid) => {
+      if (uid === '(알 수 없음)') return;
+      try {
+        const u = await getDoc(doc(db, 'users', uid));
+        nameByUid.set(uid, (u.data()?.displayName as string) || '(이름 없음)');
+      } catch {
+        nameByUid.set(uid, '(조회 실패)');
+      }
+    }),
+  );
+  const recentTickets: MoimStats['recentTickets'] = recentSlice.map((r) => {
+    const t = r.data;
+    return {
+      uid: r.uid,
+      displayName: nameByUid.get(r.uid) ?? '(이름 없음)',
+      type: String(t.type ?? 'chat'),
+      active: t.active === true,
+      party: (t.party as string | null) ?? null,
+      district: (t.districtName as string | null) ?? (t.district as string | null) ?? null,
+      timeSlots: (t.timeSlots as string[] | undefined) ?? [],
+      topics: (t.topics as string[] | undefined) ?? [],
+      urgency: String(t.urgency ?? 'anytime'),
+      createdAt: r.createdAt,
+    };
   });
 
   const proposalSnap = await getDocs(
@@ -2677,6 +2731,7 @@ export async function getMoimStats(): Promise<MoimStats> {
     topicDemand,
     proposals,
     recentProposals,
+    recentTickets,
     capped: ticketSnap.size >= CAP || proposalSnap.size >= CAP,
   };
 }
