@@ -365,6 +365,33 @@ export default function MarketingOpsPage() {
         </ul>
       </section>
 
+      {/* 카피 심리 체크리스트 */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-base font-bold text-gray-900">카피 심리 체크리스트 (새 소재마다)</h2>
+        <p className="mb-3 text-xs text-gray-500">
+          새 광고 카피는 아래 4원칙 중 <b>최소 1개</b>를 써야 한다. 어느 것도 안 쓰고 있으면 그냥 &ldquo;설명문&rdquo;이다 — 다시 쓴다.
+          카드 스튜디오의 &ldquo;심리 훅 (4원칙)&rdquo; 프리셋 · &ldquo;훅 바로 뽑기&rdquo; 버튼과 짝을 이룬다.
+        </p>
+        <div className="space-y-2.5 text-sm leading-relaxed text-gray-700">
+          <div className="rounded-xl bg-gray-50 p-3">
+            <b>① 믿음 흔들기</b> — 타깃이 이미 하는 노력이 왜 안 통하는지 (&ldquo;러닝머신 1시간 해도 살 안 빠지는 이유&rdquo; 구조).
+            <br /><span className="text-gray-500">티타: &ldquo;동호회 3년 다녀도 &lsquo;진짜 친구&rsquo;가 안 생기는 이유&rdquo; / &ldquo;모임엔 꼬박꼬박 나가는데, 왜 늘 겉돌까요&rdquo;</span>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            <b>② 손실감 자극</b> — 조용히 지나가고 있는 것을 자각시킨다. 겁주기 금지, 잔잔한 자각 + 출구.
+            <br /><span className="text-gray-500">티타: &ldquo;설레는 약속이 마지막으로 언제였나요&rdquo; / &ldquo;달력에 병원 말고, 기다려지는 약속 하나 있나요&rdquo;</span>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            <b>③ 같은 사실 재해석</b> — 아는 사실을 새 시각으로 재정의. 문제 정의가 곧 카피.
+            <br /><span className="text-gray-500">티타: &ldquo;친구가 없는 게 아니에요. 내 빈 시간에 만날 친구가 없는 거예요&rdquo; / &ldquo;카톡 친구 200명. 오늘 차 마실 사람은, 글쎄요&rdquo;</span>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            <b>④ 리스크 장벽 제거</b> — 시작을 막는 걱정(이상한 사람·가입 부담·데이팅 오해)을 먼저 치운다.
+            <br /><span className="text-gray-500">티타: &ldquo;가입 없이 3분, 내 결부터 확인&rdquo; / &ldquo;전원 본인인증 — 이상한 사람 걱정은 빼고 시작하세요&rdquo;</span>
+          </div>
+        </div>
+      </section>
+
       {/* 바로가기 */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-base font-bold text-gray-900">바로가기</h2>
