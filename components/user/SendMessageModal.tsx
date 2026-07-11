@@ -2,18 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Modal from '@/components/ui/Modal';
-import { auth, db } from '@/lib/firebase';
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-  doc,
-  updateDoc,
-  serverTimestamp,
-  arrayRemove,
-} from 'firebase/firestore';
+import { auth } from '@/lib/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { UserProfile } from '@/types';
 
@@ -156,56 +145,9 @@ ${u.displayName || '회원'} 님 결큐 답변이 잘 맞는 분들이라
   },
 ];
 
-// sendPushNotification runs in asia-northeast3 (same region as Firebase
-// Hosting frameworksBackend per firebase.json). Calling it without an
-// explicit region defaults the client SDK to us-central1, which returns a
-// 404 the browser reports as a CORS error because the missing function's
-// error response has no Access-Control-Allow-Origin header.
-function getPushCallable() {
-  const functions = getFunctions(undefined, 'asia-northeast3');
-  return httpsCallable(functions, 'sendPushNotification');
-}
-
-// Find an existing direct conversation between the caller and target, or
-// create one. Mirrors chat_service.dart:190-243 so the Flutter chat UI
-// renders it as an ordinary DM.
-async function findOrCreateDirectConversation(
-  senderId: string,
-  targetUid: string,
-  previewText: string,
-  templateKey: TemplateKey,
-): Promise<string> {
-  const q = query(
-    collection(db, 'conversations'),
-    where('participants', 'array-contains', senderId),
-  );
-  const snap = await getDocs(q);
-  for (const d of snap.docs) {
-    const parts = (d.data().participants as string[]) ?? [];
-    if (parts.includes(targetUid)) {
-      // Update lastMessage preview and unhide for both parties.
-      await updateDoc(doc(db, 'conversations', d.id), {
-        lastMessage: previewText,
-        lastMessageAt: serverTimestamp(),
-        hiddenFor: arrayRemove(senderId, targetUid),
-      });
-      return d.id;
-    }
-  }
-  const newConv = await addDoc(collection(db, 'conversations'), {
-    participants: [senderId, targetUid],
-    createdAt: serverTimestamp(),
-    lastMessageAt: serverTimestamp(),
-    lastMessage: previewText,
-    conversationType: 'direct',
-    metadata: {
-      source: 'admin_dm',
-      templateKey,
-    },
-    isActive: true,
-  });
-  return newConv.id;
-}
+// 대화 생성·메시지 쓰기·푸시는 전부 서버(sendOfficialDm, asia-northeast3)가
+// 공식 계정 uid로 수행한다. 클라이언트가 직접 Firestore에 쓰던 이전 구현은
+// 로그인 세션 uid가 발신자가 되어 어드민 계정마다 대화가 흩어지는 문제가 있었다.
 
 export default function SendMessageModal({
   isOpen,
@@ -245,70 +187,37 @@ export default function SendMessageModal({
       return;
     }
     setSending(true);
-    let chatWriteStatus: 'written' | 'failed' = 'failed';
-    let pushStatus: 'delivered' | 'skipped' | 'failed' = 'skipped';
-    let conversationId: string | undefined;
-    let firstError: string | undefined;
 
+    // 발신은 항상 서버의 sendOfficialDm 함수가 "공식 계정" uid로 수행한다 —
+    // 어떤 어드민 세션(구글/카카오/이메일)에서 보내도 유저에겐 같은 "티타"
+    // 대화 하나로 모이고, 프로필 없는 uid가 발신자로 노출되는 일이 없다.
     try {
-      // 1) Chat write — this is the persistent record and the primary UX.
-      const preview = messageBody.trim().slice(0, 100);
-      conversationId = await findOrCreateDirectConversation(
-        currentUser.uid,
-        targetUser.id,
-        preview,
-        templateKey,
-      );
-      await addDoc(
-        collection(db, 'conversations', conversationId, 'messages'),
-        {
-          senderId: currentUser.uid,
-          content: messageBody.trim(),
-          type: 'text',
-          sentAt: serverTimestamp(),
-          isRead: false,
-          isAdminMessage: true,
-          templateKey,
-        },
-      );
-      chatWriteStatus = 'written';
-    } catch (err) {
-      firstError = err instanceof Error ? err.message : String(err);
-      setError(`채팅 저장 실패: ${firstError}`);
-      setSending(false);
-      onSent?.({ chatWriteStatus: 'failed', pushStatus: 'skipped', error: firstError });
-      return;
-    }
-
-    // 2) Push notification via existing Cloud Function. Non-fatal on failure
-    // because the message is already in the chat.
-    try {
-      const sendPush = getPushCallable();
-      await sendPush({
+      const functions = getFunctions(undefined, 'asia-northeast3');
+      const sendDm = httpsCallable(functions, 'sendOfficialDm');
+      const res = await sendDm({
         targetUserId: targetUser.id,
         title: title.trim(),
-        body: messageBody.trim().slice(0, 240),
-        type: 'admin_dm',
-        notificationData: {
-          templateKey,
-          conversationId,
-        },
+        body: messageBody.trim(),
+        templateKey,
       });
-      pushStatus = 'delivered';
+      const result = res.data as {
+        conversationId: string;
+        chatWriteStatus: 'written';
+        pushStatus: 'delivered' | 'skipped' | 'failed';
+      };
+      setSending(false);
+      onSent?.({
+        chatWriteStatus: result.chatWriteStatus,
+        pushStatus: result.pushStatus,
+        conversationId: result.conversationId,
+      });
+      onClose();
     } catch (err) {
-      pushStatus = 'failed';
-      firstError = firstError ?? (err instanceof Error ? err.message : String(err));
-      console.warn('[SendMessageModal] push failed:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`전송 실패: ${message}`);
+      setSending(false);
+      onSent?.({ chatWriteStatus: 'failed', pushStatus: 'skipped', error: message });
     }
-
-    setSending(false);
-    onSent?.({
-      chatWriteStatus,
-      pushStatus,
-      conversationId,
-      ...(firstError && pushStatus === 'failed' ? { error: firstError } : {}),
-    });
-    onClose();
   };
 
   return (
