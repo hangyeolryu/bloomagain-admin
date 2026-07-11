@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  OAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
@@ -76,6 +77,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInWithKakao: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -125,6 +127,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithKakao = async () => {
+    // 앱과 같은 Firebase OIDC 프로바이더(oidc.kakao)를 그대로 사용 —
+    // 카카오 콘솔의 리디렉트 URI(…firebaseapp.com/__/auth/handler)도 공유한다.
+    // account_email 동의를 요청해야 id_token에 email이 실려 admins/{email}
+    // 권한 조회가 가능하다.
+    const provider = new OAuthProvider('oidc.kakao');
+    provider.addScope('openid');
+    provider.addScope('account_email');
+    const credential = await signInWithPopup(auth, provider);
+    const r = await getAdminRole(credential.user);
+    if (!r) {
+      await firebaseSignOut(auth);
+      throw new Error(
+        '관리자 권한이 없습니다. 관리자 계정 페이지에서 이 카카오 계정의 이메일을 추가하세요.',
+      );
+    }
+  };
+
   const signOut = async () => {
     await firebaseSignOut(auth);
     setRole(null);
@@ -139,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       signIn,
       signInWithGoogle,
+      signInWithKakao,
       signOut,
     }}>
       {children}
