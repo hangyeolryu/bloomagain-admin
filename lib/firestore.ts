@@ -2593,6 +2593,20 @@ export interface MoimStats {
 export async function getMoimStats(): Promise<MoimStats> {
   const CAP = 2000;
 
+  // 리뷰어·관리자 계정의 테스트 자리표는 실제 수요가 아니므로 집계에서 제외.
+  // (백엔드 /moim/assemble도 동일하게 조립 대상에서 뺀다.)
+  const excludedUids = new Set<string>();
+  try {
+    const [revSnap, admSnap] = await Promise.all([
+      getDocs(query(collection(db, 'users'), where('isReviewerAccount', '==', true))),
+      getDocs(query(collection(db, 'users'), where('isAdmin', '==', true))),
+    ]);
+    revSnap.forEach((d) => excludedUids.add(d.id));
+    admSnap.forEach((d) => excludedUids.add(d.id));
+  } catch {
+    /* 조회 실패 시 제외 없이 진행 — 통계가 비는 것보다 낫다 */
+  }
+
   const ticketSnap = await getDocs(
     query(collectionGroup(db, 'gyeol_moim_tickets'), limit(CAP))
   );
@@ -2607,8 +2621,9 @@ export async function getMoimStats(): Promise<MoimStats> {
   }[] = [];
   ticketSnap.forEach((d) => {
     const t = d.data() as DocumentData;
-    tickets.total += 1;
     const uid = d.ref.parent.parent?.id ?? '(알 수 없음)';
+    if (excludedUids.has(uid)) return; // 리뷰어·관리자 테스트 자리표 제외
+    tickets.total += 1;
     ticketRows.push({ uid, data: t, createdAt: toDate(t.createdAt) ?? null });
     if (t.active !== true) {
       tickets.paused += 1;
