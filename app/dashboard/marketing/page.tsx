@@ -375,6 +375,58 @@ export default function MarketingOpsPage() {
         </div>
       </section>
 
+      {/* 안전 수칙 시리즈 — 신뢰 콘텐츠 */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-base font-bold text-gray-900">안전 수칙 시리즈 (신뢰 콘텐츠)</h2>
+        <p className="mb-3 text-xs text-gray-500">
+          계기: 스레드·인스타 댓글에서 <b>&ldquo;검증이 불확실해서 안 쓴다&rdquo;</b>,{" "}
+          <b>&ldquo;다단계 권유·돈 빌리고 잠수&rdquo;</b> 우려가 반복. 신뢰 병목이 설치 병목의 뿌리다.
+          정직하게 답하는 콘텐츠가 신뢰를 키운다 — 팔려는 게 아니라 지켜주려 한다는 인상.
+        </p>
+        <div className="space-y-2.5 text-sm leading-relaxed text-gray-700">
+          <div className="rounded-xl bg-green-50 p-3">
+            <b>🗓 운영 리듬</b>
+            <br />주 1회(화·목 아침). <b>인스타 = 카드뉴스 5장</b>(넘김·저장 유도), <b>스레드 = 한 장 + 글</b>.
+            진초록(forest) 테마로 시리즈 통일 + &ldquo;티타 안전 수칙 · 01/02…&rdquo; 번호. 10개면 2~3개월치.
+            <br /><span className="text-gray-500">→ 지금은 #01만 올려 반응(저장·공유) 확인 후 잘 되는 주제부터 확장.</span>
+          </div>
+          <div className="rounded-xl bg-amber-50 p-3">
+            <b>⚖️ 정직 원칙 (안전 콘텐츠 전용)</b>
+            <br /><b>&ldquo;절대 안전&rdquo; 금지</b>(거짓말 + 법적 리스크). 지금 <b>실제 작동하는 3겹만</b> 표기 —
+            ① NICE 본인인증 ② AI 의도 파악(위험 대화 필터 + 의도·안전 도우미) ③ 신고 시 관리자 직접 확인.
+            <br /><span className="text-gray-500">
+              → 적응형 UI(특허 4계층 중 ③)는 작동 미확인 → 공개 콘텐츠에 &ldquo;있다&rdquo; 표기 금지.
+              특허 출원(PA260003)은 사실이라 배지 표기 OK. 반론 각도 = &ldquo;사기꾼이 제일 싫어하는 건 실명&rdquo;.
+            </span>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            <b>🖼 이미지 대원칙</b>
+            <br /><b>공포 조장 이미지 금지</b>(후드·어두운 손·해골 → 45+ 타겟에 불쾌·오프브랜드).
+            &ldquo;일상 + 잠깐 멈칫&rdquo; 톤(찻잔 든 손, 폰 보는 옆모습, 낮 카페) 또는 깔끔한 아이콘·일러스트.
+            <br /><span className="text-gray-500">→ 텍스트 카드로 시작, 반응 좋은 주제만 나중에 사진 입혀 강화.</span>
+          </div>
+          <div className="rounded-xl bg-blue-50 p-3">
+            <b>🛠 제작 도구</b> — 카드 스튜디오에 <b>&ldquo;안전수칙&rdquo; 프리셋 4개</b>(돈거래·타이밍·실명·신고 CTA) 추가.
+            <b>배경 사진 업로드 + 자동 그라데이션</b>(사진 위 글씨 자동 가독성) 기능도 추가됨.
+          </div>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1.5 text-xs font-bold text-gray-500">로드맵 (주제 · 핵심 한 줄 · 포맷 · 나중에 이미지 느낌)</div>
+          <ul className="space-y-1 text-xs leading-relaxed text-gray-700">
+            <li><b className="text-green-700">01 ✅ 돈거래</b> — &ldquo;돈 얘기 나오면 멈춤&rdquo; · 한장+카드뉴스 · 찻잔 앞 두 손</li>
+            <li><b>02 로맨스 스캠</b> — &ldquo;만난 적 없는데 사랑한대요?&rdquo; · 카드뉴스 · 폰 보는 옆모습, 창가 역광</li>
+            <li><b>03 개인정보</b> — &ldquo;계좌·주민번호는 가족한테도&rdquo; · 한장 · 자물쇠/방패 아이콘</li>
+            <li><b>04 첫 만남 안전</b> — &ldquo;낮에·사람 많은 곳·행선지 알리고&rdquo; · 카드뉴스 · 밝은 낮 카페 외부</li>
+            <li><b>05 가짜 투자·코인</b> — &ldquo;원금 보장+고수익 = 사기&rdquo; · 한장 · 그래프/돈에 X</li>
+            <li><b>06 사진·영상 요구</b> — &ldquo;찍어 보내달라면 차단&rdquo; · 한장 · 카메라 아이콘 금지선</li>
+            <li><b>07 재촉 = 함정</b> — &ldquo;&lsquo;지금 아니면 안 된다&rsquo;는 다 함정&rdquo; · 한장 · 시계/모래시계</li>
+            <li><b>08 신고 사용법</b> — &ldquo;이상하면 3초 신고&rdquo; · 카드뉴스 · 앱 신고 버튼 실제 스크린샷</li>
+            <li><b>09 가족에게 공유</b> — &ldquo;혼자 판단 말고 한 명한테&rdquo; · 한장 · 두 사람 나란히</li>
+            <li><b>10 건강한 관계 신호</b> — &ldquo;좋은 친구는 돈·서두름·비밀 요구 안 해요&rdquo; · 한장 · 웃으며 차 마시는 장면</li>
+          </ul>
+        </div>
+      </section>
+
       {/* 고정 원칙 */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-base font-bold text-gray-900">고정 원칙 (안 바뀌는 것)</h2>
