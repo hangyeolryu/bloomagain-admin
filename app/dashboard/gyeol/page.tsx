@@ -28,6 +28,52 @@ function Tile({ label, value, hint, strong }: { label: string; value: string | n
   );
 }
 
+function FlowStep({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex min-w-[88px] flex-1 flex-col items-center justify-center rounded-xl border border-gray-200 bg-gray-50 px-3 py-4 text-center">
+      <div className="text-3xl font-bold tabular-nums text-gray-900">{value}</div>
+      <div className="mt-1 text-xs text-gray-500">{label}</div>
+    </div>
+  );
+}
+
+function Conn({ pct, caption, weak }: { pct: string; caption: string; weak: boolean }) {
+  return (
+    <div className="flex min-w-[62px] flex-col items-center justify-center px-1">
+      <div className={`text-sm font-bold tabular-nums ${weak ? 'text-red-600' : 'text-green-700'}`}>{pct}</div>
+      <div className="text-[10px] text-gray-400">{caption}</div>
+      <div className={`mt-0.5 text-xl leading-none ${weak ? 'text-red-400' : 'text-gray-300'}`}>→</div>
+    </div>
+  );
+}
+
+function Journey({ furthest }: { furthest: 'start' | 'complete' | 'download' }) {
+  const rank = furthest === 'download' ? 3 : furthest === 'complete' ? 2 : 1;
+  const steps = [
+    { n: 1, label: '시작' },
+    { n: 2, label: '완료' },
+    { n: 3, label: '다운클릭' },
+  ];
+  return (
+    <div className="flex items-center gap-1">
+      {steps.map((s, i) => (
+        <div key={s.n} className="flex items-center gap-1">
+          <span
+            className={`inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium ${
+              rank >= s.n ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-400'
+            }`}
+          >
+            {s.label}
+          </span>
+          {i < steps.length - 1 && (
+            <span className={`text-xs ${rank > s.n ? 'text-green-500' : 'text-gray-300'}`}>→</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Bar({ label, count, max }: { label: string; count: number; max: number }) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
@@ -68,6 +114,16 @@ export default function GyeolDashboardPage() {
   const genderKnown = stats.genderDistribution.reduce((s, d) => s + d.count, 0);
   // 막대 스케일은 start·complete 통합 최댓값 기준 (complete>start여도 안 넘침).
   const dayMax = Math.max(1, ...stats.daily.flatMap((d) => [d.start, d.complete]));
+  // 오늘(KST) 시작·완료 — daily는 yyyy-mm-dd(KST) 버킷. 없으면 0.
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+  const today = stats.daily.find((d) => d.date === todayKey);
+  // 사람(세션) 단위 퍼널 — "시작한 N명 중 몇 명이 끝까지 갔나".
+  const sf = stats.sessionFunnel;
+  const sCompRate = sf.total ? sf.completed / sf.total : 0;
+  const sDlRate = sf.completed ? sf.downloaded / sf.completed : 0;
+  // 빨간 화살표 = 절반 이상 이탈(전환 <50%)하는 '큰 누수' 구간.
+  const compLeak = sCompRate < 0.5;
+  const dlLeak = sDlRate < 0.5;
 
   return (
     <div className="max-w-5xl space-y-8 p-6">
@@ -76,9 +132,72 @@ export default function GyeolDashboardPage() {
         subtitle="무가입 테스트 관심·유입 (익명 집계 — 개인 신원은 남지 않음)"
       />
 
-      {/* 퍼널 */}
+      {/* 한눈에 — 오늘 + 퍼널 흐름(어디서 새는지) */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">퍼널</h2>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">한눈에</h2>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="rounded-full bg-green-50 px-3 py-1 font-semibold text-green-700">오늘</span>
+            <span className="text-gray-700">
+              테스트 시작 <b className="tabular-nums">{today?.start ?? 0}</b>
+              <span className="mx-1.5 text-gray-300">·</span>
+              완료 <b className="tabular-nums">{today?.complete ?? 0}</b>
+            </span>
+          </div>
+          <div className="mb-1 text-xs text-gray-500">사람(세션) 단위 — 시작한 {sf.total}명 중 몇 명이 끝까지 갔나</div>
+          <div className="flex items-stretch gap-1 overflow-x-auto">
+            <FlowStep label="테스트 시작" value={sf.total} />
+            <Conn pct={pct(sCompRate)} caption="완료율" weak={compLeak} />
+            <FlowStep label="완료" value={sf.completed} />
+            <Conn pct={pct(sDlRate)} caption="다운 전환" weak={dlLeak} />
+            <FlowStep label="다운로드 클릭" value={sf.downloaded} />
+          </div>
+          <p className="mt-3 text-xs text-gray-400">
+            빨간 화살표 = 절반 이상 이탈하는 큰 누수 구간. 세션ID 이전 데이터는 유입원·시간으로 <b>추정</b>해 묶었어요.
+            다운클릭 다음(스토어 설치 → 가입)은 이 화면 밖 — 인스타 인앱 브라우저 누수 구간이에요.
+          </p>
+        </div>
+      </section>
+
+      {/* 세션별 여정 — 한 명이 어디까지 갔나 */}
+      <section>
+        <h2 className="mb-1 text-sm font-semibold text-gray-900">세션별 여정 (한 명이 어디까지 갔나)</h2>
+        <p className="mb-3 text-xs text-gray-400">
+          최근 30세션 · 시작 → 완료 → 다운클릭. 세션ID 없는 과거 데이터는 유입원·시간으로 추정해 묶었어요.
+        </p>
+        {stats.sessions.length === 0 ? (
+          <p className="text-sm text-gray-400">아직 세션 데이터가 없어요.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">시작 시각</th>
+                  <th className="px-3 py-2 text-left font-medium">유입</th>
+                  <th className="px-3 py-2 text-left font-medium">결 유형</th>
+                  <th className="px-3 py-2 text-left font-medium">여정</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.sessions.map((s, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="whitespace-nowrap px-3 py-2 text-gray-500">
+                      {s.startedAt ? s.startedAt.toLocaleString('ko-KR') : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500">{s.source}</td>
+                    <td className="px-3 py-2 text-gray-700">{s.type ? gyeolTypeLabel(s.type) : '—'}</td>
+                    <td className="px-3 py-2"><Journey furthest={s.furthest} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* 퍼널 (상세 타일) */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">퍼널 상세 (이벤트 수 기준)</h2>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
           <Tile label="테스트 시작" value={t.start} strong />
           <Tile label="완료" value={t.complete} strong />
