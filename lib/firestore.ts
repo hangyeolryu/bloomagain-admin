@@ -2351,6 +2351,14 @@ export interface GyeolStats {
   femaleShare: number; // f / (f+m), 성비 핵심 지표 (na 제외)
   daily: { date: string; start: number; complete: number }[]; // 최근 14일
   recent: { createdAt?: Date; phase: string; type: string | null; source: string | null }[];
+  // 세션(사람) 단위 재구성 — sessionId 있으면 정확, 없으면 유입원+시간창 추정.
+  sessionFunnel: { total: number; completed: number; downloaded: number };
+  sessions: {
+    source: string;
+    type: string | null;
+    furthest: 'start' | 'complete' | 'download';
+    startedAt?: Date;
+  }[]; // 최근 세션 여정 (표시용)
   capped: boolean; // 2000건 캡에 걸렸는지
 }
 
@@ -2385,6 +2393,8 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const comfortCount = new Map<string, number>();
   const dayMap = new Map<string, { start: number; complete: number }>();
   const recent: GyeolStats['recent'] = [];
+  // 세션 재구성용 원본 이벤트 수집 (시간순 정렬은 아래에서).
+  const events: { sessionId: string | null; phase: string; type: string | null; source: string | null; createdAt?: Date }[] = [];
 
   snap.forEach((d) => {
     const data = d.data() as DocumentData;
@@ -2395,7 +2405,9 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     const source = (data.source ?? null) as string | null;
     const gender = (data.gender ?? null) as string | null;
     const comfort = (data.comfort ?? null) as string | null;
+    const sessionId = (data.sessionId ?? null) as string | null;
     const createdAt = toDate(data.createdAt);
+    events.push({ sessionId, phase, type, source, createdAt });
 
     if (phase === 'complete') {
       if (type) typeCount.set(type, (typeCount.get(type) ?? 0) + 1);
@@ -2437,6 +2449,77 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-14);
 
+  // ── 세션(사람) 단위 재구성 ────────────────────────────────────────────────
+  // sessionId가 있으면 그걸로 정확히 묶고, 없으면(레거시) 유입원 계열 + 20분
+  // 시간창으로 추정한다. 'start'는 항상 새 세션을 연다. 완료/공유/다운은 같은
+  // 계열의 최근 열린 세션에 붙인다(없거나 시간창 초과면 새 세션 = start 유실).
+  type Sess = { source: string | null; type: string | null; furthest: number; startedAt?: Date; lastAt?: Date };
+  const RANK: Record<string, number> = { start: 1, complete: 2, share: 2, download: 3 };
+  const famOf = (s: string | null): string => {
+    const x = (s ?? '').toLowerCase();
+    if (x.includes('threads')) return 'threads';
+    if (x === 'ig' || x.includes('instagram')) return 'instagram';
+    if (x === 'fb' || x.includes('facebook')) return 'facebook';
+    if (x.includes('tita-app')) return 'direct';
+    return x || 'direct';
+  };
+  const WINDOW = 20 * 60 * 1000; // 20분
+  const sessBySid = new Map<string, Sess>();
+  const openByFam = new Map<string, Sess>();
+  const allSessions: Sess[] = [];
+  const asc = events
+    .filter((e) => e.createdAt)
+    .sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime());
+  for (const e of asc) {
+    const rank = RANK[e.phase] ?? 0;
+    if (!rank) continue;
+    let sess: Sess | undefined;
+    if (e.sessionId) {
+      sess = sessBySid.get(e.sessionId);
+      if (!sess) {
+        sess = { source: e.source, type: null, furthest: 0 };
+        sessBySid.set(e.sessionId, sess);
+        allSessions.push(sess);
+      }
+    } else {
+      const fam = famOf(e.source);
+      const open = openByFam.get(fam);
+      if (
+        e.phase !== 'start' &&
+        open &&
+        open.lastAt &&
+        e.createdAt!.getTime() - open.lastAt.getTime() <= WINDOW
+      ) {
+        sess = open;
+      } else {
+        sess = { source: e.source, type: null, furthest: 0 };
+        openByFam.set(fam, sess);
+        allSessions.push(sess);
+      }
+    }
+    if (rank > sess.furthest) sess.furthest = rank;
+    if (e.type && !sess.type) sess.type = e.type;
+    if (e.phase === 'start' && !sess.startedAt) sess.startedAt = e.createdAt;
+    if (!sess.source && e.source) sess.source = e.source;
+    sess.lastAt = e.createdAt;
+  }
+  const sessionFunnel = {
+    total: allSessions.length,
+    completed: allSessions.filter((s) => s.furthest >= 2).length,
+    downloaded: allSessions.filter((s) => s.furthest >= 3).length,
+  };
+  const furthestLabel = (f: number): 'start' | 'complete' | 'download' =>
+    f >= 3 ? 'download' : f >= 2 ? 'complete' : 'start';
+  const sessions = allSessions
+    .map((s) => ({
+      source: s.source ?? '—',
+      type: s.type,
+      furthest: furthestLabel(s.furthest),
+      startedAt: s.startedAt ?? s.lastAt,
+    }))
+    .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))
+    .slice(0, 30);
+
   return {
     totals,
     completionRate: totals.start ? totals.complete / totals.start : 0,
@@ -2448,6 +2531,8 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     femaleShare,
     daily,
     recent,
+    sessionFunnel,
+    sessions,
     capped: snap.size >= CAP,
   };
 }
