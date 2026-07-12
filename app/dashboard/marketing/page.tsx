@@ -342,6 +342,39 @@ export default function MarketingOpsPage() {
         </div>
       </section>
 
+      {/* 채널별 전략 — 2026-07 학습 */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-base font-bold text-gray-900">채널별 전략 (뭐가 되고 안 되나)</h2>
+        <p className="mb-3 text-xs text-gray-500">
+          2026-07 실측 학습. 핵심: <b>인스타 인앱 브라우저가 스토어 설치 핸드오프를 깬다</b> —
+          같은 결테스트 링크도 스레드에선 앱스토어 바로 열리고, 인스타 인앱에선 안 열린다.
+        </p>
+        <div className="space-y-2.5 text-sm leading-relaxed text-gray-700">
+          <div className="rounded-xl bg-green-50 p-3">
+            <b>🧵 스레드 (오가닉) — 최우선 · 무료 · 잘 됨</b>
+            <br />파운더 스토리 글 도달 30배(7.1K뷰 · ❤️67 · 💬35 vs 제품홍보 60~260).
+            링크가 기본 브라우저로 열려 <b>스토어 설치까지 매끄럽다</b>. 결테스트 링크 그대로 사용.
+            <br /><span className="text-gray-500">→ 유료보다 여기 먼저. 파운더 글 앵글 바꿔가며 재발행.</span>
+          </div>
+          <div className="rounded-xl bg-red-50 p-3">
+            <b>📸 인스타 유료 → 웹 결테스트 — 🔴 설치 누수</b>
+            <br />인스타 인앱 브라우저에서 &ldquo;다운로드&rdquo;를 눌러도 스토어 앱으로 핸드오프가 깨진다.
+            (다운클릭 16 → 실제 설치 소수). 웹이 문제가 아니라 <b>인앱 브라우저가 문제</b>.
+            <br /><span className="text-gray-500">→ 반창고: 인앱 감지 시 &ldquo;⋯ → 외부 브라우저로 열기&rdquo; 안내(배포됨). 자동 탈출은 브라우저 보안상 불가.</span>
+          </div>
+          <div className="rounded-xl bg-blue-50 p-3">
+            <b>📸 인스타 유료 → App Promotion — ✅ 근본 해법</b>
+            <br />Meta 캠페인 목표를 <b>&ldquo;앱 홍보(App Promotion)&rdquo;</b>로 하면 웹·인앱브라우저를
+            건너뛰고 <b>네이티브 스토어가 바로 열린다</b> → 핸드오프 문제 소멸. 목적이 &lsquo;설치&rsquo;면 결테스트 스킵.
+            <br /><span className="text-gray-500">→ 유료 설치 예산 대부분 여기로. 소액만 결테스트(트래픽/전환)로 픽셀 리드 축적(100+ 시 리타게팅).</span>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            <b>결테스트 링크의 자리</b> — 유료 &lsquo;설치&rsquo; 랜딩으로는 부적합(인앱브라우저 누수).
+            <b>오가닉(스레드)·리타게팅·공유 루프</b>용으로 유지. 궁금증 훅 + 픽셀 씨앗 역할.
+          </div>
+        </div>
+      </section>
+
       {/* 고정 원칙 */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-base font-bold text-gray-900">고정 원칙 (안 바뀌는 것)</h2>
