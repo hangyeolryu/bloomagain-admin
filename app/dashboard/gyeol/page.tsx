@@ -28,6 +28,25 @@ function Tile({ label, value, hint, strong }: { label: string; value: string | n
   );
 }
 
+function FlowStep({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex min-w-[88px] flex-1 flex-col items-center justify-center rounded-xl border border-gray-200 bg-gray-50 px-3 py-4 text-center">
+      <div className="text-3xl font-bold tabular-nums text-gray-900">{value}</div>
+      <div className="mt-1 text-xs text-gray-500">{label}</div>
+    </div>
+  );
+}
+
+function Conn({ pct, caption, weak }: { pct: string; caption: string; weak: boolean }) {
+  return (
+    <div className="flex min-w-[62px] flex-col items-center justify-center px-1">
+      <div className={`text-sm font-bold tabular-nums ${weak ? 'text-red-600' : 'text-green-700'}`}>{pct}</div>
+      <div className="text-[10px] text-gray-400">{caption}</div>
+      <div className={`mt-0.5 text-xl leading-none ${weak ? 'text-red-400' : 'text-gray-300'}`}>→</div>
+    </div>
+  );
+}
+
 function Bar({ label, count, max }: { label: string; count: number; max: number }) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
@@ -68,6 +87,12 @@ export default function GyeolDashboardPage() {
   const genderKnown = stats.genderDistribution.reduce((s, d) => s + d.count, 0);
   // 막대 스케일은 start·complete 통합 최댓값 기준 (complete>start여도 안 넘침).
   const dayMax = Math.max(1, ...stats.daily.flatMap((d) => [d.start, d.complete]));
+  // 오늘(KST) 시작·완료 — daily는 yyyy-mm-dd(KST) 버킷. 없으면 0.
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+  const today = stats.daily.find((d) => d.date === todayKey);
+  // 빨간 화살표 = 절반 이상 이탈(전환 <50%)하는 '큰 누수' 구간.
+  const compLeak = stats.completionRate < 0.5;
+  const dlLeak = stats.downloadRate < 0.5;
 
   return (
     <div className="max-w-5xl space-y-8 p-6">
@@ -76,9 +101,35 @@ export default function GyeolDashboardPage() {
         subtitle="무가입 테스트 관심·유입 (익명 집계 — 개인 신원은 남지 않음)"
       />
 
-      {/* 퍼널 */}
+      {/* 한눈에 — 오늘 + 퍼널 흐름(어디서 새는지) */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">퍼널</h2>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">한눈에</h2>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="rounded-full bg-green-50 px-3 py-1 font-semibold text-green-700">오늘</span>
+            <span className="text-gray-700">
+              테스트 시작 <b className="tabular-nums">{today?.start ?? 0}</b>
+              <span className="mx-1.5 text-gray-300">·</span>
+              완료 <b className="tabular-nums">{today?.complete ?? 0}</b>
+            </span>
+          </div>
+          <div className="flex items-stretch gap-1 overflow-x-auto">
+            <FlowStep label="테스트 시작" value={t.start} />
+            <Conn pct={pct(stats.completionRate)} caption="완료율" weak={compLeak} />
+            <FlowStep label="완료" value={t.complete} />
+            <Conn pct={pct(stats.downloadRate)} caption="다운 전환" weak={dlLeak} />
+            <FlowStep label="다운로드 클릭" value={t.download} />
+          </div>
+          <p className="mt-3 text-xs text-gray-400">
+            빨간 화살표 = 절반 이상 이탈하는 큰 누수 구간. 다운클릭 다음(스토어 설치 → 가입)은 이 화면 밖 —
+            인스타 인앱 브라우저 누수 구간이에요.
+          </p>
+        </div>
+      </section>
+
+      {/* 퍼널 (상세 타일) */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">퍼널 상세</h2>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
           <Tile label="테스트 시작" value={t.start} strong />
           <Tile label="완료" value={t.complete} strong />
