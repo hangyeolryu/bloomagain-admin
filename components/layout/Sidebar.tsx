@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/docs', label: '문서', icon: '📚' },
   { href: '/dashboard/gyeol', label: '결 유형 테스트', icon: '🍵' },
   { href: '/dashboard/titatime', label: '티타임 가격 실험', icon: '🫖' },
+  { href: '/dashboard/teatime', label: '티타임 신청 명단', icon: '🍵' },
   { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️' },
   { href: '/dashboard/moim-builder', label: '찻자리 편성 (QA)', icon: '🪑' },
   { href: '/dashboard/marketing', label: '마케팅 운영', icon: '📣' },
