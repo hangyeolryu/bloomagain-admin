@@ -91,6 +91,39 @@ function toDate(val: unknown): Date | undefined {
   return undefined;
 }
 
+// ─── 티타임(고정 슬롯) 예약 명단 ─────────────────────────────────────────────
+// 앱의 teatime_signup_sheet가 teatime_signups/{eventId}__{uid}에 쓴다.
+// 누가 오는지 명단을 보고 장소 확정·문자 안내에 쓴다.
+export interface TeatimeSignup {
+  id: string;
+  eventId: string;
+  uid: string;
+  name?: string;
+  region?: string;
+  gender?: string;
+  status?: string;
+  createdAt?: Date;
+}
+
+export async function getTeatimeSignups(): Promise<TeatimeSignup[]> {
+  const snap = await getDocs(collection(db, 'teatime_signups'));
+  return snap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        eventId: (x.eventId as string) ?? '',
+        uid: (x.uid as string) ?? '',
+        name: x.name as string | undefined,
+        region: x.region as string | undefined,
+        gender: x.gender as string | undefined,
+        status: (x.status as string) ?? 'requested',
+        createdAt: toDate(x.createdAt),
+      };
+    })
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
 /**
  * Sort options exposed to the user-management UI. Each maps directly to a
  * Firestore field on the `users` doc; both fields are written by the
