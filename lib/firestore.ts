@@ -2096,6 +2096,130 @@ export async function getActivityPatterns(
   };
 }
 
+// ─── Onboarding / Activation Funnel — "0일차 이탈" ───────────────────────────
+//
+// 탈퇴 설문은 계정을 '정식 삭제'한 사람만 잡는다. 대부분의 0일차 이탈은
+// 삭제도 안 하고 그냥 다시 안 여는 사람이라 설문엔 안 보인다. 이 퍼널은
+// 행동 데이터로 그들을 드러낸다:
+//   가입 → 결큐 첫 답변(≥1) → 게이트 통과(≥3, 사람이 보임) → 재방문(다른 날 접속)
+// 신호 출처:
+//   - 가입: users.createdAt
+//   - 답변: users/{uid}/dailyQuestions 문서 수 (isAdmin read 허용)
+//   - 재방문: users/{uid}/activity_daily 의 dayKey 집합에 가입일보다 뒤 날짜 有
+
+export interface ActivationFunnel {
+  windowDays: number;
+  signups: number;
+  answered1: number;   // 결큐 1개 이상 답함
+  gateCleared: number; // 3개 이상 = 사람 리스트 잠금 해제
+  returnedEligible: number; // 어제까지 가입(재방문 기회가 있었던 사람)
+  returned: number;         // 가입일 이후 다른 날 접속
+  // 최근 14일 일별 코호트
+  daily: {
+    date: string;
+    signups: number;
+    answered1: number;
+    gateCleared: number;
+    eligible: number;
+    returned: number;
+  }[];
+}
+
+export async function getActivationFunnel(
+  windowDays = 30,
+): Promise<ActivationFunnel> {
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  const fromKey = yyyymmdd(cutoff);
+  const todayKey = yyyymmdd(new Date());
+
+  // 1) 코호트: 최근 windowDays 가입자 (createdAt 단일 필드 range+orderBy = 인덱스 불필요)
+  const usersSnap = await getDocs(query(
+    collection(db, 'users'),
+    where('createdAt', '>=', Timestamp.fromDate(cutoff)),
+    orderBy('createdAt', 'desc'),
+    limit(1000),
+  ));
+  const cohort = usersSnap.docs
+    .map((d) => ({ uid: d.id, createdAt: toDate(d.data().createdAt) }))
+    .filter((u): u is { uid: string; createdAt: Date } => !!u.createdAt);
+
+  // 2) 재방문: activity_daily 를 collectionGroup 으로 한 번에 → uid별 활동 날짜 집합
+  const activeDays = new Map<string, Set<string>>();
+  try {
+    const actSnap = await getDocs(query(
+      collectionGroup(db, 'activity_daily'),
+      where('dayKey', '>=', fromKey),
+    ));
+    for (const doc of actSnap.docs) {
+      const uid = doc.ref.parent.parent?.id;
+      const dayKey = String(doc.data().dayKey ?? '');
+      if (!uid || !dayKey) continue;
+      (activeDays.get(uid) ?? activeDays.set(uid, new Set()).get(uid)!).add(dayKey);
+    }
+  } catch (e) {
+    console.warn('[getOnboardingFunnel] activity_daily failed:', e);
+  }
+
+  // 3) 답변 수: 유저별 dailyQuestions 카운트 (collectionGroup 권한 이슈 회피 위해
+  //    유저별 getCountFromServer, 25개씩 병렬)
+  const answerCounts = new Map<string, number>();
+  const CHUNK = 25;
+  for (let i = 0; i < cohort.length; i += CHUNK) {
+    const slice = cohort.slice(i, i + CHUNK);
+    await Promise.all(slice.map(async (u) => {
+      try {
+        const c = await getCountFromServer(
+          collection(db, 'users', u.uid, 'dailyQuestions'),
+        );
+        answerCounts.set(u.uid, c.data().count);
+      } catch {
+        answerCounts.set(u.uid, 0);
+      }
+    }));
+  }
+
+  // 4) 집계 (+ 일별 코호트)
+  const dayAgg = new Map<string, {
+    signups: number; answered1: number; gateCleared: number;
+    eligible: number; returned: number;
+  }>();
+  let signups = 0, answered1 = 0, gateCleared = 0, returnedEligible = 0, returned = 0;
+  for (const u of cohort) {
+    const signupKey = yyyymmdd(u.createdAt);
+    const ans = answerCounts.get(u.uid) ?? 0;
+    const days = activeDays.get(u.uid) ?? new Set<string>();
+    const didReturn = [...days].some((k) => k > signupKey);
+    const eligible = signupKey < todayKey; // 재방문 기회가 있었나
+
+    signups++;
+    if (ans >= 1) answered1++;
+    if (ans >= 3) gateCleared++;
+    if (eligible) {
+      returnedEligible++;
+      if (didReturn) returned++;
+    }
+
+    const row = dayAgg.get(signupKey) ?? {
+      signups: 0, answered1: 0, gateCleared: 0, eligible: 0, returned: 0,
+    };
+    row.signups++;
+    if (ans >= 1) row.answered1++;
+    if (ans >= 3) row.gateCleared++;
+    if (eligible) { row.eligible++; if (didReturn) row.returned++; }
+    dayAgg.set(signupKey, row);
+  }
+
+  const daily = [...dayAgg.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, 14)
+    .map(([date, r]) => ({ date, ...r }));
+
+  return {
+    windowDays, signups, answered1, gateCleared,
+    returnedEligible, returned, daily,
+  };
+}
+
 // ─── Data Maintenance — Orphan Post Sweep ────────────────────────────────────
 //
 // `users/{uid}/posts` is a subcollection. The mobile app's public "내 주변에서"

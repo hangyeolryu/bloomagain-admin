@@ -12,12 +12,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { getOnboardingFunnel } from '@/lib/firestore';
+import { getOnboardingFunnel, getActivationFunnel } from '@/lib/firestore';
 import type {
   OnboardingAttemptHint,
   OnboardingDropoff,
   OnboardingFunnel,
   OnboardingStage,
+  ActivationFunnel,
 } from '@/lib/firestore';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -104,6 +105,7 @@ type DeviceFilter = 'all' | 'ios' | 'android' | 'other';
 
 export default function OnboardingFunnelPage() {
   const [data, setData] = useState<OnboardingFunnel | null>(null);
+  const [activation, setActivation] = useState<ActivationFunnel | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [deviceFilter, setDeviceFilter] = useState<DeviceFilter>('all');
@@ -118,6 +120,15 @@ export default function OnboardingFunnelPage() {
         if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    // 활성화 퍼널은 별도 로드 — 느려도(유저별 카운트) 위 드롭오프를 막지 않게.
+    (async () => {
+      try {
+        const act = await getActivationFunnel();
+        if (!cancelled) setActivation(act);
+      } catch {
+        /* 활성화 섹션은 실패해도 조용히 숨김 */
       }
     })();
     return () => {
@@ -206,6 +217,9 @@ export default function OnboardingFunnelPage() {
         </div>
       </div>
 
+      {/* 가입 후 활성화(0일차) — 온보딩을 끝낸 사람이 실제로 '쓰기' 시작하나 */}
+      <ActivationSection data={activation} />
+
       {/* Attempt hint summary + device filter (signed_up 단계만) */}
       <DropoffTable
         rows={data.recentDropoffs}
@@ -222,6 +236,116 @@ export default function OnboardingFunnelPage() {
         Console → Analytics → Funnel Exploration에서{' '}
         <span className="font-mono">onboarding_page_view</span> events로 구성.
       </div>
+    </div>
+  );
+}
+
+// ── 활성화(0일차) 퍼널 ──────────────────────────────────────────────────
+// 온보딩을 '완료'한 다음이 진짜 승부처. 탈퇴 설문은 삭제한 사람만 잡지만,
+// 이 퍼널은 조용히 안 돌아오는 사람까지 행동으로 드러낸다.
+
+function pct(n: number, d: number): number {
+  return d > 0 ? Math.round((n / d) * 100) : 0;
+}
+
+function ActivationSection({ data }: { data: ActivationFunnel | null }) {
+  if (!data) {
+    return (
+      <div>
+        <SectionHeading>가입 후 활성화 (0일차)</SectionHeading>
+        <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-400">
+          불러오는 중…
+        </div>
+      </div>
+    );
+  }
+
+  const steps = [
+    { label: '가입', count: data.signups, color: '#6366F1',
+      caption: `최근 ${data.windowDays}일` },
+    { label: '결큐 첫 답변', count: data.answered1, color: '#8B5CF6',
+      caption: '질문 1개 이상' },
+    { label: '게이트 통과 (사람이 보임)', count: data.gateCleared, color: '#0EA5E9',
+      caption: '질문 3개 이상' },
+  ];
+
+  return (
+    <div>
+      <SectionHeading>가입 후 활성화 (0일차)</SectionHeading>
+
+      {/* 한 줄 진단 */}
+      <div className="mb-3 bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-sm text-indigo-900">
+        온보딩 완료 후 <b>결큐를 한 개도 안 답한 사람</b>이{' '}
+        <b>{data.signups - data.answered1}명</b>{' '}
+        (가입 {data.signups}명 중 {pct(data.signups - data.answered1, data.signups)}%).
+        {' '}재방문(가입 다음날 이후 접속)은 기회가 있던{' '}
+        {data.returnedEligible}명 중 <b>{data.returned}명</b>{' '}
+        ({pct(data.returned, data.returnedEligible)}%).
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        {steps.map((s) => (
+          <FunnelRow
+            key={s.label}
+            label={s.label}
+            count={s.count}
+            total={data.signups}
+            pct={pct(s.count, data.signups)}
+            color={s.color}
+            caption={s.caption}
+          />
+        ))}
+        {/* 재방문은 분모가 다르므로(기회 있던 사람) 따로 표시 */}
+        <FunnelRow
+          label="재방문 (다른 날 다시 옴)"
+          count={data.returned}
+          total={data.returnedEligible}
+          pct={pct(data.returned, data.returnedEligible)}
+          color="#10B981"
+          caption={`기회 있던 ${data.returnedEligible}명 기준`}
+        />
+      </div>
+
+      {/* 일별 코호트 */}
+      {data.daily.length > 0 && (
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-4 py-2.5">가입일</th>
+                <th className="text-right px-4 py-2.5">가입</th>
+                <th className="text-right px-4 py-2.5">첫 답변</th>
+                <th className="text-right px-4 py-2.5">게이트 통과</th>
+                <th className="text-right px-4 py-2.5">재방문</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.daily.map((d) => (
+                <tr key={d.date} className="border-t border-gray-100">
+                  <td className="px-4 py-2.5 tabular-nums text-gray-700">{d.date}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-medium">{d.signups}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">
+                    {d.answered1} <span className="text-xs text-gray-400">({pct(d.answered1, d.signups)}%)</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">
+                    {d.gateCleared} <span className="text-xs text-gray-400">({pct(d.gateCleared, d.signups)}%)</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">
+                    {d.eligible > 0
+                      ? <>{d.returned} <span className="text-xs text-gray-400">({pct(d.returned, d.eligible)}%)</span></>
+                      : <span className="text-xs text-gray-400">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="mt-2 text-xs text-gray-400 leading-relaxed">
+        재방문 = 가입일보다 뒤 날짜에 <span className="font-mono">activity_daily</span> 기록이 있는 사람.
+        오늘 가입자는 아직 재방문 기회가 없어 분모에서 제외됩니다.
+      </p>
     </div>
   );
 }
