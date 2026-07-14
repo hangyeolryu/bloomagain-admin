@@ -25,6 +25,8 @@ interface ChurnSurvey {
 
 const REASON_COLORS: Record<string, string> = {
   no_match: 'bg-blue-100 text-blue-800',
+  empty_app: 'bg-indigo-100 text-indigo-800',
+  too_long: 'bg-orange-100 text-orange-800',
   hard_to_use: 'bg-purple-100 text-purple-800',
   not_using: 'bg-gray-100 text-gray-800',
   bad_experience: 'bg-red-100 text-red-800',
