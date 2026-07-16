@@ -109,7 +109,11 @@ function BroadcastPushCard() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || '발송 실패');
-      setResult(`발송 완료 · 대상 ${json.recipients}명 · 성공 ${json.sent} · 실패 ${json.failed} · 알림거부 제외 ${json.opted_out}`);
+      let msg = `발송 완료 · 대상 ${json.recipients}명 · 성공 ${json.sent} · 실패 ${json.failed} · 알림거부 제외 ${json.opted_out}`;
+      if (json.sent === 0 && json.failed > 0 && Array.isArray(json.errors) && json.errors.length > 0) {
+        msg += `\n실패 원인(샘플): ${json.errors[0]}`;
+      }
+      setResult(msg);
       loadHistory();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -187,7 +191,7 @@ function BroadcastPushCard() {
         >
           {sending ? '발송 중…' : '전체에게 발송'}
         </button>
-        {result && <span className="text-sm text-green-700">{result}</span>}
+        {result && <span className="text-sm text-green-700 whitespace-pre-line">{result}</span>}
         {err && <span className="text-sm text-red-600">{err}</span>}
       </div>
       <p className="text-xs text-amber-600">
