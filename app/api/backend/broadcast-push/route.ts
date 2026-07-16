@@ -69,15 +69,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let title = '';
-  let body = '';
-  let type = 'teatime';
+  let payload: Record<string, unknown>;
   try {
     const json = await request.json();
-    title = String(json.title ?? '').trim();
-    body = String(json.body ?? '').trim();
-    if (json.type) type = String(json.type).trim();
-    if (!title || !body) throw new Error('missing title/body');
+    const title = String(json.title ?? '').trim();
+    const body = String(json.body ?? '').trim();
+    const type = json.type ? String(json.type).trim() : 'teatime';
+    const dryRun = Boolean(json.dry_run);
+    // Audience filters (all optional). Only forwarded when set.
+    const onlyAdmins = Boolean(json.only_admins);
+    const gender = json.gender ? String(json.gender).trim() : '';
+    const region = json.region ? String(json.region).trim() : '';
+
+    // dry_run only previews the audience, so title/body aren't required then.
+    if (!dryRun && (!title || !body)) throw new Error('missing title/body');
+
+    payload = {
+      title,
+      body,
+      type,
+      dry_run: dryRun,
+      only_admins: onlyAdmins,
+      ...(gender ? { gender } : {}),
+      ...(region ? { region } : {}),
+    };
   } catch {
     return NextResponse.json({ error: 'title and body are required' }, { status: 400 });
   }
@@ -91,7 +106,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           'X-Internal-Api-Key': internalKey,
         },
-        body: JSON.stringify({ title, body, type }),
+        body: JSON.stringify(payload),
       },
     );
 
