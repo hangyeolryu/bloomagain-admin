@@ -13,6 +13,48 @@ import { NextRequest, NextResponse } from 'next/server';
  *
  * Body: { title: string, body: string, type?: string }
  */
+
+function readEnv() {
+  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
+  const internalKey = process.env.INTERNAL_API_KEY;
+  if (!backendUrl) {
+    return { error: NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 }) };
+  }
+  if (!internalKey) {
+    return {
+      error: NextResponse.json(
+        { error: 'INTERNAL_API_KEY not configured on the admin server' },
+        { status: 500 },
+      ),
+    };
+  }
+  return { backendUrl: backendUrl.replace(/\/$/, ''), internalKey };
+}
+
+/** GET /api/backend/broadcast-push — recent broadcast history (newest first). */
+export async function GET() {
+  const env = readEnv();
+  if (env.error) return env.error;
+
+  try {
+    const upstream = await fetch(`${env.backendUrl}/api/v1/operations/broadcast-push/history`, {
+      method: 'GET',
+      headers: { 'X-Internal-Api-Key': env.internalKey },
+      cache: 'no-store',
+    });
+    const raw = await upstream.text();
+    if (!upstream.ok) {
+      let detail = `Backend error (${upstream.status})`;
+      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
+      return NextResponse.json({ error: detail }, { status: upstream.status });
+    }
+    return NextResponse.json(JSON.parse(raw));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
   const internalKey = process.env.INTERNAL_API_KEY;
