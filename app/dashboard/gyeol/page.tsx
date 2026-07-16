@@ -119,6 +119,7 @@ export default function GyeolDashboardPage() {
   const today = stats.daily.find((d) => d.date === todayKey);
   // 사람(세션) 단위 퍼널 — "시작한 N명 중 몇 명이 끝까지 갔나".
   const sf = stats.sessionFunnel;
+  const di = stats.downloadInsight;
   const sCompRate = sf.total ? sf.completed / sf.total : 0;
   const sDlRate = sf.completed ? sf.downloaded / sf.completed : 0;
   // 빨간 화살표 = 절반 이상 이탈(전환 <50%)하는 '큰 누수' 구간.
@@ -212,6 +213,76 @@ export default function GyeolDashboardPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      {/* 다운클릭 심층 — 다운까지 간 사람들이 뭘 원하나 + 세그먼트별 전환 */}
+      <section>
+        <h2 className="mb-1 text-sm font-semibold text-gray-900">다운클릭한 사람들 (심층 분석)</h2>
+        <p className="mb-3 text-xs text-gray-400">
+          완료 {di.completed}명 중 다운클릭 {di.clickers}명 · 완료→다운 전환 {pct(di.convOverall)} ·
+          &ldquo;누구와&rdquo;는 완료(프로필) 단계 응답 기준
+        </p>
+        {di.clickers === 0 ? (
+          <p className="text-sm text-gray-400">아직 다운클릭한 세션이 없어요.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* 다운클릭자 구성 */}
+            <div className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-2 text-xs font-semibold text-gray-500">다운클릭한 사람들은 누구?</div>
+              <div className="mb-2 flex gap-3 text-sm">
+                <span className="font-semibold text-pink-600">여성 {di.gender.f}</span>
+                <span className="font-semibold text-blue-600">남성 {di.gender.m}</span>
+                {di.gender.na > 0 && <span className="text-gray-400">미상 {di.gender.na}</span>}
+              </div>
+              <div className="text-sm text-gray-600">
+                누구와 — 동성 {di.comfort.same} · 이성 {di.comfort.opp} · 결 {di.comfort.any}
+              </div>
+            </div>
+            {/* 세그먼트별 완료→다운 전환율 */}
+            <div className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-2 text-xs font-semibold text-gray-500">
+                어느 세그먼트가 다운으로 잘 넘어가나 (완료→다운)
+              </div>
+              <div className="space-y-1 text-sm text-gray-700">
+                <div>
+                  성별 — <span className="text-pink-600">여 {pct(di.convByGender.f)}</span> ·{' '}
+                  <span className="text-blue-600">남 {pct(di.convByGender.m)}</span>
+                </div>
+                <div>
+                  누구와 — 동성 {pct(di.convByComfort.same)} · 이성 {pct(di.convByComfort.opp)} · 결 {pct(di.convByComfort.any)}
+                </div>
+              </div>
+            </div>
+            {/* top 결유형 */}
+            <div className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-2 text-xs font-semibold text-gray-500">다운클릭자 결 유형 top</div>
+              {di.types.length === 0 ? (
+                <p className="text-xs text-gray-400">—</p>
+              ) : (
+                <div className="space-y-1">
+                  {di.types.map((t) => (
+                    <div key={t.type} className="flex justify-between text-sm">
+                      <span className="mr-2 truncate text-gray-700">{gyeolTypeLabel(t.type)}</span>
+                      <span className="text-gray-500">{t.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* top 유입원 */}
+            <div className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-2 text-xs font-semibold text-gray-500">다운클릭자 유입원 top</div>
+              <div className="space-y-1">
+                {di.sources.map((s) => (
+                  <div key={s.source} className="flex justify-between text-sm">
+                    <span className="mr-2 truncate text-gray-700">{s.source}</span>
+                    <span className="text-gray-500">{s.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </section>

@@ -2510,6 +2510,18 @@ export interface GyeolStats {
   recent: { createdAt?: Date; phase: string; type: string | null; source: string | null }[];
   // 세션(사람) 단위 재구성 — sessionId 있으면 정확, 없으면 유입원+시간창 추정.
   sessionFunnel: { total: number; completed: number; downloaded: number };
+  // 다운클릭한 사람들 심층 — "다운까지 간 사람들이 뭘 원하나" + 세그먼트별 전환율.
+  downloadInsight: {
+    clickers: number; // 다운클릭 세션 수
+    completed: number; // 완료 세션 수 (전환율 분모)
+    gender: { f: number; m: number; na: number }; // 다운클릭자 성별
+    comfort: { same: number; any: number; opp: number }; // 다운클릭자 누구와
+    types: { type: string; count: number }[]; // 다운클릭자 결 유형 top
+    sources: { source: string; count: number }[]; // 다운클릭자 유입원 top
+    convOverall: number; // 완료→다운 전환율
+    convByGender: { f: number; m: number }; // 성별별 완료→다운 전환율
+    convByComfort: { same: number; any: number; opp: number }; // 누구와별 전환율
+  };
   sessions: {
     source: string;
     type: string | null;
@@ -2669,6 +2681,48 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     completed: allSessions.filter((s) => s.furthest >= 2).length,
     downloaded: allSessions.filter((s) => s.furthest >= 3).length,
   };
+
+  // ── 다운클릭 심층 — 완료 이상 세션을 세그먼트로 쪼개 "뭘 원하는 사람이 다운까지
+  //    가나 / 어느 세그먼트가 다운 전환이 낮나"를 본다.
+  const complSess = allSessions.filter((s) => s.furthest >= 2);
+  const dlSess = allSessions.filter((s) => s.furthest >= 3);
+  const gSplit = (arr: Sess[]) => {
+    let f = 0, m = 0, na = 0;
+    for (const s of arr) { if (s.gender === 'f') f++; else if (s.gender === 'm') m++; else na++; }
+    return { f, m, na };
+  };
+  const cSplit = (arr: Sess[]) => {
+    let same = 0, any = 0, opp = 0;
+    for (const s of arr) { if (s.comfort === 'same') same++; else if (s.comfort === 'any') any++; else if (s.comfort === 'opp') opp++; }
+    return { same, any, opp };
+  };
+  const rate = (num: number, den: number) => (den > 0 ? num / den : 0);
+  const dlGender = gSplit(dlSess);
+  const compGender = gSplit(complSess);
+  const dlComfort = cSplit(dlSess);
+  const compComfort = cSplit(complSess);
+  const dlTypeCount = new Map<string, number>();
+  const dlSourceCount = new Map<string, number>();
+  for (const s of dlSess) {
+    if (s.type) dlTypeCount.set(s.type, (dlTypeCount.get(s.type) ?? 0) + 1);
+    const src = s.source || '(직접/알수없음)';
+    dlSourceCount.set(src, (dlSourceCount.get(src) ?? 0) + 1);
+  }
+  const downloadInsight = {
+    clickers: dlSess.length,
+    completed: complSess.length,
+    gender: dlGender,
+    comfort: dlComfort,
+    types: [...dlTypeCount.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count).slice(0, 6),
+    sources: [...dlSourceCount.entries()].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+    convOverall: rate(dlSess.length, complSess.length),
+    convByGender: { f: rate(dlGender.f, compGender.f), m: rate(dlGender.m, compGender.m) },
+    convByComfort: {
+      same: rate(dlComfort.same, compComfort.same),
+      any: rate(dlComfort.any, compComfort.any),
+      opp: rate(dlComfort.opp, compComfort.opp),
+    },
+  };
   const furthestLabel = (f: number): 'start' | 'complete' | 'download' =>
     f >= 3 ? 'download' : f >= 2 ? 'complete' : 'start';
   const sessions = allSessions
@@ -2695,6 +2749,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     daily,
     recent,
     sessionFunnel,
+    downloadInsight,
     sessions,
     capped: snap.size >= CAP,
   };
