@@ -2549,9 +2549,18 @@ const GYEOL_TYPE_NAMES: Record<string, string> = {
   SBP: '선을 지키는 다정', SBL: '편안한 산책 친구',
 };
 
+// 4글자 코드(기본유형+기질, 예: SDLW)를 3글자 기본유형(SDL)으로 접는다.
+// 같은 유형이 기질별로 갈려 집계가 두 줄로 쪼개지는 걸 막는다.
+export function baseGyeolType(code: string | null): string | null {
+  if (!code) return code;
+  if (code.length >= 4 && GYEOL_TYPE_NAMES[code.slice(0, 3)]) return code.slice(0, 3);
+  return code;
+}
+
 export function gyeolTypeLabel(code: string | null): string {
   if (!code) return '—';
-  return GYEOL_TYPE_NAMES[code] ? `${GYEOL_TYPE_NAMES[code]} (${code})` : code;
+  const base = baseGyeolType(code) ?? code;
+  return GYEOL_TYPE_NAMES[base] ? `${GYEOL_TYPE_NAMES[base]} (${base})` : code;
 }
 
 export async function getGyeolStats(): Promise<GyeolStats> {
@@ -2585,7 +2594,8 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     events.push({ sessionId, phase, type, source, gender, comfort, inApp, createdAt });
 
     if (phase === 'complete') {
-      if (type) typeCount.set(type, (typeCount.get(type) ?? 0) + 1);
+      const bt = baseGyeolType(type);
+      if (bt) typeCount.set(bt, (typeCount.get(bt) ?? 0) + 1);
       const s = source || '(직접/알수없음)';
       sourceCount.set(s, (sourceCount.get(s) ?? 0) + 1);
       if (gender) genderCount.set(gender, (genderCount.get(gender) ?? 0) + 1);
@@ -2709,7 +2719,8 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const dlTypeCount = new Map<string, number>();
   const dlSourceCount = new Map<string, number>();
   for (const s of dlSess) {
-    if (s.type) dlTypeCount.set(s.type, (dlTypeCount.get(s.type) ?? 0) + 1);
+    const bt = baseGyeolType(s.type ?? null);
+    if (bt) dlTypeCount.set(bt, (dlTypeCount.get(bt) ?? 0) + 1);
     const src = s.source || '(직접/알수없음)';
     dlSourceCount.set(src, (dlSourceCount.get(src) ?? 0) + 1);
   }
