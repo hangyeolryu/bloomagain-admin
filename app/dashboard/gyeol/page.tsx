@@ -163,7 +163,8 @@ export default function GyeolDashboardPage() {
       <section>
         <h2 className="mb-1 text-sm font-semibold text-gray-900">세션별 여정 (한 명이 어디까지 갔나)</h2>
         <p className="mb-3 text-xs text-gray-400">
-          최근 30세션 · 시작 → 완료 → 다운클릭. 세션ID 없는 과거 데이터는 유입원·시간으로 추정해 묶었어요.
+          최근 50세션 · 시작 → 완료 → 다운클릭. 성별·이성/동성은 완료(프로필) 단계에서 남긴 값이에요.
+          세션ID 없는 과거 데이터는 유입원·시간으로 추정해 묶었어요.
         </p>
         {stats.sessions.length === 0 ? (
           <p className="text-sm text-gray-400">아직 세션 데이터가 없어요.</p>
@@ -174,6 +175,8 @@ export default function GyeolDashboardPage() {
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">시작 시각</th>
                   <th className="px-3 py-2 text-left font-medium">유입</th>
+                  <th className="px-3 py-2 text-left font-medium">성별</th>
+                  <th className="px-3 py-2 text-left font-medium">이성·동성</th>
                   <th className="px-3 py-2 text-left font-medium">결 유형</th>
                   <th className="px-3 py-2 text-left font-medium">여정</th>
                 </tr>
@@ -185,6 +188,24 @@ export default function GyeolDashboardPage() {
                       {s.startedAt ? s.startedAt.toLocaleString('ko-KR') : '—'}
                     </td>
                     <td className="px-3 py-2 text-gray-500">{s.source}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {s.gender === 'f' ? (
+                        <span className="text-pink-600">여성</span>
+                      ) : s.gender === 'm' ? (
+                        <span className="text-blue-600">남성</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {s.comfort === 'opp'
+                        ? '이성도 좋아요'
+                        : s.comfort === 'same'
+                        ? '동성이 편해요'
+                        : s.comfort === 'any'
+                        ? '상관없음'
+                        : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-3 py-2 text-gray-700">{s.type ? gyeolTypeLabel(s.type) : '—'}</td>
                     <td className="px-3 py-2"><Journey furthest={s.furthest} /></td>
                   </tr>

@@ -2515,6 +2515,8 @@ export interface GyeolStats {
     type: string | null;
     furthest: 'start' | 'complete' | 'download';
     startedAt?: Date;
+    gender: string | null; // f/m/na — 세션에서 관측된 값
+    comfort: string | null; // same/any/opp
   }[]; // 최근 세션 여정 (표시용)
   capped: boolean; // 2000건 캡에 걸렸는지
 }
@@ -2551,7 +2553,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const dayMap = new Map<string, { start: number; complete: number }>();
   const recent: GyeolStats['recent'] = [];
   // 세션 재구성용 원본 이벤트 수집 (시간순 정렬은 아래에서).
-  const events: { sessionId: string | null; phase: string; type: string | null; source: string | null; createdAt?: Date }[] = [];
+  const events: { sessionId: string | null; phase: string; type: string | null; source: string | null; gender: string | null; comfort: string | null; createdAt?: Date }[] = [];
 
   snap.forEach((d) => {
     const data = d.data() as DocumentData;
@@ -2564,7 +2566,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     const comfort = (data.comfort ?? null) as string | null;
     const sessionId = (data.sessionId ?? null) as string | null;
     const createdAt = toDate(data.createdAt);
-    events.push({ sessionId, phase, type, source, createdAt });
+    events.push({ sessionId, phase, type, source, gender, comfort, createdAt });
 
     if (phase === 'complete') {
       if (type) typeCount.set(type, (typeCount.get(type) ?? 0) + 1);
@@ -2610,7 +2612,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   // sessionId가 있으면 그걸로 정확히 묶고, 없으면(레거시) 유입원 계열 + 20분
   // 시간창으로 추정한다. 'start'는 항상 새 세션을 연다. 완료/공유/다운은 같은
   // 계열의 최근 열린 세션에 붙인다(없거나 시간창 초과면 새 세션 = start 유실).
-  type Sess = { source: string | null; type: string | null; furthest: number; startedAt?: Date; lastAt?: Date };
+  type Sess = { source: string | null; type: string | null; furthest: number; startedAt?: Date; lastAt?: Date; gender?: string | null; comfort?: string | null };
   const RANK: Record<string, number> = { start: 1, complete: 2, share: 2, download: 3 };
   const famOf = (s: string | null): string => {
     const x = (s ?? '').toLowerCase();
@@ -2656,6 +2658,8 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     }
     if (rank > sess.furthest) sess.furthest = rank;
     if (e.type && !sess.type) sess.type = e.type;
+    if (e.gender && !sess.gender) sess.gender = e.gender;
+    if (e.comfort && !sess.comfort) sess.comfort = e.comfort;
     if (e.phase === 'start' && !sess.startedAt) sess.startedAt = e.createdAt;
     if (!sess.source && e.source) sess.source = e.source;
     sess.lastAt = e.createdAt;
@@ -2673,9 +2677,11 @@ export async function getGyeolStats(): Promise<GyeolStats> {
       type: s.type,
       furthest: furthestLabel(s.furthest),
       startedAt: s.startedAt ?? s.lastAt,
+      gender: s.gender ?? null,
+      comfort: s.comfort ?? null,
     }))
     .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))
-    .slice(0, 30);
+    .slice(0, 50);
 
   return {
     totals,
