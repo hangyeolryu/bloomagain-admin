@@ -176,7 +176,7 @@ export default function GyeolDashboardPage() {
                   <th className="px-3 py-2 text-left font-medium">시작 시각</th>
                   <th className="px-3 py-2 text-left font-medium">유입</th>
                   <th className="px-3 py-2 text-left font-medium">성별</th>
-                  <th className="px-3 py-2 text-left font-medium">이성·동성</th>
+                  <th className="px-3 py-2 text-left font-medium">누구와 (동성·이성·결)</th>
                   <th className="px-3 py-2 text-left font-medium">결 유형</th>
                   <th className="px-3 py-2 text-left font-medium">여정</th>
                 </tr>
@@ -199,11 +199,11 @@ export default function GyeolDashboardPage() {
                     </td>
                     <td className="px-3 py-2 text-gray-600">
                       {s.comfort === 'opp'
-                        ? '이성도 좋아요'
+                        ? '이성'
                         : s.comfort === 'same'
-                        ? '동성이 편해요'
+                        ? '동성'
                         : s.comfort === 'any'
-                        ? '상관없음'
+                        ? '결 (상관없음)'
                         : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{s.type ? gyeolTypeLabel(s.type) : '—'}</td>
