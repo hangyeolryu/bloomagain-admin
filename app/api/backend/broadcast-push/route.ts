@@ -1,0 +1,67 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+/**
+ * POST /api/backend/broadcast-push
+ *
+ * Proxies to FastAPI POST /api/v1/operations/broadcast-push, which sends a
+ * one-off FCM push to every user with an fcmToken.
+ *
+ * Guarded by X-Internal-Api-Key (server-only secret) — NOT the tenant key —
+ * because the tenant key ships inside the mobile app and must never be able to
+ * broadcast to all users. Set INTERNAL_API_KEY in the admin's server env to
+ * the same value the backend uses.
+ *
+ * Body: { title: string, body: string, type?: string }
+ */
+export async function POST(request: NextRequest) {
+  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
+  const internalKey = process.env.INTERNAL_API_KEY;
+
+  if (!backendUrl) {
+    return NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 });
+  }
+  if (!internalKey) {
+    return NextResponse.json(
+      { error: 'INTERNAL_API_KEY not configured on the admin server' },
+      { status: 500 },
+    );
+  }
+
+  let title = '';
+  let body = '';
+  let type = 'teatime';
+  try {
+    const json = await request.json();
+    title = String(json.title ?? '').trim();
+    body = String(json.body ?? '').trim();
+    if (json.type) type = String(json.type).trim();
+    if (!title || !body) throw new Error('missing title/body');
+  } catch {
+    return NextResponse.json({ error: 'title and body are required' }, { status: 400 });
+  }
+
+  try {
+    const upstream = await fetch(
+      `${backendUrl.replace(/\/$/, '')}/api/v1/operations/broadcast-push`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Api-Key': internalKey,
+        },
+        body: JSON.stringify({ title, body, type }),
+      },
+    );
+
+    const raw = await upstream.text();
+    if (!upstream.ok) {
+      let detail = `Backend error (${upstream.status})`;
+      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
+      return NextResponse.json({ error: detail }, { status: upstream.status });
+    }
+    return NextResponse.json(JSON.parse(raw));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

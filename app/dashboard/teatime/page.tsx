@@ -20,6 +20,73 @@ function genderKo(g?: string): string {
   return '미상';
 }
 
+// 전체 사용자에게 티타임 브로드캐스트 푸시. type=teatime → 앱이 티타임 시트를 연다.
+function BroadcastPushCard() {
+  const [title, setTitle] = useState('🍵 낮에, 결이 맞는 또래와');
+  const [body, setBody] = useState('새로운 티타임이 열렸어요. 지금 자리를 맡아보세요.');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function send() {
+    if (!title.trim() || !body.trim()) { setErr('제목과 내용을 입력하세요'); return; }
+    if (!confirm(`⚠️ 전체 사용자에게 푸시를 보냅니다.\n\n제목: ${title}\n내용: ${body}\n\n정말 보낼까요?`)) return;
+    setSending(true); setErr(null); setResult(null);
+    try {
+      const res = await fetch('/api/backend/broadcast-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), body: body.trim(), type: 'teatime' }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '발송 실패');
+      setResult(`발송 완료 · 대상 ${json.recipients}명 · 성공 ${json.sent} · 실패 ${json.failed} · 알림거부 제외 ${json.opted_out}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+      <div>
+        <h2 className="font-semibold text-gray-900">티타임 브로드캐스트 푸시</h2>
+        <p className="text-xs text-gray-500 mt-0.5">
+          전체 사용자에게 발송. 탭하면 <code className="bg-gray-100 px-1 rounded">type=teatime</code>으로 티타임 자리 예약 시트가 열립니다. (알림 끈 사용자는 자동 제외)
+        </p>
+      </div>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="제목"
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+      />
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="내용"
+        rows={2}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={send}
+          disabled={sending}
+          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-700 hover:bg-green-800 disabled:opacity-50"
+        >
+          {sending ? '발송 중…' : '전체에게 발송'}
+        </button>
+        {result && <span className="text-sm text-green-700">{result}</span>}
+        {err && <span className="text-sm text-red-600">{err}</span>}
+      </div>
+      <p className="text-xs text-amber-600">
+        ⚠️ 실제 전체 발송입니다. 보내기 전 본인 계정으로 먼저 확인하고, 앱 배포 후 1~2일 지나 자동 업데이트가 퍼진 뒤 보내는 걸 권장해요.
+      </p>
+    </section>
+  );
+}
+
 export default function TeatimePage() {
   const [rows, setRows] = useState<TeatimeSignup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +114,8 @@ export default function TeatimePage() {
         title="티타임 신청 명단"
         subtitle="날짜가 확정된 티타임에 실제로 신청한 분들. 장소 확정·문자 안내에 쓰세요."
       />
+
+      <BroadcastPushCard />
 
       {error ? (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
