@@ -2514,6 +2514,9 @@ export interface GyeolStats {
   downloadInsight: {
     clickers: number; // 다운클릭 세션 수
     completed: number; // 완료 세션 수 (전환율 분모)
+    inAppClickers: number; // 인앱 브라우저에서 다운클릭한 세션 수
+    inAppKnown: number; // inApp 값이 기록된 다운클릭 세션 수 (분모)
+    inAppShare: number; // inApp 비율 (inAppClickers / inAppKnown)
     gender: { f: number; m: number; na: number }; // 다운클릭자 성별
     comfort: { same: number; any: number; opp: number }; // 다운클릭자 누구와
     types: { type: string; count: number }[]; // 다운클릭자 결 유형 top
@@ -2565,7 +2568,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const dayMap = new Map<string, { start: number; complete: number }>();
   const recent: GyeolStats['recent'] = [];
   // 세션 재구성용 원본 이벤트 수집 (시간순 정렬은 아래에서).
-  const events: { sessionId: string | null; phase: string; type: string | null; source: string | null; gender: string | null; comfort: string | null; createdAt?: Date }[] = [];
+  const events: { sessionId: string | null; phase: string; type: string | null; source: string | null; gender: string | null; comfort: string | null; inApp: boolean | null; createdAt?: Date }[] = [];
 
   snap.forEach((d) => {
     const data = d.data() as DocumentData;
@@ -2577,8 +2580,9 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     const gender = (data.gender ?? null) as string | null;
     const comfort = (data.comfort ?? null) as string | null;
     const sessionId = (data.sessionId ?? null) as string | null;
+    const inApp = (typeof data.inApp === 'boolean' ? data.inApp : null) as boolean | null;
     const createdAt = toDate(data.createdAt);
-    events.push({ sessionId, phase, type, source, gender, comfort, createdAt });
+    events.push({ sessionId, phase, type, source, gender, comfort, inApp, createdAt });
 
     if (phase === 'complete') {
       if (type) typeCount.set(type, (typeCount.get(type) ?? 0) + 1);
@@ -2624,7 +2628,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   // sessionId가 있으면 그걸로 정확히 묶고, 없으면(레거시) 유입원 계열 + 20분
   // 시간창으로 추정한다. 'start'는 항상 새 세션을 연다. 완료/공유/다운은 같은
   // 계열의 최근 열린 세션에 붙인다(없거나 시간창 초과면 새 세션 = start 유실).
-  type Sess = { source: string | null; type: string | null; furthest: number; startedAt?: Date; lastAt?: Date; gender?: string | null; comfort?: string | null };
+  type Sess = { source: string | null; type: string | null; furthest: number; startedAt?: Date; lastAt?: Date; gender?: string | null; comfort?: string | null; inApp?: boolean | null };
   const RANK: Record<string, number> = { start: 1, complete: 2, share: 2, download: 3 };
   const famOf = (s: string | null): string => {
     const x = (s ?? '').toLowerCase();
@@ -2672,6 +2676,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     if (e.type && !sess.type) sess.type = e.type;
     if (e.gender && !sess.gender) sess.gender = e.gender;
     if (e.comfort && !sess.comfort) sess.comfort = e.comfort;
+    if (e.inApp != null && sess.inApp == null) sess.inApp = e.inApp;
     if (e.phase === 'start' && !sess.startedAt) sess.startedAt = e.createdAt;
     if (!sess.source && e.source) sess.source = e.source;
     sess.lastAt = e.createdAt;
@@ -2708,9 +2713,17 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     const src = s.source || '(직접/알수없음)';
     dlSourceCount.set(src, (dlSourceCount.get(src) ?? 0) + 1);
   }
+  // 인앱 브라우저(인스타·페북·카톡 등)에서 다운클릭한 비율 — 스토어 핸드오프가
+  // 깨지는 "클릭했는데 설치 안 됨" 누수의 대표 원인. inApp 값이 있는 세션만 분모.
+  const dlInAppKnown = dlSess.filter((s) => s.inApp != null);
+  const dlInApp = dlInAppKnown.filter((s) => s.inApp === true).length;
+
   const downloadInsight = {
     clickers: dlSess.length,
     completed: complSess.length,
+    inAppClickers: dlInApp,
+    inAppKnown: dlInAppKnown.length,
+    inAppShare: rate(dlInApp, dlInAppKnown.length),
     gender: dlGender,
     comfort: dlComfort,
     types: [...dlTypeCount.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count).slice(0, 6),
