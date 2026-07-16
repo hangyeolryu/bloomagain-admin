@@ -228,6 +228,25 @@ export default function GyeolDashboardPage() {
           <p className="text-sm text-gray-400">아직 다운클릭한 세션이 없어요.</p>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* 인앱 브라우저 누수 — "클릭했는데 설치 안 됨"의 대표 원인 */}
+            <div className={`rounded-lg border p-4 md:col-span-2 ${di.inAppShare >= 0.3 ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
+              <div className="mb-1 text-xs font-semibold text-gray-500">
+                인앱 브라우저에서 다운클릭 (설치 핸드오프가 깨지는 누수)
+              </div>
+              {di.inAppKnown === 0 ? (
+                <p className="text-sm text-gray-400">
+                  아직 인앱 여부 기록이 없어요. 웹 배포 후 다운클릭분부터 집계돼요.
+                </p>
+              ) : (
+                <p className="text-sm text-gray-800">
+                  다운클릭 {di.inAppKnown}건 중{' '}
+                  <b className={di.inAppShare >= 0.3 ? 'text-amber-700' : 'text-gray-900'}>
+                    인앱 {di.inAppClickers}건 ({pct(di.inAppShare)})
+                  </b>
+                  {di.inAppShare >= 0.3 && ' — 인스타/페북/카톡 인앱에서 스토어로 못 넘어가 설치가 새는 주범일 수 있어요.'}
+                </p>
+              )}
+            </div>
             {/* 다운클릭자 구성 */}
             <div className="rounded-lg border border-gray-200 p-4">
               <div className="mb-2 text-xs font-semibold text-gray-500">다운클릭한 사람들은 누구?</div>
