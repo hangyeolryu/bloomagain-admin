@@ -265,6 +265,9 @@ function BroadcastPushCard() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || '발송 실패');
       let msg = `발송 완료 (${who}) · 대상 ${json.recipients}명 · 성공 ${json.sent} · 실패 ${json.failed} · 알림거부 제외 ${json.opted_out}`;
+      if (json.pruned > 0) {
+        msg += ` · 죽은 토큰 ${json.pruned}개 정리`;
+      }
       if (json.sent === 0 && json.failed > 0 && Array.isArray(json.errors) && json.errors.length > 0) {
         msg += `\n실패 원인(샘플): ${json.errors[0]}`;
       }
