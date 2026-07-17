@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import MeetupSessionsCard from './MeetupSessionsCard';
 import {
   getTitatimeStats,
   TITATIME_ARM_LABELS,
@@ -41,16 +42,41 @@ export default function TitatimeDashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="p-6"><LoadingSpinner /></div>;
-  if (err) return <div className="p-6 text-sm text-red-600">에러: {err}</div>;
-  if (!stats) return null;
-
-  const t = stats.totals;
   const pct = (n: number) => `${Math.round(Math.min(1, Math.max(0, n)) * 100)}%`;
-  const freeRate = stats.byArm.find((a) => a.arm === 'free')?.applyRate ?? 0;
 
   return (
     <div className="max-w-5xl space-y-8 p-6">
+      <Header
+        title="티타임"
+        subtitle="이번 주 모집 세션 관리 · 유료 신청 의사 실험 (fake-door · 익명)"
+      />
+
+      {/* 모집 세션 관리 — 웹/앱이 읽는 단일 출처 */}
+      <MeetupSessionsCard />
+
+      {loading ? (
+        <div className="p-6"><LoadingSpinner /></div>
+      ) : err ? (
+        <div className="p-6 text-sm text-red-600">에러: {err}</div>
+      ) : !stats ? null : (
+        <PriceExperiment stats={stats} pct={pct} />
+      )}
+    </div>
+  );
+}
+
+function PriceExperiment({
+  stats,
+  pct,
+}: {
+  stats: TitatimeStats;
+  pct: (n: number) => string;
+}) {
+  const t = stats.totals;
+  const freeRate = stats.byArm.find((a) => a.arm === 'free')?.applyRate ?? 0;
+
+  return (
+    <>
       <Header
         title="티타임 가격 실험"
         subtitle="유료 신청 의사를 행동으로 측정 (fake-door · 방문자별 가격 랜덤 배정 · 익명)"
@@ -165,6 +191,6 @@ export default function TitatimeDashboardPage() {
         {stats.capped && '최근 2,000건 기준 집계. '}
         fake-door 실험 — 실제 결제는 없고, 신청 클릭 후 &ldquo;신청은 앱에서&rdquo; 안내로 다운로드 퍼널에 연결돼요.
       </p>
-    </div>
+    </>
   );
 }
