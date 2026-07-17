@@ -154,9 +154,18 @@ export default function MeetupSessionsCard() {
 
   // 이 세션 내용으로 전체 알림 발송(+ 인앱함에 뜸). 문구는 세션에서 자동 구성하고,
   // 발송 전 수정 가능. type=teatime → 탭하면 앱이 티타임 화면으로 이동.
+  // 톤은 admin-dms 프리셋과 동일한 '자기완결형' — 딥링크가 안 열려도 본문만 보고
+  // 마이페이지 → 티타임으로 찾아갈 수 있게 이동 안내를 항상 붙인다.
   async function announce(s: Session) {
-    const defaultTitle = '🍵 이번 주 티타임 열렸어요';
-    const defaultBody = `${s.district} · ${s.dateLabel}\n${s.spotsLabel}${s.description ? `\n${s.description}` : ''}`;
+    const defaultTitle = '🍵 낮에, 결이 맞는 또래와';
+    const defaultBody = [
+      `${s.district} · ${s.dateLabel}`,
+      s.spotsLabel,
+      s.description || '',
+      '앱을 열고 마이페이지 → 티타임에서 자리를 신청하세요.',
+    ]
+      .filter((line) => line.trim())
+      .join('\n');
     const title = prompt('알림 제목', defaultTitle);
     if (title === null) return;
     const body = prompt('알림 내용', defaultBody);
