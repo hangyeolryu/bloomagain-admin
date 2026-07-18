@@ -137,12 +137,22 @@ export default function GyeolDashboardPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">한눈에</h2>
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="rounded-full bg-green-50 px-3 py-1 font-semibold text-green-700">오늘</span>
             <span className="text-gray-700">
               테스트 시작 <b className="tabular-nums">{today?.start ?? 0}</b>
               <span className="mx-1.5 text-gray-300">·</span>
               완료 <b className="tabular-nums">{today?.complete ?? 0}</b>
+            </span>
+          </div>
+          {/* 전체 기간 — 공유 클릭 + 인트로에서 테스트 건너뛰고 바로 다운 */}
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+            <span>
+              전체 · 공유 클릭 <b className="tabular-nums text-gray-900">{stats.totals.share}</b>
+            </span>
+            <span className="text-gray-300">·</span>
+            <span>
+              인트로에서 바로 다운 <b className="tabular-nums text-gray-900">{stats.totals.intro_download}</b>
             </span>
           </div>
           <div className="mb-1 text-xs text-gray-500">사람(세션) 단위 — 시작한 {sf.total}명 중 몇 명이 끝까지 갔나</div>

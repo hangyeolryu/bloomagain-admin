@@ -2498,7 +2498,7 @@ export async function sweepOrphanCirclePosts(
 // 볼륨엔 충분. 커지면 백엔드 집계 엔드포인트로 이관.
 
 export interface GyeolStats {
-  totals: { start: number; complete: number; share: number; download: number };
+  totals: { start: number; complete: number; share: number; download: number; intro_download: number };
   completionRate: number; // complete / start
   downloadRate: number; // download / complete
   typeDistribution: { type: string; count: number }[]; // completes 기준, 내림차순
@@ -2569,7 +2569,9 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     query(collection(db, 'gyeol_test_events'), orderBy('createdAt', 'desc'), limit(CAP))
   );
 
-  const totals = { start: 0, complete: 0, share: 0, download: 0 };
+  // intro_download = 인트로에서 테스트 건너뛰고 바로 앱 받기 클릭. RANK에 없어
+  // 세션 여정(시작→완료→다운)엔 안 섞이고, 여기 totals로만 별도 집계된다.
+  const totals = { start: 0, complete: 0, share: 0, download: 0, intro_download: 0 };
   const typeCount = new Map<string, number>();
   const sourceCount = new Map<string, number>();
   const genderCount = new Map<string, number>();
