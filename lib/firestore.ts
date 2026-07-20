@@ -2499,6 +2499,8 @@ export async function sweepOrphanCirclePosts(
 
 export interface GyeolStats {
   totals: { start: number; complete: number; share: number; download: number; intro_download: number };
+  // 다운클릭 스토어별 집계 (download + intro_download 이벤트의 store 필드 기준)
+  downloadStores: { ios: number; android: number };
   completionRate: number; // complete / start
   downloadRate: number; // download / complete
   typeDistribution: { type: string; count: number }[]; // completes 기준, 내림차순
@@ -2572,6 +2574,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   // intro_download = 인트로에서 테스트 건너뛰고 바로 앱 받기 클릭. RANK에 없어
   // 세션 여정(시작→완료→다운)엔 안 섞이고, 여기 totals로만 별도 집계된다.
   const totals = { start: 0, complete: 0, share: 0, download: 0, intro_download: 0 };
+  const downloadStores = { ios: 0, android: 0 };
   const typeCount = new Map<string, number>();
   const sourceCount = new Map<string, number>();
   const genderCount = new Map<string, number>();
@@ -2585,6 +2588,12 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     const data = d.data() as DocumentData;
     const phase = String(data.phase ?? '');
     if (phase in totals) totals[phase as keyof typeof totals] += 1;
+
+    // 다운 클릭 스토어별 집계 (download·intro_download 이벤트의 store)
+    if (phase === 'download' || phase === 'intro_download') {
+      const st = String(data.store ?? '');
+      if (st === 'ios' || st === 'android') downloadStores[st] += 1;
+    }
 
     const type = (data.gyeolType ?? null) as string | null;
     const source = (data.source ?? null) as string | null;
@@ -2765,6 +2774,7 @@ export async function getGyeolStats(): Promise<GyeolStats> {
 
   return {
     totals,
+    downloadStores,
     completionRate: totals.start ? totals.complete / totals.start : 0,
     downloadRate: totals.complete ? totals.download / totals.complete : 0,
     typeDistribution,

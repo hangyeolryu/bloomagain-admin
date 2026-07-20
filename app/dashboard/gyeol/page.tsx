@@ -154,6 +154,12 @@ export default function GyeolDashboardPage() {
             <span>
               인트로에서 바로 다운 <b className="tabular-nums text-gray-900">{stats.totals.intro_download}</b>
             </span>
+            <span className="text-gray-300">·</span>
+            <span>
+              스토어 — iOS <b className="tabular-nums text-gray-900">{stats.downloadStores.ios}</b>
+              <span className="mx-1 text-gray-300">/</span>
+              Android <b className="tabular-nums text-gray-900">{stats.downloadStores.android}</b>
+            </span>
           </div>
           <div className="mb-1 text-xs text-gray-500">사람(세션) 단위 — 시작한 {sf.total}명 중 몇 명이 끝까지 갔나</div>
           <div className="flex items-stretch gap-1 overflow-x-auto">
