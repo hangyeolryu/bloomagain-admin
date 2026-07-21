@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   addDoc,
   collection,
+  collectionGroup,
   getDocs,
   limit,
   query,
@@ -38,6 +39,7 @@ interface Candidate {
   interests: string[];
   tagCount: number; // 결큐 태그 수 = 결 데이터 양
   showOppositeGender: boolean;
+  hasTicket: boolean; // 티타임 자리표(신청)를 낸 사람 = 실제로 만나고 싶어함
 }
 
 const DEFAULT_WELCOME = `반갑습니다, 티타지기예요.
@@ -68,10 +70,26 @@ export default function MoimBuilderPage() {
   const [creating, setCreating] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [onlyTicketHolders, setOnlyTicketHolders] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
+        // 티타임 자리표(신청)를 낸 사람 uid — 실제로 만나고 싶어하는 사람.
+        // 자리표 문서 경로: users/{uid}/gyeol_moim_tickets/{id}.
+        const ticketHolders = new Set<string>();
+        try {
+          const ticketSnap = await getDocs(
+            query(collectionGroup(db, 'gyeol_moim_tickets'), where('active', '==', true))
+          );
+          ticketSnap.forEach((d) => {
+            const uid = d.ref.parent.parent?.id;
+            if (uid) ticketHolders.add(uid);
+          });
+        } catch {
+          /* 자리표 조회 실패해도 편성은 전체 후보로 진행 */
+        }
+
         const snap = await getDocs(
           query(
             collection(db, 'users'),
@@ -83,6 +101,7 @@ export default function MoimBuilderPage() {
         snap.forEach((d) => {
           const u = d.data();
           if (u.isAdmin === true || u.isReviewerAccount === true) return;
+          if (u.isDeleted === true) return; // 탈퇴한 회원 제외
           const status = (u.accountStatus as string) ?? '';
           if (
             ['suspended', 'suspended_pending_review', 'restricted', 'blocked',
@@ -97,10 +116,15 @@ export default function MoimBuilderPage() {
             interests: (u.interests as string[]) ?? [],
             tagCount: ((u.dailyQuestionTags as string[]) ?? []).length,
             showOppositeGender: (u.showOppositeGender as boolean) ?? true,
+            hasTicket: ticketHolders.has(d.id),
           });
         });
-        // 결 데이터 많은 순 — 결큐를 열심히 한 사람이 편성 1순위
-        rows.sort((a, b) => b.tagCount - a.tagCount);
+        // 자리표 낸 사람 먼저, 그다음 결 데이터 많은 순 — 만나고 싶어하는
+        // 사람 + 결큐 열심히 한 사람이 편성 1순위.
+        rows.sort(
+          (a, b) =>
+            Number(b.hasTicket) - Number(a.hasTicket) || b.tagCount - a.tagCount,
+        );
         setCandidates(rows);
       } catch (e) {
         setErr(e instanceof Error ? e.message : '불러오기 실패');
@@ -180,8 +204,11 @@ export default function MoimBuilderPage() {
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
 
+  const ticketCount = candidates.filter((c) => c.hasTicket).length;
   const filtered = candidates.filter(
-    (c) => !search || c.name.includes(search) || (c.region ?? '').includes(search)
+    (c) =>
+      (!onlyTicketHolders || c.hasTicket) &&
+      (!search || c.name.includes(search) || (c.region ?? '').includes(search))
   );
 
   return (
@@ -209,7 +236,7 @@ export default function MoimBuilderPage() {
         <section>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-900">
-              후보 ({filtered.length}) · 결 데이터 많은 순
+              후보 ({filtered.length}) · 자리표 낸 분 먼저
             </h2>
             <input
               value={search}
@@ -218,6 +245,16 @@ export default function MoimBuilderPage() {
               className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
             />
           </div>
+          <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={onlyTicketHolders}
+              onChange={(e) => setOnlyTicketHolders(e.target.checked)}
+              className="h-3.5 w-3.5 accent-green-600"
+            />
+            🍵 자리표(티타임 신청) 낸 분만 보기
+            <span className="text-gray-400">({ticketCount}명)</span>
+          </label>
           <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
             {filtered.map((c) => {
               const on = selected.has(c.uid);
@@ -231,6 +268,7 @@ export default function MoimBuilderPage() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-gray-900">
+                      {c.hasTicket && <span className="mr-1" title="티타임 자리표를 낸 분">🍵</span>}
                       {c.name}
                       <span className="ml-2 font-normal text-gray-500">
                         {c.gender === 'female' ? '여' : c.gender === 'male' ? '남' : '?'}

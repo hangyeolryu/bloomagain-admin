@@ -84,6 +84,20 @@ export default function MoimDashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <Header title="결모임 자리표" subtitle="자리표 수요와 자동 조립 성사 현황" />
       <main className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
+        {/* 직접 편성 진입 — 자동 조립을 기다리지 않고 파운더가 손으로 찻자리를 연다 */}
+        <Link
+          href="/dashboard/moim-builder"
+          className="flex items-center justify-between rounded-xl border border-green-200 bg-green-50 p-4 transition hover:bg-green-100"
+        >
+          <div>
+            <div className="text-sm font-bold text-green-900">🍵 찻자리 직접 편성하기</div>
+            <div className="mt-0.5 text-xs text-green-700">
+              자동 조립을 기다리지 말고, 결 통할 3~4명을 직접 골라 그룹 대화방을 여세요 (Wizard of Oz).
+            </div>
+          </div>
+          <span className="text-green-700">→</span>
+        </Link>
+
         {/* 자리표 현황 */}
         <section>
           <h2 className="mb-3 text-sm font-bold text-gray-900">자리표 (대기 수요)</h2>
@@ -231,7 +245,7 @@ export default function MoimDashboardPage() {
                     <th className="py-2 pr-3">시각</th>
                     <th className="py-2 pr-3">종류</th>
                     <th className="py-2 pr-3">동네</th>
-                    <th className="py-2 pr-3">인원</th>
+                    <th className="py-2 pr-3">묶인 분들 (자동 조립)</th>
                     <th className="py-2 pr-3">수락/응답</th>
                     <th className="py-2 pr-3">minPair</th>
                     <th className="py-2">상태</th>
@@ -245,7 +259,16 @@ export default function MoimDashboardPage() {
                       </td>
                       <td className="py-2 pr-3">{r.type === 'meet' ? '만남' : '대화'}</td>
                       <td className="py-2 pr-3 text-gray-600">{r.district ?? '—'}</td>
-                      <td className="py-2 pr-3 tabular-nums">{r.members}</td>
+                      <td className="py-2 pr-3 text-gray-700">
+                        {r.memberNames.length > 0 ? (
+                          <span>
+                            {r.memberNames.join(', ')}
+                            <span className="ml-1 text-xs text-gray-400">({r.members}명)</span>
+                          </span>
+                        ) : (
+                          <span className="tabular-nums text-gray-500">{r.members}명</span>
+                        )}
+                      </td>
                       <td className="py-2 pr-3 tabular-nums">{r.accepted}/{r.responded}</td>
                       <td className="py-2 pr-3 tabular-nums text-gray-600">{r.minPair === null ? '—' : r.minPair.toFixed(3)}</td>
                       <td className="py-2">
