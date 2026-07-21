@@ -661,6 +661,81 @@ export async function getSuspiciousMessages(
   };
 }
 
+// ─── 안전 센터 통합 집계 ──────────────────────────────────────────────────────
+// 신뢰·안전의 4개 표면을 한 번에: 처리 필요한 큐(신고 pending·알림 unresolved)의
+// 건수+상위, 최근 활동 로그(의심 메시지·보안 이벤트). /dashboard/safety 랜딩용.
+export interface SafetyOverview {
+  pendingReports: number;
+  unresolvedAlerts: number;
+  topReports: Report[];
+  topAlerts: AdminAlert[];
+  recentMessages: SuspiciousMessage[];
+  recentSecurity: {
+    id: string;
+    action: string;
+    userId?: string;
+    reason?: string;
+    createdAt?: Date;
+  }[];
+}
+
+export async function getSafetyOverview(): Promise<SafetyOverview> {
+  const [pendingReports, unresolvedAlerts, reportsRes, alertsRes, msgsRes, secItems] =
+    await Promise.all([
+      safeCount(
+        query(collection(db, 'reports'), where('status', '==', 'pending')),
+        'pending reports',
+      ),
+      safeCount(
+        query(collection(db, 'admin_alerts'), where('resolved', '==', false)),
+        'unresolved alerts',
+      ),
+      getReports('pending', 5),
+      getAdminAlerts(5),
+      getSuspiciousMessages(5),
+      (async () => {
+        // 고위험 보안 이벤트(계정 잠금 L3·그림자 차단 L2)만 최근순 5건.
+        // action+orderBy 복합 인덱스를 피하려 최근 25건에서 클라이언트 필터.
+        try {
+          const snap = await getDocs(
+            query(
+              collection(db, 'interaction_logs'),
+              orderBy('created_at', 'desc'),
+              limit(25),
+            ),
+          );
+          return snap.docs
+            .map((d) => {
+              const r = d.data() as Record<string, unknown>;
+              const ts = (r.created_at ?? r.createdAt) as
+                | { toDate?: () => Date }
+                | undefined;
+              return {
+                id: d.id,
+                action: String(r.action ?? ''),
+                userId: (r.user_id as string) ?? (r.userId as string) ?? undefined,
+                reason: (r.reason as string) ?? undefined,
+                createdAt: ts?.toDate?.() ?? undefined,
+              };
+            })
+            .filter((e) => e.action === 'account_lock' || e.action === 'shadow_ban')
+            .slice(0, 5);
+        } catch {
+          return [];
+        }
+      })(),
+    ]);
+
+  return {
+    pendingReports,
+    unresolvedAlerts,
+    topReports: reportsRes.items,
+    topAlerts: alertsRes.items.filter((a) => !a.resolved).slice(0, 5),
+    recentMessages: msgsRes.items,
+    recentSecurity: secItems,
+  };
+}
+
 export function subscribeToAlerts(
   callback: (alerts: AdminAlert[]) => void
 ): () => void {
