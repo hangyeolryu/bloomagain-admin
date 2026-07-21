@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -13,6 +14,7 @@ interface NavItem {
   icon: string;
   permission?: Permission;
   section?: string; // 있으면 그 앞에 섹션 헤더를 렌더(연속 항목 묶음)
+  sub?: boolean; // 섹션의 하위 항목 — 기본 접힘(안전 센터 아래 세부 4개)
 }
 
 const navItems: NavItem[] = [
@@ -35,10 +37,10 @@ const navItems: NavItem[] = [
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
   // ── 신뢰·안전 (한 그룹으로 묶음) ──
   { href: '/dashboard/safety', label: '안전 센터', icon: '🛟', section: '신뢰·안전' },
-  { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전' },
-  { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔', section: '신뢰·안전' },
-  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫', section: '신뢰·안전' },
-  { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️', section: '신뢰·안전' },
+  { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전', sub: true },
+  { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔', section: '신뢰·안전', sub: true },
+  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫', section: '신뢰·안전', sub: true },
+  { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️', section: '신뢰·안전', sub: true },
   { href: '/dashboard/waves', label: '웨이브', icon: '👋' },
   { href: '/dashboard/conversations', label: '대화', icon: '💬' },
   { href: '/dashboard/admin-dms', label: '어드민 DM 관리', icon: '✉️' },
@@ -74,6 +76,13 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     !item.permission || can(item.permission)
   );
 
+  // 신뢰·안전 세부 4개는 평소 접혀 있고, 그 페이지에 있으면 자동으로 펼친다.
+  const anySubActive = visibleItems.some(
+    (x) => x.sub && pathname.startsWith(x.href)
+  );
+  const [safetyExpanded, setSafetyExpanded] = useState(false);
+  const safetyOpen = safetyExpanded || anySubActive;
+
   const content = (
     <aside className="w-64 bg-white flex flex-col h-full border-r border-gray-200">
       {/* Logo */}
@@ -106,8 +115,15 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             item.href === '/dashboard'
               ? pathname === '/dashboard'
               : pathname.startsWith(item.href);
+          // 접힌 세부 항목은 숨김(단, 지금 그 페이지면 보여준다).
+          if (item.sub && !safetyOpen && !isActive) return null;
           const showHeader =
             !!item.section && item.section !== visibleItems[i - 1]?.section;
+          // 섹션 대표(안전 센터)이고 하위가 있으면 그 아래에 펼치기 토글.
+          const isSectionPrimary = !!item.section && !item.sub;
+          const hasSubs =
+            isSectionPrimary &&
+            visibleItems.some((x) => x.section === item.section && x.sub);
           return (
             <div key={item.href}>
               {showHeader && (
@@ -128,6 +144,15 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <span className="text-base leading-none">{item.icon}</span>
                 {item.label}
               </Link>
+              {hasSubs && (
+                <button
+                  type="button"
+                  onClick={() => setSafetyExpanded((o) => !o)}
+                  className="flex w-full items-center gap-1 px-3 py-1 text-[11px] font-medium text-gray-400 hover:text-gray-600"
+                >
+                  {safetyOpen ? '▴ 세부 접기' : '▾ 세부 관리 (신고·알림·메시지·보안)'}
+                </button>
+              )}
             </div>
           );
         })}
