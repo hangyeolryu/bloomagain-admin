@@ -2383,6 +2383,110 @@ export async function sweepOrphanPosts(
   return result;
 }
 
+export interface OrphanTicketSweepResult {
+  scanned: number;
+  orphans: number;
+  deleted: number;
+  errors: number;
+  /** Sample of orphan ticket paths (capped for UI display). */
+  sample: Array<{ uid: string; ticketId: string; type?: string; createdAt?: Date | null }>;
+  elapsedMs: number;
+}
+
+/**
+ * Scan every `users/*\/gyeol_moim_tickets` doc and delete those whose parent
+ * user doc no longer exists (탈퇴로 삭제됨) or is marked isDeleted. Same
+ * pattern as sweepOrphanPosts — per-uid validity is cached, deletes batch
+ * 400 at a time, idempotent (safe to re-run).
+ *
+ * Going forward the backend delete_account cascades gyeol_moim_tickets, so
+ * this only cleans pre-existing orphans (Firebase Console deletes, older
+ * code paths).
+ */
+export async function sweepOrphanTickets(
+  options: SweepOptions
+): Promise<OrphanTicketSweepResult> {
+  const { dryRun, maxScan = 0, sampleSize = 10 } = options;
+  const started = Date.now();
+
+  const parentValidCache = new Map<string, boolean>(); // uid → 유효 회원인가
+  const sample: OrphanTicketSweepResult['sample'] = [];
+  const result: OrphanTicketSweepResult = {
+    scanned: 0,
+    orphans: 0,
+    deleted: 0,
+    errors: 0,
+    sample,
+    elapsedMs: 0,
+  };
+
+  const snap = await getDocs(collectionGroup(db, 'gyeol_moim_tickets'));
+
+  let pendingBatch = writeBatch(db);
+  let pendingCount = 0;
+  const flushBatch = async () => {
+    if (pendingCount === 0) return;
+    try {
+      await pendingBatch.commit();
+      result.deleted += pendingCount;
+    } catch (err) {
+      console.error('[sweepOrphanTickets] batch commit failed', err);
+      result.errors += pendingCount;
+    }
+    pendingBatch = writeBatch(db);
+    pendingCount = 0;
+  };
+
+  for (const ticketDoc of snap.docs) {
+    if (maxScan > 0 && result.scanned >= maxScan) break;
+    result.scanned += 1;
+
+    try {
+      const userRef = ticketDoc.ref.parent.parent;
+      // 엄격히 users/{uid}/gyeol_moim_tickets만 — 다른 컬렉션 오손 방지.
+      if (!userRef || userRef.parent.id !== 'users') continue;
+
+      const uid = userRef.id;
+      if (!parentValidCache.has(uid)) {
+        const userSnap = await getDoc(userRef);
+        const valid = userSnap.exists() && userSnap.data()?.isDeleted !== true;
+        parentValidCache.set(uid, valid);
+      }
+      if (parentValidCache.get(uid)) continue; // 유효 회원 → 유지
+
+      result.orphans += 1;
+      if (sample.length < sampleSize) {
+        const data = ticketDoc.data() as Record<string, unknown>;
+        const createdAtRaw = data.createdAt as Timestamp | undefined;
+        sample.push({
+          uid,
+          ticketId: ticketDoc.id,
+          type: (data.type as string) ?? undefined,
+          createdAt: createdAtRaw ? createdAtRaw.toDate() : null,
+        });
+      }
+
+      if (!dryRun) {
+        pendingBatch.delete(ticketDoc.ref);
+        pendingCount += 1;
+        if (pendingCount >= 400) {
+          await flushBatch();
+        }
+      }
+    } catch (err) {
+      result.errors += 1;
+      console.error('[sweepOrphanTickets] error on ticket', ticketDoc.ref.path, err);
+    }
+  }
+
+  if (!dryRun) {
+    await flushBatch();
+  }
+
+  result.elapsedMs = Date.now() - started;
+  return result;
+}
+
 /**
  * Same pattern as sweepOrphanPosts but for `circles/{cid}/posts` whose parent
  * circle doc no longer exists. Going forward, deleteCircle() above cascades
@@ -2908,6 +3012,7 @@ export interface MoimStats {
     type: string;
     district: string | null;
     members: number;
+    memberNames: string[]; // 자동 조립된 조합 — 누가 묶였나 (파운더가 눈으로 검토)
     accepted: number;
     responded: number;
     status: string;
@@ -2949,10 +3054,9 @@ export async function getMoimStats(): Promise<MoimStats> {
   const ticketSnap = await getDocs(
     query(collectionGroup(db, 'gyeol_moim_tickets'), limit(CAP))
   );
-  const tickets = { total: 0, active: 0, paused: 0, chat: 0, meet: 0, thisWeek: 0 };
-  const districtCount = new Map<string, { count: number; couple: number }>();
-  const topicCount = new Map<string, number>();
   // 자리표 문서 경로: users/{uid}/gyeol_moim_tickets/{id} → 부모의 부모가 등록자.
+  // 1단계: 전부 수집만 하고 집계는 미룬다 (등록자가 아직 유효한 회원인지
+  // 확인한 뒤에 센다 — 탈퇴하면 유저 문서가 삭제돼 자리표가 '고아'로 남는다).
   const ticketRows: {
     uid: string;
     data: DocumentData;
@@ -2962,11 +3066,50 @@ export async function getMoimStats(): Promise<MoimStats> {
     const t = d.data() as DocumentData;
     const uid = d.ref.parent.parent?.id ?? '(알 수 없음)';
     if (excludedUids.has(uid)) return; // 리뷰어·관리자 테스트 자리표 제외
-    tickets.total += 1;
     ticketRows.push({ uid, data: t, createdAt: toDate(t.createdAt) ?? null });
+  });
+
+  // 등록자 문서를 한 번에 조회 — 탈퇴(문서 삭제=고아)·isDeleted·정지 계정의
+  // 자리표를 통계·편성에서 제외한다. 이름도 여기서 함께 얻어 재사용한다.
+  const BAD_STATUS = new Set([
+    'suspended', 'suspended_pending_review', 'restricted', 'blocked',
+    'locked', 'shadow_ban', 'shadow_banned', 'blacklisted',
+  ]);
+  const ownerInfo = new Map<string, { valid: boolean; name: string }>();
+  await Promise.all(
+    [...new Set(ticketRows.map((r) => r.uid))].map(async (uid) => {
+      if (uid === '(알 수 없음)') {
+        ownerInfo.set(uid, { valid: false, name: '(알 수 없음)' });
+        return;
+      }
+      try {
+        const u = await getDoc(doc(db, 'users', uid));
+        const data = u.data();
+        const valid =
+          u.exists() &&
+          data?.isDeleted !== true &&
+          !BAD_STATUS.has((data?.accountStatus as string) ?? '');
+        ownerInfo.set(uid, {
+          valid,
+          name: (data?.displayName as string) || '(탈퇴한 회원)',
+        });
+      } catch {
+        ownerInfo.set(uid, { valid: false, name: '(조회 실패)' });
+      }
+    }),
+  );
+
+  // 2단계: 유효한 등록자의 자리표만 집계 (탈퇴·삭제·정지 제외).
+  const tickets = { total: 0, active: 0, paused: 0, chat: 0, meet: 0, thisWeek: 0 };
+  const districtCount = new Map<string, { count: number; couple: number }>();
+  const topicCount = new Map<string, number>();
+  const validRows = ticketRows.filter((r) => ownerInfo.get(r.uid)?.valid);
+  for (const r of validRows) {
+    const t = r.data;
+    tickets.total += 1;
     if (t.active !== true) {
       tickets.paused += 1;
-      return;
+      continue;
     }
     tickets.active += 1;
     if (t.type === 'meet') {
@@ -2983,30 +3126,17 @@ export async function getMoimStats(): Promise<MoimStats> {
     for (const topic of (t.topics as string[] | undefined) ?? []) {
       topicCount.set(topic, (topicCount.get(topic) ?? 0) + 1);
     }
-  });
+  }
 
-  // 최근 등록순 상위 40장의 등록자 이름을 한 번에 조회 (중복 uid 제거).
-  ticketRows.sort(
+  // 최근 등록순 상위 40장 (유효 자리표만).
+  validRows.sort(
     (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
   );
-  const recentSlice = ticketRows.slice(0, 40);
-  const nameByUid = new Map<string, string>();
-  await Promise.all(
-    [...new Set(recentSlice.map((r) => r.uid))].map(async (uid) => {
-      if (uid === '(알 수 없음)') return;
-      try {
-        const u = await getDoc(doc(db, 'users', uid));
-        nameByUid.set(uid, (u.data()?.displayName as string) || '(이름 없음)');
-      } catch {
-        nameByUid.set(uid, '(조회 실패)');
-      }
-    }),
-  );
-  const recentTickets: MoimStats['recentTickets'] = recentSlice.map((r) => {
+  const recentTickets: MoimStats['recentTickets'] = validRows.slice(0, 40).map((r) => {
     const t = r.data;
     return {
       uid: r.uid,
-      displayName: nameByUid.get(r.uid) ?? '(이름 없음)',
+      displayName: ownerInfo.get(r.uid)?.name ?? '(이름 없음)',
       type: String(t.type ?? 'chat'),
       active: t.active === true,
       party: (t.party as string | null) ?? null,
@@ -3033,6 +3163,7 @@ export async function getMoimStats(): Promise<MoimStats> {
   let minPairSum = 0;
   let minPairN = 0;
   const recentProposals: MoimStats['recentProposals'] = [];
+  const recentMemberUids: string[][] = []; // recentProposals와 인덱스 정렬
   proposalSnap.forEach((d) => {
     const p = d.data() as DocumentData;
     proposals.total += 1;
@@ -3056,11 +3187,13 @@ export async function getMoimStats(): Promise<MoimStats> {
       minPairN += 1;
     }
     if (recentProposals.length < 40) {
+      recentMemberUids.push(members);
       recentProposals.push({
         createdAt: toDate(p.createdAt) ?? null,
         type: String(p.type ?? 'chat'),
         district: (p.district as string | null) ?? null,
         members: members.length,
+        memberNames: [], // 아래에서 이름 해석
         accepted: acceptedHere,
         responded: respondedHere,
         status,
@@ -3071,6 +3204,27 @@ export async function getMoimStats(): Promise<MoimStats> {
   proposals.responseRate = slots > 0 ? responded / slots : null;
   proposals.inviteAcceptRate = responded > 0 ? accepted / responded : null;
   proposals.avgMinPair = minPairN > 0 ? minPairSum / minPairN : null;
+
+  // 제안 멤버 이름 해석 — 자동 조립된 조합을 파운더가 눈으로 검토할 수 있게.
+  // 자리표 등록자(ownerInfo) 이름을 재사용하고, 빠진 uid만 추가 조회한다.
+  const nameOf = new Map<string, string>();
+  ownerInfo.forEach((v, k) => nameOf.set(k, v.name));
+  const missingMemberUids = [
+    ...new Set(recentMemberUids.flat().filter((u) => !nameOf.has(u))),
+  ];
+  await Promise.all(
+    missingMemberUids.map(async (uid) => {
+      try {
+        const u = await getDoc(doc(db, 'users', uid));
+        nameOf.set(uid, (u.data()?.displayName as string) || '(탈퇴한 회원)');
+      } catch {
+        nameOf.set(uid, '(조회 실패)');
+      }
+    }),
+  );
+  recentProposals.forEach((p, i) => {
+    p.memberNames = recentMemberUids[i].map((u) => nameOf.get(u) ?? '(?)');
+  });
 
   const meetDemand = [...districtCount.entries()]
     .map(([district, v]) => ({ district, ...v }))

@@ -19,7 +19,7 @@ import { useAuth } from '@/lib/auth-context';
 import {
   sweepOrphanPosts,
   sweepOrphanCirclePosts,
-  type OrphanPostSweepResult,
+  sweepOrphanTickets,
 } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 
@@ -62,7 +62,7 @@ export default function DataMaintenancePage() {
         description={
           <>
             작성자(<code>users/&#123;uid&#125;</code>)가 없어진 게시물을
-            찾아 영구 삭제합니다. 앱 "내 주변에서" 피드에서{' '}
+            찾아 영구 삭제합니다. 앱 &quot;내 주변에서&quot; 피드에서{' '}
             <em>탈퇴한 회원</em>으로 표시되는 잔여 데이터의 원인이에요.
           </>
         }
@@ -83,6 +83,21 @@ export default function DataMaintenancePage() {
         sampleLabel={(s) => `circles/${s.uid}/posts/${s.postId}`}
         runSweep={sweepOrphanCirclePosts}
       />
+
+      <SweepSection
+        icon="🍵"
+        title="고아 티타임 자리표 정리"
+        description={
+          <>
+            등록자(<code>users/&#123;uid&#125;</code>)가 탈퇴해 없어진
+            티타임 자리표(<code>gyeol_moim_tickets</code>)를 찾아 영구 삭제합니다.
+            결모임 대시보드·자동 조립에 <em>탈퇴한 회원</em>으로 남는 잔재예요.
+            (이제 탈퇴 시 자동 삭제되니, 이건 이전 잔재 청소용입니다.)
+          </>
+        }
+        sampleLabel={(s) => `users/${s.uid}/gyeol_moim_tickets/${s.ticketId}`}
+        runSweep={sweepOrphanTickets}
+      />
     </div>
   );
 }
@@ -95,23 +110,30 @@ export default function DataMaintenancePage() {
 // step — a tweak to the layout (e.g. adding an "abort" button later)
 // happens in one place.
 
-interface SweepSectionProps {
-  icon: string;
-  title: string;
-  description: React.ReactNode;
-  sampleLabel: (s: OrphanPostSweepResult['sample'][number]) => string;
-  runSweep: (opts: { dryRun: boolean }) => Promise<OrphanPostSweepResult>;
+interface SweepResult<S> {
+  scanned: number;
+  orphans: number;
+  deleted: number;
+  errors: number;
+  elapsedMs: number;
+  sample: S[];
 }
 
-function SweepSection({
+function SweepSection<S extends { uid: string; createdAt?: Date | null }>({
   icon,
   title,
   description,
   sampleLabel,
   runSweep,
-}: SweepSectionProps) {
+}: {
+  icon: string;
+  title: string;
+  description: React.ReactNode;
+  sampleLabel: (s: S) => string;
+  runSweep: (opts: { dryRun: boolean }) => Promise<SweepResult<S>>;
+}) {
   const [running, setRunning] = useState<'dry' | 'live' | null>(null);
-  const [result, setResult] = useState<OrphanPostSweepResult | null>(null);
+  const [result, setResult] = useState<SweepResult<S> | null>(null);
   const [lastMode, setLastMode] = useState<'dry' | 'live' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -239,7 +261,7 @@ function SweepSection({
               <div className="bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-100">
                 {result.sample.map((s) => (
                   <div
-                    key={`${s.uid}-${s.postId}`}
+                    key={sampleLabel(s)}
                     className="px-3 py-2 text-xs font-mono text-gray-700 flex items-center justify-between gap-3"
                   >
                     <span className="truncate">{sampleLabel(s)}</span>
