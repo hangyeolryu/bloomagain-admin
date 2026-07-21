@@ -6,6 +6,7 @@ import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { Report } from '@/types';
 import Badge from '@/components/ui/Badge';
+import SafetyStatusBadge from '@/components/ui/SafetyStatusBadge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
@@ -62,17 +63,6 @@ function AiDraftBlock({ draft }: { draft: NonNullable<Report['aiDraft']> }) {
       )}
     </div>
   );
-}
-
-function getStatusBadge(status: string) {
-  const map: Record<string, { variant: 'gray' | 'green' | 'orange' | 'red' | 'yellow' | 'blue'; label: string }> = {
-    pending:   { variant: 'orange', label: '대기중' },
-    reviewed:  { variant: 'blue',   label: '검토중' },
-    resolved:  { variant: 'green',  label: '처리완료' },
-    dismissed: { variant: 'gray',   label: '기각' },
-  };
-  const item = map[status] || { variant: 'gray', label: status };
-  return <Badge variant={item.variant}>{item.label}</Badge>;
 }
 
 export default function ReportsPage() {
@@ -167,7 +157,7 @@ export default function ReportsPage() {
                 : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
           >
-            {s === 'pending' ? '대기중' : s === 'reviewed' ? '검토중' : s === 'resolved' ? '처리완료' : s === 'dismissed' ? '기각' : '전체'}
+            {s === 'pending' ? '미처리' : s === 'reviewed' ? '검토중' : s === 'resolved' ? '처리완료' : s === 'dismissed' ? '기각' : '전체'}
           </button>
         ))}
       </div>
@@ -186,7 +176,7 @@ export default function ReportsPage() {
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                        {getStatusBadge(r.status)}
+                        <SafetyStatusBadge status={r.status} />
                         <Badge variant={r.type === 'user' ? 'blue' : 'green'}>
                           {r.type === 'user' ? '사용자' : '모임'}
                         </Badge>

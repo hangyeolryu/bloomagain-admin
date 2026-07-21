@@ -12,6 +12,7 @@ interface NavItem {
   label: string;
   icon: string;
   permission?: Permission;
+  section?: string; // 있으면 그 앞에 섹션 헤더를 렌더(연속 항목 묶음)
 }
 
 const navItems: NavItem[] = [
@@ -32,14 +33,16 @@ const navItems: NavItem[] = [
   { href: '/dashboard/onboarding', label: '온보딩 드롭오프', icon: '🪜' },
   { href: '/dashboard/users', label: '사용자 관리', icon: '👥', permission: 'viewUsers' },
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
-  { href: '/dashboard/reports', label: '신고 관리', icon: '🚨' },
-  { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔' },
+  // ── 신뢰·안전 (한 그룹으로 묶음) ──
+  { href: '/dashboard/safety', label: '안전 센터', icon: '🛟', section: '신뢰·안전' },
+  { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전' },
+  { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔', section: '신뢰·안전' },
+  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫', section: '신뢰·안전' },
+  { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️', section: '신뢰·안전' },
   { href: '/dashboard/waves', label: '웨이브', icon: '👋' },
   { href: '/dashboard/conversations', label: '대화', icon: '💬' },
   { href: '/dashboard/admin-dms', label: '어드민 DM 관리', icon: '✉️' },
   { href: '/dashboard/identity', label: 'NICE 본인확인', icon: '🪪' },
-  { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️' },
-  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫' },
   { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️' },
   { href: '/dashboard/churn-surveys', label: '탈퇴 사유', icon: '🚪' },
   { href: '/dashboard/support', label: '고객 문의', icon: '🎧' },
@@ -98,26 +101,34 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {visibleItems.map((item) => {
+        {visibleItems.map((item, i) => {
           const isActive =
             item.href === '/dashboard'
               ? pathname === '/dashboard'
               : pathname.startsWith(item.href);
+          const showHeader =
+            !!item.section && item.section !== visibleItems[i - 1]?.section;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={clsx(
-                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-green-50 text-green-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+            <div key={item.href}>
+              {showHeader && (
+                <p className="px-3 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                  {item.section}
+                </p>
               )}
-            >
-              <span className="text-base leading-none">{item.icon}</span>
-              {item.label}
-            </Link>
+              <Link
+                href={item.href}
+                onClick={onClose}
+                className={clsx(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-green-50 text-green-700'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                )}
+              >
+                <span className="text-base leading-none">{item.icon}</span>
+                {item.label}
+              </Link>
+            </div>
           );
         })}
       </nav>
