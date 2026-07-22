@@ -6,6 +6,7 @@ import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity, get
 import questionMeta from '@/lib/gyeolq-questions.json';
 import { useAuth } from '@/lib/auth-context';
 import type { UserProfile, UserActivity } from '@/types';
+import { versionStatus, VERSION_STATUS_LABEL, LATEST_APP_VERSION } from '@/lib/app-version';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
@@ -17,6 +18,46 @@ function InfoRow({ label, value }: { label: string; value?: string | number | bo
       <span className="text-sm text-gray-500">{label}</span>
       <span className="text-sm text-gray-900 font-medium text-right max-w-[60%]">
         {value === undefined || value === null ? '-' : String(value)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * 앱 버전 행 — "이 사람이 업데이트를 하고 있나"를 한눈에.
+ * 버전+빌드번호, 최신 대비 상태 배지, 기기(플랫폼·모델·OS)까지 같이 보여준다.
+ * 버전은 접속 하트비트가 매번 갱신하므로 '마지막 접속 시점의 실제 사용 버전'이다.
+ */
+function AppVersionRow({ profile }: { profile: UserProfile }) {
+  const version = profile.appVersion ?? profile.device?.appVersion;
+  const build = profile.buildNumber ?? profile.device?.buildNumber;
+  const status = versionStatus(version);
+  const meta = VERSION_STATUS_LABEL[status];
+  const dev = profile.device;
+  const deviceLine = [dev?.platform, dev?.model, dev?.osVersion]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <div className="flex justify-between py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-gray-500">앱 버전</span>
+      <span className="text-sm text-gray-900 font-medium text-right max-w-[60%]">
+        <span className="inline-flex items-center gap-2 flex-wrap justify-end">
+          <span className="tabular-nums">
+            {version ? `${version}${build ? `+${build}` : ''}` : '-'}
+          </span>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${meta.className}`}>
+            {meta.label}
+          </span>
+        </span>
+        {status === 'behind' && (
+          <span className="block text-xs font-normal text-amber-700">
+            최신 {LATEST_APP_VERSION} 미적용
+          </span>
+        )}
+        {deviceLine && (
+          <span className="block text-xs font-normal text-gray-400">{deviceLine}</span>
+        )}
       </span>
     </div>
   );
@@ -400,7 +441,7 @@ export default function UserDetailClient({ id }: { id: string }) {
           <InfoRow label="가입일" value={formatDate(profile.createdAt)} />
           <InfoRow label="마지막 활동" value={formatDate(profile.lastActiveAt)} />
           <InfoRow label="정보 수정일" value={formatDate(profile.updatedAt)} />
-          <InfoRow label="앱 버전" value={profile.appVersion} />
+          <AppVersionRow profile={profile} />
           <InfoRow label="FCM 알림" value={profile.notificationEnabled ? '활성화' : '비활성화'} />
           <InfoRow label="FCM 토큰" value={profile.fcmToken ? '등록됨' : '없음'} />
           <InfoRow label="가입 인증(verified)" value={profile.verified ? '✅ 완료' : '❌ 미완료'} />

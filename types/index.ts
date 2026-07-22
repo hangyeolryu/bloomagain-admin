@@ -51,6 +51,19 @@ export interface UserProfile {
   fcmToken?: string;
   notificationEnabled?: boolean;
   appVersion?: string;
+  buildNumber?: string;
+  /** "Tita/3.0.15+138 (iOS; iPhone 15 Pro; 17.4)" — 로그인 시점에 기록 */
+  appAgent?: string;
+  /** 앱이 users.device에 쓰는 기기 정보. lastSeen은 접속 하트비트로 갱신 */
+  device?: {
+    platform?: string;
+    model?: string;
+    osVersion?: string;
+    appVersion?: string;
+    buildNumber?: string;
+    firstSeen?: string;
+    lastSeen?: string;
+  };
   // NICE identity verification
   identityVerified?: boolean;
   identityVerificationStatus?: 'verified' | 'pending' | 'failed' | string;
