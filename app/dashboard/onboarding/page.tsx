@@ -47,6 +47,26 @@ const attemptHintLabels: Record<OnboardingAttemptHint, { label: string; color: s
   },
 };
 
+// 앱(클라이언트)이 users 문서에 직접 남긴 계측 단계 라벨. 백엔드 콜백이 없는
+// 조용한 실패(PASS 리턴 실패 등)까지 확정으로 잡는다. verificationFailReason 이
+// 있으면 그게 "왜 실패했는지"의 확정 답이다.
+const clientStageLabels: Record<string, string> = {
+  intro_viewed: '인증 안내만 봄',
+  started: 'NICE 열었으나 미완료',
+  failed: '실패 (앱 확정)',
+  abandoned: 'NICE 중간 이탈',
+  blocked: '차단됨',
+  verified: '완료',
+};
+
+// recordNiceBlocked 사유 → 사람이 읽는 라벨. 실패 토스트가 뜰 때 앱이 저장.
+// underage는 '정당한 거부'라 기술적 실패와 톤을 구분한다.
+const blockReasonLabels: Record<string, { label: string; underage?: boolean }> = {
+  underage: { label: '연령 미달 (만 45세 미만)', underage: true },
+  nice_failed: { label: 'NICE 인증 실패' },
+  duplicate_identity: { label: '이미 가입된 명의 (중복)' },
+};
+
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -498,6 +518,64 @@ function DropoffTable({
                         )}
                       </div>
                     )}
+                    {/* 앱 계측 확정 사유 — 백엔드 콜백이 없어도 앱이 실패/차단
+                        토스트가 뜰 때 직접 남긴 실제 사유. "왜 못했는지"의 확정 답.
+                        차단 사유(recordNiceBlocked) 우선, 없으면 실패 메시지. */}
+                    {u.stage === 'signed_up' &&
+                      (u.verificationBlockReason ||
+                        u.verificationFailReason ||
+                        u.verificationStage) &&
+                      (() => {
+                        const br = u.verificationBlockReason
+                          ? blockReasonLabels[u.verificationBlockReason]
+                          : undefined;
+                        const confirmed = br
+                          ? `${br.label}${
+                              u.blockedYearOfBirth
+                                ? ` · ${u.blockedYearOfBirth}년생`
+                                : ''
+                            }`
+                          : u.verificationFailReason ?? undefined;
+                        const meta = (
+                          <div className="text-gray-400">
+                            계측{' '}
+                            {clientStageLabels[u.verificationStage ?? ''] ??
+                              u.verificationStage ??
+                              '—'}
+                            {u.verificationAttempts
+                              ? ` · 시도 ${u.verificationAttempts}회`
+                              : ''}
+                          </div>
+                        );
+                        return (
+                          <div className="mt-1.5 text-[10px] leading-tight">
+                            {confirmed ? (
+                              <>
+                                <div
+                                  className={`font-mono break-words max-w-[240px] ${
+                                    br?.underage
+                                      ? 'text-amber-600'
+                                      : 'text-red-600'
+                                  }`}
+                                  title={confirmed}
+                                >
+                                  ⚑ 앱 확정 사유: {confirmed}
+                                </div>
+                                {meta}
+                              </>
+                            ) : (
+                              <div className="text-gray-500">
+                                앱 계측:{' '}
+                                {clientStageLabels[u.verificationStage ?? ''] ??
+                                  u.verificationStage}
+                                {u.verificationAttempts
+                                  ? ` · 시도 ${u.verificationAttempts}회`
+                                  : ''}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-600">
                     {u.device ? (

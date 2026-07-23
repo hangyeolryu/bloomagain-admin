@@ -1724,6 +1724,19 @@ export interface OnboardingDropoff {
   attemptHint?: OnboardingAttemptHint;
   // FastAPI가 남긴 실제 시도 기록 요약. 있으면 확정 사유, 없으면 attemptHint 로 추정.
   attemptSummary?: VerificationAttemptSummary;
+  // 앱(클라이언트) 계측 — users 문서에 직접 쓴 실제 진행/실패 사유.
+  // 백엔드 콜백이 없는 조용한 실패(PASS 리턴 실패 등)를 이게 잡는다.
+  //   verificationStage: intro_viewed|started|failed|abandoned|verified|blocked
+  //   verificationFailReason: 앱이 잡은 실제 실패 사유 (확정)
+  //   verificationAttempts: started 횟수
+  //   verificationBlockReason: recordNiceBlocked 사유 — underage|nice_failed|
+  //     duplicate_identity. 실패 토스트가 뜰 때마다 앱이 저장한다.
+  //   blockedYearOfBirth: 연령 미달(underage) 차단 시 NICE가 준 출생연도.
+  verificationStage?: string;
+  verificationFailReason?: string;
+  verificationAttempts?: number;
+  verificationBlockReason?: string;
+  blockedYearOfBirth?: number;
 }
 
 export interface OnboardingFunnel {
@@ -1865,17 +1878,42 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
         //   1) verification_attempts 컬렉션에 실패 기록 있으면 확정 사유
         //   2) users.identityVerificationStatus === 'failed'
         //   3) lastActiveAt 기반 heuristic (backend 로깅 없던 시절 유저 커버)
+        // 앱(클라이언트) 계측 — 백엔드 콜백이 없는 조용한 실패까지 잡는 확정 신호.
+        const verificationStage = data.verificationStage as string | undefined;
+        const verificationFailReason =
+          data.verificationFailReason as string | undefined;
+        const verificationAttempts =
+          typeof data.verificationAttempts === 'number'
+            ? data.verificationAttempts
+            : undefined;
+        // 실패/차단 토스트가 뜰 때마다 앱이 저장한 사유(recordNiceBlocked).
+        const verificationBlockReason =
+          data.verificationBlockReason as string | undefined;
+        const blockedYearOfBirth =
+          typeof data.blockedYearOfBirth === 'number'
+            ? data.blockedYearOfBirth
+            : undefined;
+
         const attemptSummary = attemptsSummary.get(profile.id);
         let attemptHint: OnboardingAttemptHint | undefined;
         if (stage === 'signed_up') {
           if (
+            verificationStage === 'failed' ||
+            verificationStage === 'blocked' ||
+            verificationBlockReason != null ||
             attemptSummary?.lastStatus === 'failure' ||
             profile.identityVerificationStatus === 'failed'
           ) {
+            // 앱이 실패/차단을 명시 기록했으면 확정.
+            // (verificationFailReason / verificationBlockReason 이 사유)
             attemptHint = 'failed_recorded';
-          } else if (attemptSummary?.lastStatus === 'started') {
-            // Backend가 init 성공 로그 남겼는데 callback 성공 로그 없음 = 사용자가
-            // NICE 페이지 열고 완료 못하고 이탈. 시도는 확정 됨.
+          } else if (
+            verificationStage === 'started' ||
+            verificationStage === 'abandoned' ||
+            attemptSummary?.lastStatus === 'started'
+          ) {
+            // Backend init 로그 or 앱이 started/abandoned 기록 = NICE 열고 이탈.
+            // 시도는 확정 됨.
             attemptHint = 'likely_attempted';
           } else if (lastActiveAt) {
             const gapMs = lastActiveAt.getTime() - createdAtMs;
@@ -1900,6 +1938,11 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
           identityVerificationStatus: profile.identityVerificationStatus,
           attemptHint,
           attemptSummary,
+          verificationStage,
+          verificationFailReason,
+          verificationAttempts,
+          verificationBlockReason,
+          blockedYearOfBirth,
         });
       }
     }
