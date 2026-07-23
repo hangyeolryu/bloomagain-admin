@@ -118,7 +118,7 @@ function PeakHourChart({ data }: { data: { hour: number; count: number }[] }) {
         return (
           <div
             key={d.hour}
-            className="flex-1 min-w-0 flex flex-col items-center"
+            className="flex-1 min-w-0 h-full flex flex-col justify-end items-center"
             title={`${d.hour}시: ${d.count}명 활동`}
           >
             <div
