@@ -147,7 +147,7 @@ function SignupChart({ data }: { data: SignupTrendPoint[] }) {
         const day = Number(d.date.slice(-2));
         const showTick = day === 1 || day === 15;
         return (
-          <div key={d.date} className="flex-1 min-w-0 flex flex-col items-center" title={`${d.date}: ${d.count}명`}>
+          <div key={d.date} className="flex-1 min-w-0 h-full flex flex-col justify-end items-center" title={`${d.date}: ${d.count}명`}>
             <div className="w-full bg-green-400 hover:bg-green-500 transition-colors rounded-t" style={{ height: `${h}%` }} />
             {showTick && <span className="text-[9px] text-gray-400 mt-1 whitespace-nowrap">{d.date.slice(5)}</span>}
           </div>

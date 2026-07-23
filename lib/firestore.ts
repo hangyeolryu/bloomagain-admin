@@ -2220,18 +2220,20 @@ export async function getActivityPatterns(
   let totalHeartbeats = 0;
 
   try {
-    const q = query(
-      collectionGroup(db, 'activity_daily'),
-      where('dayKey', '>=', fromKey),
-    );
+    // NOTE: `where('dayKey','>=')` needs a COLLECTION_GROUP_ASC index that
+    // isn't provisioned → 쿼리가 FAILED_PRECONDITION으로 죽어 차트가 빈다.
+    // activity_daily는 아직 소량이라 전체를 가져와 코드에서 날짜 필터한다.
+    // (스케일 시 collectionGroup 인덱스 추가하고 다시 where 로 전환.)
+    const q = query(collectionGroup(db, 'activity_daily'));
     const snap = await getDocs(q);
     for (const doc of snap.docs) {
+      const data = doc.data();
+      if (String(data.dayKey ?? '') < fromKey) continue; // 윈도우 밖 제외
       // Parent path: users/{uid}/activity_daily/{yyyymmdd}
       const uid = doc.ref.parent.parent?.id;
       if (!uid) continue;
       uidsInWindow.add(uid);
 
-      const data = doc.data();
       const hoursActive = Array.isArray(data.hoursActive) ? data.hoursActive : [];
       for (const raw of hoursActive) {
         const h = Number(raw);
