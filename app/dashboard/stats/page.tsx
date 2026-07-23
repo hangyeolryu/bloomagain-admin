@@ -157,6 +157,28 @@ function SignupChart({ data }: { data: SignupTrendPoint[] }) {
   );
 }
 
+// 쿼리 실패(예: collectionGroup 인덱스 없음) 메시지를 그대로 보여주고,
+// 메시지 안의 Firebase 콘솔 링크를 뽑아 클릭 가능하게 만든다 → 직접 인덱스 생성.
+function IndexErrorNotice({ error }: { error: string }) {
+  const url = error.match(/https:\/\/console\.firebase\.google\.com\/\S+/)?.[0];
+  return (
+    <div className="py-5 px-3 text-xs leading-relaxed">
+      <div className="font-semibold text-red-600 mb-1">⚠️ 이 쿼리엔 인덱스가 필요해요</div>
+      <div className="text-gray-500 mb-3 break-all">{error}</div>
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block px-3 py-1.5 rounded-md bg-blue-600 text-white font-semibold hover:bg-blue-700"
+        >
+          → Firebase 콘솔에서 인덱스 만들기
+        </a>
+      )}
+    </div>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────
 
 export default function StatsOverviewPage() {
@@ -350,6 +372,8 @@ export default function StatsOverviewPage() {
                   <span>평균 heartbeat <span className="font-semibold text-gray-900">{activity.avgHeartbeatsPerUser}</span> / 사용자</span>
                 </div>
               </>
+            ) : activity?.error ? (
+              <IndexErrorNotice error={activity.error} />
             ) : (
               <div className="text-sm text-gray-400 py-8 text-center">
                 아직 활동 데이터가 없어요. 앱 배포 후 유저들이 앱을 열면
@@ -395,6 +419,8 @@ export default function StatsOverviewPage() {
                   💡 "열기만 함" 비율이 크면 홈 화면에 할 일이 없다는 신호. 재활성화 push나 그룹 대화 추천이 필요합니다.
                 </div>
               </>
+            ) : activity?.error ? (
+              <IndexErrorNotice error={activity.error} />
             ) : (
               <div className="text-sm text-gray-400 py-8 text-center">
                 활동 데이터 대기 중.

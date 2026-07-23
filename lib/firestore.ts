@@ -2184,6 +2184,9 @@ export interface ActivityPatterns {
   // "sessions" ≈ heartbeatCount summed across the window; not a true session
   // count (heartbeat is 30-min throttled) but a decent proxy for time-in-app.
   avgHeartbeatsPerUser: number;
+  // 쿼리 실패 시(예: collectionGroup 인덱스 없음) 원문 에러 메시지.
+  // Firestore가 인덱스 생성 링크를 여기 담아줘서 UI에서 그대로 노출한다.
+  error?: string;
 }
 
 function yyyymmdd(d: Date): string {
@@ -2220,19 +2223,21 @@ export async function getActivityPatterns(
   let totalHeartbeats = 0;
 
   try {
-    // NOTE: `where('dayKey','>=')` needs a COLLECTION_GROUP_ASC index that
-    // isn't provisioned → 쿼리가 FAILED_PRECONDITION으로 죽어 차트가 빈다.
-    // activity_daily는 아직 소량이라 전체를 가져와 코드에서 날짜 필터한다.
-    // (스케일 시 collectionGroup 인덱스 추가하고 다시 where 로 전환.)
-    const q = query(collectionGroup(db, 'activity_daily'));
+    // dayKey 범위로 윈도우만 읽는다(효율). collectionGroup 범위 쿼리라
+    // firestore.indexes.json의 fieldOverrides(activity_daily.dayKey,
+    // COLLECTION_GROUP ASC) 인덱스가 필요하다 — 없으면 FAILED_PRECONDITION.
+    const q = query(
+      collectionGroup(db, 'activity_daily'),
+      where('dayKey', '>=', fromKey),
+    );
     const snap = await getDocs(q);
     for (const doc of snap.docs) {
-      const data = doc.data();
-      if (String(data.dayKey ?? '') < fromKey) continue; // 윈도우 밖 제외
       // Parent path: users/{uid}/activity_daily/{yyyymmdd}
       const uid = doc.ref.parent.parent?.id;
       if (!uid) continue;
       uidsInWindow.add(uid);
+
+      const data = doc.data();
 
       const hoursActive = Array.isArray(data.hoursActive) ? data.hoursActive : [];
       for (const raw of hoursActive) {
@@ -2267,6 +2272,7 @@ export async function getActivityPatterns(
         messageSender: 0,
       },
       avgHeartbeatsPerUser: 0,
+      error: e instanceof Error ? e.message : String(e),
     };
   }
 
