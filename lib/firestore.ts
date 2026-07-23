@@ -2038,8 +2038,10 @@ export async function getEngagementRollup(): Promise<EngagementRollup> {
 
   for (const d of snap.docs) {
     const data = d.data();
-    // 가입 완료 = 본인인증 통과. 로그인만 한 사람(가입만 함)은 제외.
+    // 가입 완료 = 본인인증 통과. 로그인만 한 사람(가입만 함)은 모든 지표에서 제외.
     const isVerified = data.identityVerified === true;
+    if (!isVerified) continue;
+    verified++;
 
     const lastActive = (data.lastActiveAt as Timestamp | undefined)?.toMillis();
     if (lastActive !== undefined) {
@@ -2047,9 +2049,6 @@ export async function getEngagementRollup(): Promise<EngagementRollup> {
       if (lastActive >= weekAgo) wau++;
       if (lastActive >= monthAgo) mau++;
     }
-
-    if (!isVerified) continue;
-    verified++;
 
     // 신규 가입도 '완료' 기준(createdAt 근사).
     const created = (data.createdAt as Timestamp | undefined)?.toMillis();
@@ -2105,6 +2104,7 @@ export async function getDeviceMix(): Promise<DeviceMix> {
   const snap = await getDocs(collection(db, 'users'));
   const mix: DeviceMix = { ios: 0, android: 0, web: 0, unknown: 0 };
   for (const d of snap.docs) {
+    if (d.data().identityVerified !== true) continue; // 가입 완료 회원만
     const platform = String(d.data().device?.platform ?? '').toLowerCase();
     if (platform.includes('ios')) mix.ios++;
     else if (platform.includes('android')) mix.android++;
@@ -2136,7 +2136,9 @@ export async function getSignupTrend(days: number): Promise<SignupTrendPoint[]> 
     bucket.set(toDateKey(d), 0);
   }
   snap.forEach((doc) => {
-    const ts = doc.data().createdAt as Timestamp | undefined;
+    const data = doc.data();
+    if (data.identityVerified !== true) return; // 가입 완료 회원만
+    const ts = data.createdAt as Timestamp | undefined;
     if (!ts) return;
     const key = toDateKey(ts.toDate());
     if (bucket.has(key)) bucket.set(key, (bucket.get(key) ?? 0) + 1);

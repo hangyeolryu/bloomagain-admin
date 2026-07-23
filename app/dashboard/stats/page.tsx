@@ -245,7 +245,7 @@ export default function StatsOverviewPage() {
       <section>
         <SectionHeading
           title="활성 사용자"
-          hint="lastActiveAt 하트비트 기반 (앱 포그라운드 진입 시 30분에 한 번 기록)"
+          hint="가입 완료(본인인증) 회원 기준 · lastActiveAt 하트비트 (앱 포그라운드 30분당 1회)"
         />
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Metric
@@ -327,7 +327,7 @@ export default function StatsOverviewPage() {
       <section>
         <SectionHeading
           title="신규 가입 트렌드 (최근 30일)"
-          hint="users.createdAt 일별 집계"
+          hint="가입 완료 회원의 createdAt 일별 집계"
         />
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <SignupChart data={trend} />
@@ -428,7 +428,7 @@ export default function StatsOverviewPage() {
         </div>
 
         <div>
-          <SectionHeading title="디바이스 사용" hint="users.device.platform 기반" />
+          <SectionHeading title="디바이스 사용" hint="가입 완료 회원 기준 · users.device.platform" />
           <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
             {device && deviceTotal > 0 ? (
               <>
