@@ -1981,14 +1981,18 @@ export interface DeviceMix {
 }
 
 export interface EngagementRollup {
-  totalUsers: number;
+  totalUsers: number;    // 가입 완료(본인인증 통과) 회원 수 — 로그인만 한 사람 제외
+  totalSignups: number;  // (참고) users 문서 총 수 = 로그인만 한 사람 포함
   dau: number;           // active in last 24h based on lastActiveAt heartbeat
   wau: number;           // last 7d
   mau: number;           // last 30d
   stickiness: number;    // DAU / MAU as a percentage — DAU >20% of MAU is healthy senior comm
-  newLast24h: number;    // users.createdAt in last 24h
+  newLast24h: number;    // 최근 24h 가입 완료(본인인증) 회원
   newLast7d: number;
   newLast30d: number;
+  // 회원(본인인증 완료) 구성
+  gender: { female: number; male: number; unknown: number };
+  ageBuckets: { label: string; count: number }[];
 }
 
 export interface SignupTrendPoint {
@@ -2010,34 +2014,77 @@ export async function getEngagementRollup(): Promise<EngagementRollup> {
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
 
+  const curYear = new Date().getFullYear();
+  const ageBucket = (age: number): string => {
+    if (age < 45) return '45세 미만';
+    if (age <= 49) return '45–49';
+    if (age <= 54) return '50–54';
+    if (age <= 59) return '55–59';
+    if (age <= 64) return '60–64';
+    if (age <= 69) return '65–69';
+    return '70+';
+  };
+
   const snap = await getDocs(collection(db, 'users'));
+  let verified = 0;
   let dau = 0;
   let wau = 0;
   let mau = 0;
   let newLast24h = 0;
   let newLast7d = 0;
   let newLast30d = 0;
+  const gender = { female: 0, male: 0, unknown: 0 };
+  const ageCounts: Record<string, number> = {};
 
   for (const d of snap.docs) {
     const data = d.data();
+    // 가입 완료 = 본인인증 통과. 로그인만 한 사람(가입만 함)은 제외.
+    const isVerified = data.identityVerified === true;
+
     const lastActive = (data.lastActiveAt as Timestamp | undefined)?.toMillis();
     if (lastActive !== undefined) {
       if (lastActive >= dayAgo) dau++;
       if (lastActive >= weekAgo) wau++;
       if (lastActive >= monthAgo) mau++;
     }
+
+    if (!isVerified) continue;
+    verified++;
+
+    // 신규 가입도 '완료' 기준(createdAt 근사).
     const created = (data.createdAt as Timestamp | undefined)?.toMillis();
     if (created !== undefined) {
       if (created >= dayAgo) newLast24h++;
       if (created >= weekAgo) newLast7d++;
       if (created >= monthAgo) newLast30d++;
     }
+
+    // 성별
+    const g = String(data.gender ?? '').trim().toLowerCase();
+    if (['f', 'female', '여', '여성'].includes(g)) gender.female++;
+    else if (['m', 'male', '남', '남성'].includes(g)) gender.male++;
+    else gender.unknown++;
+
+    // 나이(생년)
+    const yob = Number(data.yearOfBirth ?? data.birthYear ?? data.birthyear);
+    if (yob && yob > 1900 && yob < curYear) {
+      const b = ageBucket(curYear - yob);
+      ageCounts[b] = (ageCounts[b] ?? 0) + 1;
+    } else {
+      ageCounts['미상'] = (ageCounts['미상'] ?? 0) + 1;
+    }
   }
+
+  const ORDER = ['45세 미만', '45–49', '50–54', '55–59', '60–64', '65–69', '70+', '미상'];
+  const ageBuckets = ORDER
+    .map((label) => ({ label, count: ageCounts[label] ?? 0 }))
+    .filter((b) => b.count > 0);
 
   const stickiness = mau > 0 ? Math.round((dau / mau) * 100) : 0;
 
   return {
-    totalUsers: snap.size,
+    totalUsers: verified,
+    totalSignups: snap.size,
     dau,
     wau,
     mau,
@@ -2045,6 +2092,8 @@ export async function getEngagementRollup(): Promise<EngagementRollup> {
     newLast24h,
     newLast7d,
     newLast30d,
+    gender,
+    ageBuckets,
   };
 }
 

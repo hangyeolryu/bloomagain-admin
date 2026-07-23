@@ -227,6 +227,12 @@ export default function StatsOverviewPage() {
   const answerRate = dataCol && dataCol.totalUsers > 0
     ? Math.round((dataCol.usersWithTags / dataCol.totalUsers) * 100)
     : 0;
+  const genderTotal = engagement
+    ? engagement.gender.female + engagement.gender.male + engagement.gender.unknown
+    : 0;
+  const ageTotal = engagement
+    ? engagement.ageBuckets.reduce((s, b) => s + b.count, 0)
+    : 0;
 
   return (
     <div className="p-6 space-y-8 max-w-6xl">
@@ -246,6 +252,7 @@ export default function StatsOverviewPage() {
             label="총 가입자"
             value={engagement?.totalUsers ?? 0}
             emphasis="strong"
+            hint={`본인인증 완료 기준 · 로그인만 ${engagement ? engagement.totalSignups - engagement.totalUsers : 0}명 제외`}
           />
           <Metric
             label="DAU (24시간)"
@@ -268,6 +275,51 @@ export default function StatsOverviewPage() {
             suffix="%"
             hint="DAU/MAU · 시니어 커뮤 20%+가 건강"
           />
+        </div>
+      </section>
+
+      {/* ── 회원 구성 (성별 · 나이) ───────────────────── */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <SectionHeading title="남녀 비율" hint="본인인증 완료 회원 기준" />
+          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
+            {engagement && genderTotal > 0 ? (
+              <>
+                <Bar label="여성" value={engagement.gender.female} total={genderTotal} color="#EC4899" />
+                <Bar label="남성" value={engagement.gender.male} total={genderTotal} color="#3B82F6" />
+                {engagement.gender.unknown > 0 && (
+                  <Bar label="미상" value={engagement.gender.unknown} total={genderTotal} color="#9CA3AF" />
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-gray-400 py-6 text-center">데이터 없음</div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <SectionHeading title="나이 분포" hint="본인인증 생년(yearOfBirth) 기준" />
+          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
+            {engagement && engagement.ageBuckets.length > 0 ? (
+              engagement.ageBuckets.map((b) => (
+                <Bar
+                  key={b.label}
+                  label={b.label}
+                  value={b.count}
+                  total={ageTotal}
+                  color={
+                    b.label === '45세 미만'
+                      ? '#EF4444'
+                      : b.label === '미상'
+                        ? '#9CA3AF'
+                        : '#10B981'
+                  }
+                />
+              ))
+            ) : (
+              <div className="text-sm text-gray-400 py-6 text-center">데이터 없음</div>
+            )}
+          </div>
         </div>
       </section>
 
