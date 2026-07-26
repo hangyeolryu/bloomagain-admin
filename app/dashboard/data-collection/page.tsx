@@ -76,6 +76,28 @@ type PipelineItem = {
   reverify?: string;     // 재확인 명령/방법 (정적 항목)
 };
 
+// 백엔드 /api/v1/admin/pipeline-status 응답 (실측 인프라 사실)
+type BqSource = { ok: boolean; status?: number; lastModifiedMs?: number | null; numRows?: number | null };
+type PipelineProbe = {
+  checked_at?: string;
+  embedding?: { dim_constant?: number; column_dim?: number | null; aligned?: boolean; error?: string };
+  survey_responses?: { exists?: boolean; error?: string };
+  alembic?: { head?: string; error?: string };
+  bigquery?: { ok: boolean; error?: string; ga4?: BqSource; firestore_ext?: BqSource; postgres?: BqSource };
+};
+
+// epoch millis → "N분/시간/일 전" (신선도 라벨)
+function freshness(ms?: number | null): string | null {
+  if (!ms) return null;
+  const diff = Date.now() - ms;
+  if (diff < 0) return '방금';
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  return `${Math.floor(h / 24)}일 전`;
+}
+
 const PIPELINE_STATUS: PipelineItem[] = [
   { name: 'Daily Question → Firestore', status: 'ok', detail: 'users/{uid}/dailyQuestions/{qid} 작성 + 태그 누적' },
   { name: 'Mini Pulse → Firestore', status: 'ok', detail: 'users/{uid}/mini_pulses + 태그 merge' },
@@ -537,6 +559,8 @@ export default function DataCollectionPage() {
   const [backend, setBackend] = useState<
     { ok: boolean; version?: string; database?: string } | null
   >(null);
+  // 인프라 실측 — 백엔드가 직접 확인(embedding dim·survey_responses·BQ 신선도).
+  const [pipeline, setPipeline] = useState<PipelineProbe | null>(null);
 
   useEffect(() => {
     getDataCollectionStats()
@@ -557,6 +581,13 @@ export default function DataCollectionPage() {
         setBackend({ ok: !!h?.ok, version: data?.version, database: data?.services?.database });
       })
       .catch(() => setBackend({ ok: false }));
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/admin/pipeline-status', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setPipeline(d as PipelineProbe | null))
+      .catch(() => setPipeline(null));
   }, []);
 
   if (loading) return <LoadingSpinner message="데이터 수집 현황 로딩 중..." />;
@@ -887,7 +918,7 @@ export default function DataCollectionPage() {
         <ul className="space-y-2.5">
           {(() => {
             const bank = stats.remoteQuestionBank;
-            const items: Array<PipelineItem & { live?: boolean; liveText?: string }> =
+            const items: Array<PipelineItem & { live?: boolean }> =
               PIPELINE_STATUS.map((item) => {
                 // 원격 문항 뱅크 — Firestore에서 실측한 값으로 덮어쓴다 (하드코딩 X)
                 if (item.name.startsWith('결큐 질문 원격화')) {
@@ -900,6 +931,52 @@ export default function DataCollectionPage() {
                         ? `✅ 원격 오버레이 라이브 — gyeolQuestionBank ${bank.total}개 문서${bank.retired > 0 ? ` (은퇴 ${bank.retired})` : ''}. 앱 v3.0.18 daily_question_service가 번들 위에 적용(retired 제외).`
                         : '⚠ 원격 뱅크 비어있음 — 번들 165개만 사용 중. "결큐 질문 관리"에서 수정/시드하면 활성화.',
                   };
+                }
+                // 아래 3개는 백엔드 실측(pipeline)이 도착하면 LIVE로 덮어쓴다.
+                if (pipeline && item.name.startsWith('Backend /api/v1/matching/embedding')) {
+                  const e = pipeline.embedding;
+                  if (e && !e.error) {
+                    return {
+                      ...item,
+                      status: e.aligned ? 'ok' : 'warn',
+                      live: true,
+                      verifiedAt: undefined,
+                      detail: e.aligned
+                        ? `✅ 정렬됨 — pgvector 컬럼 ${e.column_dim}d == EMBEDDING_DIM ${e.dim_constant}. 자동 결모임이 이 임베딩을 사용.`
+                        : `⚠ 불일치 — 컬럼 ${e.column_dim}d ≠ 상수 ${e.dim_constant}. /matching/embedding silent fail 위험.`,
+                    };
+                  }
+                }
+                if (pipeline && item.name.startsWith('BigQuery export')) {
+                  const b = pipeline.bigquery;
+                  // creds만 되고 테이블 읽기 권한이 없으면(신선도 '?') LIVE로
+                  // 덮지 말고 정적 chip 유지 — 최소 한 테이블은 실제로 읽혀야 함.
+                  if (b?.ok && b.firestore_ext?.ok) {
+                    const fx = freshness(b.firestore_ext?.lastModifiedMs);
+                    const pg = freshness(b.postgres?.lastModifiedMs);
+                    const ga4ok = b.ga4?.ok;
+                    return {
+                      ...item,
+                      status: 'ok',
+                      live: true,
+                      verifiedAt: undefined,
+                      detail: `✅ GA4 ${ga4ok ? '연결됨' : '확인불가'} · Firestore Ext 갱신 ${fx ?? '?'} · Postgres 스냅샷 ${pg ?? '?'} (bloomagain_raw). BQ REST 실측.`,
+                    };
+                  }
+                }
+                if (pipeline && item.name.startsWith('survey_responses')) {
+                  const s = pipeline.survey_responses;
+                  if (s && !s.error) {
+                    return {
+                      ...item,
+                      status: s.exists ? 'ok' : 'todo',
+                      live: true,
+                      verifiedAt: undefined,
+                      detail: s.exists
+                        ? `✅ 테이블 생성됨 (alembic head ${pipeline.alembic?.head ?? '?'}). 측정도구 응답 저장 가능.`
+                        : `미생성 — 라이센스 회신 후 마이그레이션 생성 예정 (현재 alembic head ${pipeline.alembic?.head ?? '?'}).`,
+                    };
+                  }
                 }
                 return item;
               });
