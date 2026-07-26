@@ -2789,6 +2789,10 @@ export interface GyeolStats {
   genderDistribution: { gender: string; count: number }[]; // completes 기준 (f/m/na)
   comfortDistribution: { comfort: string; count: number }[]; // completes 기준 (same/any/opp)
   femaleShare: number; // f / (f+m), 성비 핵심 지표 (na 제외)
+  // 다운로드 직전 나이 자기선택 게이트 응답 분포 (age_gate 이벤트).
+  ageBandDistribution: { band: string; count: number }[]; // under45/45-54/55-64/65plus, 고정 순서
+  ageAnswered: number; // 게이트 응답 총수 (분모)
+  underAgeShare: number; // under45 / 전체응답 — 광고가 데려온 45미만 비율(핵심 낭비 지표)
   daily: { date: string; start: number; complete: number }[]; // 최근 14일
   recent: { createdAt?: Date; phase: string; type: string | null; source: string | null }[];
   // 세션(사람) 단위 재구성 — sessionId 있으면 정확, 없으면 유입원+시간창 추정.
@@ -2821,6 +2825,9 @@ export interface GyeolStats {
 
 export const GYEOL_GENDER_LABELS: Record<string, string> = {
   f: '여성', m: '남성', na: '선택 안 함',
+};
+export const GYEOL_AGE_LABELS: Record<string, string> = {
+  under45: '만 45세 미만', '45-54': '45–54세', '55-64': '55–64세', '65plus': '65세 이상',
 };
 export const GYEOL_COMFORT_LABELS: Record<string, string> = {
   same: '동성 친구가 편해요', any: '상관없어요, 결만 맞으면', opp: '이성 친구도 좋아요',
@@ -2860,6 +2867,9 @@ export async function getGyeolStats(): Promise<GyeolStats> {
   const sourceCount = new Map<string, number>();
   const genderCount = new Map<string, number>();
   const comfortCount = new Map<string, number>();
+  // 다운로드 직전 나이 자기선택 게이트 응답(age_gate 이벤트의 ageBand).
+  // under45 = 만 45세 미만(설치 전 차단). 광고가 데려온 45미만 비율 = 핵심 누수 지표.
+  const ageBandCount = new Map<string, number>();
   const dayMap = new Map<string, { start: number; complete: number }>();
   const recent: GyeolStats['recent'] = [];
   // 세션 재구성용 원본 이벤트 수집 (시간순 정렬은 아래에서).
@@ -2874,6 +2884,14 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     if (phase === 'download' || phase === 'intro_download') {
       const st = String(data.store ?? '');
       if (st === 'ios' || st === 'android') downloadStores[st] += 1;
+    }
+
+    // 나이 자기선택 게이트 응답 집계 (age_gate 이벤트의 ageBand)
+    if (phase === 'age_gate') {
+      const ab = String(data.ageBand ?? '');
+      if (ab === 'under45' || ab === '45-54' || ab === '55-64' || ab === '65plus') {
+        ageBandCount.set(ab, (ageBandCount.get(ab) ?? 0) + 1);
+      }
     }
 
     const type = (data.gyeolType ?? null) as string | null;
@@ -3053,6 +3071,17 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))
     .slice(0, 50);
 
+  // 나이 밴드 분포 — 고정 순서(젊은→많은)로. underAgeShare = 45미만/전체응답 =
+  // "광고가 데려온 트래픽 중 얼마가 애초에 가입 불가인가"(핵심 낭비 지표).
+  const AGE_ORDER = ['under45', '45-54', '55-64', '65plus'];
+  const ageAnswered = [...ageBandCount.values()].reduce((a, b) => a + b, 0);
+  const ageBandDistribution = AGE_ORDER
+    .map((band) => ({ band, count: ageBandCount.get(band) ?? 0 }))
+    .filter((x) => x.count > 0);
+  const underAgeShare = ageAnswered
+    ? (ageBandCount.get('under45') ?? 0) / ageAnswered
+    : 0;
+
   return {
     totals,
     downloadStores,
@@ -3063,6 +3092,9 @@ export async function getGyeolStats(): Promise<GyeolStats> {
     genderDistribution,
     comfortDistribution,
     femaleShare,
+    ageBandDistribution,
+    ageAnswered,
+    underAgeShare,
     daily,
     recent,
     sessionFunnel,

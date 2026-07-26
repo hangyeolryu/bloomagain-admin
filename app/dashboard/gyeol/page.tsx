@@ -15,6 +15,7 @@ import {
   gyeolTypeLabel,
   GYEOL_GENDER_LABELS,
   GYEOL_COMFORT_LABELS,
+  GYEOL_AGE_LABELS,
   type GyeolStats,
 } from '@/lib/firestore';
 
@@ -74,13 +75,14 @@ function Journey({ furthest }: { furthest: 'start' | 'complete' | 'download' }) 
   );
 }
 
-function Bar({ label, count, max }: { label: string; count: number; max: number }) {
+function Bar({ label, count, max, tone }: { label: string; count: number; max: number; tone?: 'green' | 'red' }) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
+  const barColor = tone === 'red' ? 'bg-red-500/80' : 'bg-green-600/80';
   return (
     <div className="flex items-center gap-3">
       <div className="w-40 shrink-0 truncate text-sm text-gray-700" title={label}>{label}</div>
       <div className="relative h-6 flex-1 overflow-hidden rounded bg-gray-100">
-        <div className="absolute inset-y-0 left-0 rounded bg-green-600/80" style={{ width: `${pct}%` }} />
+        <div className={`absolute inset-y-0 left-0 rounded ${barColor}`} style={{ width: `${pct}%` }} />
       </div>
       <div className="w-12 shrink-0 text-right text-sm tabular-nums text-gray-600">{count}</div>
     </div>
@@ -111,6 +113,7 @@ export default function GyeolDashboardPage() {
   const srcMax = stats.bySource[0]?.count ?? 0;
   const genderMax = stats.genderDistribution[0]?.count ?? 0;
   const comfortMax = stats.comfortDistribution[0]?.count ?? 0;
+  const ageMax = Math.max(0, ...stats.ageBandDistribution.map((d) => d.count));
   const genderKnown = stats.genderDistribution.reduce((s, d) => s + d.count, 0);
   // 막대 스케일은 start·complete 통합 최댓값 기준 (complete>start여도 안 넘침).
   const dayMax = Math.max(1, ...stats.daily.flatMap((d) => [d.start, d.complete]));
@@ -388,6 +391,37 @@ export default function GyeolDashboardPage() {
             )}
           </div>
         </div>
+      </section>
+
+      {/* 연령 분포 (다운로드 직전 나이 자기선택 게이트) */}
+      <section>
+        <div className="mb-1 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold text-gray-900">연령 분포 (나이 게이트)</h2>
+          {stats.ageAnswered > 0 && (
+            <span className="text-sm font-semibold tabular-nums text-red-600">
+              45 미만 {Math.round(stats.underAgeShare * 100)}%
+              <span className="ml-1 text-xs font-normal text-gray-400">(응답 {stats.ageAnswered})</span>
+            </span>
+          )}
+        </div>
+        <p className="mb-3 text-xs text-gray-400">
+          다운로드 직전 자기선택 · &ldquo;45 미만&rdquo;은 설치 전 차단(광고가 데려온 가입 불가 트래픽 비율)
+        </p>
+        {stats.ageBandDistribution.length === 0 ? (
+          <p className="text-sm text-gray-400">아직 응답이 없어요. (앱 배포 후 며칠 쌓여요)</p>
+        ) : (
+          <div className="space-y-2">
+            {stats.ageBandDistribution.map((d) => (
+              <Bar
+                key={d.band}
+                label={GYEOL_AGE_LABELS[d.band] ?? d.band}
+                count={d.count}
+                max={ageMax}
+                tone={d.band === 'under45' ? 'red' : 'green'}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 유입 소스 */}
