@@ -191,6 +191,17 @@ export default function GyeolQBankPage() {
     void load();
   }, []);
 
+  // 결큐 인사이트에서 "관리 →"로 넘어오면 ?focus=<id> — 해당 문항을 바로
+  // 검색·편집 상태로 연다. window.location으로 읽어 Suspense 경계 불필요.
+  useEffect(() => {
+    if (loading) return;
+    const focus = new URLSearchParams(window.location.search).get('focus');
+    if (focus && /^\d+$/.test(focus)) {
+      setFilter(focus);
+      setEditing(Number(focus));
+    }
+  }, [loading]);
+
   const bank = useMemo(() => mergeBank(remote), [remote]);
   const shown = useMemo(() => {
     const f = filter.trim();

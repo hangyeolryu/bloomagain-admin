@@ -75,7 +75,7 @@ const PIPELINE_STATUS: Array<{ name: string; status: 'ok' | 'warn' | 'todo'; det
   { name: '모임 추천 (Firestore tags 직접)', status: 'ok', detail: '_userDailyQuestionTags overlap weight 1' },
   { name: 'Backend /api/v1/matching/embedding 동기화', status: 'ok', detail: '✅ 768d 정렬 완료 (Alembic 021, 2026-07) — dim mismatch 해소, 자동 결모임이 이 임베딩을 사용' },
   { name: '자동 결모임 조립 (/moim/assemble)', status: 'ok', detail: '자리표 → 상호 top-K + 결 임계값 조립 → 제안 → 티타지기 방. ⚠ Cloud Scheduler 잡 등록 확인 필요 (수동 트리거는 가능)' },
-  { name: '결큐 질문 원격화 (gyeolQuestionBank)', status: 'warn', detail: '코드 완료 — rules 배포 + 앱 v3.0.9 출시 후 활성. 그때까지 번들 질문만 사용' },
+  { name: '결큐 질문 원격화 (gyeolQuestionBank)', status: 'ok', detail: '✅ 앱 v3.0.18 라이브 — daily_question_service가 번들 위에 원격 오버레이 적용(retired 제외). 어드민 결큐 질문 관리에서 수정/은퇴 시 앱 다음 실행부터 반영' },
   { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'ok', detail: 'bloomagain_raw (Seoul) 라이브 2026-05-17~ — GA4 + Firestore + Cloud SQL federated' },
   { name: 'Looker Studio 대시보드', status: 'todo', detail: '보류 — 어드민 인사이트가 운영 질문을 대체. B2G 분기 리포트 단계에서 재평가' },
   { name: 'survey_responses 테이블 (Postgres)', status: 'todo', detail: 'LSIS-6 라이센스 회신 대기 (외부 블로커) — 회신 후 마이그레이션 생성 (021은 embedding에 사용됨, 다음 번호로)' },
@@ -189,6 +189,14 @@ function QuestionSplitRow({ q }: { q: { id: string; total: number; options: Reco
         {topShare >= 0.8 && q.total >= 5 && (
           <span className="text-[11px] font-semibold text-amber-600">⚠ 쏠림 {Math.round(topShare * 100)}% — 변별력 낮음</span>
         )}
+        <Link
+          href={`/dashboard/gyeolq-bank?focus=${q.id}`}
+          className={`text-[11px] font-semibold hover:underline ${
+            topShare >= 0.8 && q.total >= 5 ? 'text-rose-600' : 'text-emerald-600'
+          }`}
+        >
+          관리 →
+        </Link>
       </div>
     </div>
   );
@@ -400,9 +408,9 @@ function buildInsights(s: DataCollectionStats): Insight[] {
             icon: '🎯',
             title: '변별력 낮은 문항',
             metric: `${lowDisc.length}개`,
-            reading: `#${lowDisc.slice(0, 3).map((q) => q.id).join(', #')}${lowDisc.length > 3 ? ' 외' : ''} — 모두가 같은 답을 골라 매칭에 기여하지 못하는 '죽은 문항'입니다.`,
+            reading: `#${lowDisc.slice(0, 3).map((q) => q.id).join(', #')}${lowDisc.length > 3 ? ' 외' : ''} — 모두가 같은 답을 골라 매칭에 기여하지 못하는 '죽은 문항'입니다. (취향이 아니라 상태·자기선택 편향이면 리워딩보다 은퇴가 정답)`,
             action:
-              '해당 문항을 표현 수정(중립적 대립 구도로) 또는 교체. 원격 문항 뱅크(gyeolQuestionBank) 활성 후 앱 재배포 없이 교체 가능.',
+              '아래 "질문별 응답 분포"에서 해당 문항의 "관리 →"로 바로 편집·은퇴. 원격 뱅크(gyeolQuestionBank)라 앱 재배포 없이 다음 실행부터 반영.',
           },
     );
   }
