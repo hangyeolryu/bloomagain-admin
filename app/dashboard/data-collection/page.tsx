@@ -76,7 +76,7 @@ const PIPELINE_STATUS: Array<{ name: string; status: 'ok' | 'warn' | 'todo'; det
   { name: 'Backend /api/v1/matching/embedding 동기화', status: 'ok', detail: '✅ 768d 정렬 완료 (Alembic 021, 2026-07) — dim mismatch 해소, 자동 결모임이 이 임베딩을 사용' },
   { name: '자동 결모임 조립 (/moim/assemble)', status: 'ok', detail: '자리표 → 상호 top-K + 결 임계값 조립 → 제안 → 티타지기 방. ⚠ Cloud Scheduler 잡 등록 확인 필요 (수동 트리거는 가능)' },
   { name: '결큐 질문 원격화 (gyeolQuestionBank)', status: 'ok', detail: '✅ 앱 v3.0.18 라이브 — daily_question_service가 번들 위에 원격 오버레이 적용(retired 제외). 어드민 결큐 질문 관리에서 수정/은퇴 시 앱 다음 실행부터 반영' },
-  { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'ok', detail: 'bloomagain_raw (Seoul) 라이브 2026-05-17~ — GA4 + Firestore + Cloud SQL federated' },
+  { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'ok', detail: '✅ 3소스 라이브 — GA4(analytics_502323304.events_*) + Firestore Extension(bloomagain_raw.fs_*_changelog 스트리밍) + Postgres(pg_*_snapshot). 큐레이션 뷰 17개(bloomagain_analytics)' },
   { name: 'Looker Studio 대시보드', status: 'todo', detail: '보류 — 어드민 인사이트가 운영 질문을 대체. B2G 분기 리포트 단계에서 재평가' },
   { name: 'survey_responses 테이블 (Postgres)', status: 'todo', detail: 'LSIS-6 라이센스 회신 대기 (외부 블로커) — 회신 후 마이그레이션 생성 (021은 embedding에 사용됨, 다음 번호로)' },
 ];
@@ -904,18 +904,20 @@ Firestore: users/{uid}.embedding  (30일 캐시)
             <span className="text-xs text-amber-700"> (외부 블로커 — 현재 PHQ-2 + Cantril로 baseline 운영 중이라 제품엔 미영향)</span>
           </li>
           <li>
-            <strong>📦 BigQuery 활성화 미완료</strong> — 셋업 가이드 작성 완료, 콘솔에서 GA4 + Firestore Extension + Cloud SQL federated 활성화 필요.
-          </li>
-          <li>
             <strong>🗄️ <code>survey_responses</code> Postgres 테이블 미생성</strong> — 다음 Alembic 번호(029, 현재 최신은 028)로 생성 예정. 021은 embedding 768d 정렬에 사용됨. LSIS-6 라이센스 회신 후 한 번에 생성.
           </li>
         </ul>
-        <div className="mt-4 pt-3 border-t border-amber-200/60">
-          <p className="text-xs font-semibold text-emerald-700 mb-1">✅ 최근 해결</p>
+        <div className="mt-4 pt-3 border-t border-amber-200/60 space-y-2">
+          <p className="text-xs font-semibold text-emerald-700">✅ 최근 해결</p>
           <p className="text-xs text-emerald-800">
             <strong>Backend embedding dim mismatch</strong> — Backend <code className="bg-emerald-100 px-1 rounded">Vector(768)</code> 정렬 완료
             (Alembic 021, <code className="bg-emerald-100 px-1 rounded">EMBEDDING_DIM=768</code>). Cloud Function 768d ↔ Backend 차원 일치 →
             <code className="bg-emerald-100 px-1 rounded">/matching/embedding</code> 정상, 자동 결모임이 이 임베딩을 사용.
+          </p>
+          <p className="text-xs text-emerald-800">
+            <strong>BigQuery 활성화</strong> — 3개 소스 모두 라이브. GA4(<code className="bg-emerald-100 px-1 rounded">analytics_502323304.events_*</code> 일별),
+            Firestore Extension(<code className="bg-emerald-100 px-1 rounded">bloomagain_raw.fs_*_changelog</code>, 실시간 스트리밍),
+            Postgres(<code className="bg-emerald-100 px-1 rounded">pg_*_snapshot</code>). 익명화 큐레이션 뷰 17개(<code className="bg-emerald-100 px-1 rounded">bloomagain_analytics</code>)까지 구축됨.
           </p>
         </div>
       </div>
