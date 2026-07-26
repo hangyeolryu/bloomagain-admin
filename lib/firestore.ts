@@ -1408,6 +1408,9 @@ export interface DataCollectionStats {
   // 온보딩 "어디서 알게 되셨어요?" 응답 집계 (users/*/analytics_milestones)
   acquisitionChannels: Array<{ channel: string; count: number }>;
   acquisitionAnswered: number;      // 응답한 사용자 수 (스킵 제외)
+  // 원격 문항 뱅크 런타임 상태 — 하드코딩 대신 실제 gyeolQuestionBank 컬렉션에서
+  // 읽는다. 문서가 있으면 앱이 번들 위에 오버레이 적용 중(활성).
+  remoteQuestionBank: { total: number; retired: number };
 }
 
 /**
@@ -1633,6 +1636,18 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     .slice(0, 15)
     .map(([tag, count]) => ({ tag, count }));
 
+  // 원격 문항 뱅크 실측 — 문서 수 + 은퇴 수. 앱은 이 컬렉션이 비어있지 않으면
+  // 번들 위에 오버레이(retired 제외)를 적용하므로, total>0 = 원격화 '활성'.
+  let remoteQuestionBank = { total: 0, retired: 0 };
+  try {
+    const snap = await getDocs(collection(db, 'gyeolQuestionBank'));
+    let retired = 0;
+    for (const d of snap.docs) if (d.data().retired === true) retired++;
+    remoteQuestionBank = { total: snap.size, retired };
+  } catch (e) {
+    console.warn('[data-collection] gyeolQuestionBank count failed:', e);
+  }
+
   return {
     totalUsers: usersSnap.size,
     usersCompletedProfile,
@@ -1654,6 +1669,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     questionStats,
     acquisitionChannels,
     acquisitionAnswered,
+    remoteQuestionBank,
   };
 }
 

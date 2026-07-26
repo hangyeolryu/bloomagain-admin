@@ -66,19 +66,29 @@ const LICENSE_TABLE: LicenseRow[] = [
   { tool: 'SWLS', source: 'Diener 1985, Lee 2024 IRT 검증', status: 'pending', note: 'Diener Education Fund (info@nobascholar.com) 메일 발송' },
 ];
 
-const PIPELINE_STATUS: Array<{ name: string; status: 'ok' | 'warn' | 'todo'; detail: string }> = [
+// verifiedAt = 정적 선언을 마지막으로 사람이 실측한 날 (드리프트가 '보이게'
+// 하는 장치 — 오래되면 chip이 낡아 보인다). live=true인 항목은 런타임에 실측.
+type PipelineItem = {
+  name: string;
+  status: 'ok' | 'warn' | 'todo';
+  detail: string;
+  verifiedAt?: string;   // 정적 항목의 수동 검증일
+  reverify?: string;     // 재확인 명령/방법 (정적 항목)
+};
+
+const PIPELINE_STATUS: PipelineItem[] = [
   { name: 'Daily Question → Firestore', status: 'ok', detail: 'users/{uid}/dailyQuestions/{qid} 작성 + 태그 누적' },
   { name: 'Mini Pulse → Firestore', status: 'ok', detail: 'users/{uid}/mini_pulses + 태그 merge' },
   { name: 'Tag propagation → embedding 트리거', status: 'ok', detail: 'embeddingUpdatePending: true 플래그 작동' },
   { name: 'Cloud Function getUserEmbeddingHttp', status: 'ok', detail: 'Vertex AI text-embedding-005 호출, 768d 생성' },
   { name: 'Riverpod matchedUsersProvider 새로고침', status: 'ok', detail: '답변 후 즉시 invalidate' },
   { name: '모임 추천 (Firestore tags 직접)', status: 'ok', detail: '_userDailyQuestionTags overlap weight 1' },
-  { name: 'Backend /api/v1/matching/embedding 동기화', status: 'ok', detail: '✅ 768d 정렬 완료 (Alembic 021, 2026-07) — dim mismatch 해소, 자동 결모임이 이 임베딩을 사용' },
+  { name: 'Backend /api/v1/matching/embedding 동기화', status: 'ok', detail: '✅ 768d 정렬 완료 (Alembic 021) — dim mismatch 해소, 자동 결모임이 이 임베딩을 사용', verifiedAt: '2026-07-26', reverify: 'backend: EMBEDDING_DIM(app/models/user_embedding.py) == 768 && migration 021_embedding_dim_768' },
   { name: '자동 결모임 조립 (/moim/assemble)', status: 'ok', detail: '자리표 → 상호 top-K + 결 임계값 조립 → 제안 → 티타지기 방. ⚠ Cloud Scheduler 잡 등록 확인 필요 (수동 트리거는 가능)' },
   { name: '결큐 질문 원격화 (gyeolQuestionBank)', status: 'ok', detail: '✅ 앱 v3.0.18 라이브 — daily_question_service가 번들 위에 원격 오버레이 적용(retired 제외). 어드민 결큐 질문 관리에서 수정/은퇴 시 앱 다음 실행부터 반영' },
-  { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'ok', detail: '✅ 3소스 라이브 — GA4(analytics_502323304.events_*) + Firestore Extension(bloomagain_raw.fs_*_changelog 스트리밍) + Postgres(pg_*_snapshot). 큐레이션 뷰 17개(bloomagain_analytics)' },
+  { name: 'BigQuery export (Firestore + GA4 + PG)', status: 'ok', detail: '✅ 3소스 라이브 — GA4(analytics_502323304.events_*) + Firestore Extension(bloomagain_raw.fs_*_changelog 스트리밍) + Postgres(pg_*_snapshot). 큐레이션 뷰 17개(bloomagain_analytics)', verifiedAt: '2026-07-26', reverify: 'bq ls bloomagain-korea:bloomagain_raw  ·  bq query "SELECT MAX(timestamp) FROM bloomagain_raw.fs_users_raw_changelog"' },
   { name: 'Looker Studio 대시보드', status: 'todo', detail: '보류 — 어드민 인사이트가 운영 질문을 대체. B2G 분기 리포트 단계에서 재평가' },
-  { name: 'survey_responses 테이블 (Postgres)', status: 'todo', detail: 'LSIS-6 라이센스 회신 대기 (외부 블로커) — 회신 후 마이그레이션 생성 (021은 embedding에 사용됨, 다음 번호로)' },
+  { name: 'survey_responses 테이블 (Postgres)', status: 'todo', detail: 'LSIS-6 라이센스 회신 대기 (외부 블로커) — 회신 후 마이그레이션 생성 (021은 embedding에 사용됨, 다음 번호 029)', verifiedAt: '2026-07-26', reverify: 'backend: alembic 최신 028 · survey_responses 미생성 확인됨' },
 ];
 
 function licenseBadge(status: LicenseStatus) {
@@ -523,6 +533,10 @@ export default function DataCollectionPage() {
   const [stats, setStats] = useState<DataCollectionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 백엔드 런타임 실측 — /api/admin/backend-health(기존 프록시)를 그대로 사용.
+  const [backend, setBackend] = useState<
+    { ok: boolean; version?: string; database?: string } | null
+  >(null);
 
   useEffect(() => {
     getDataCollectionStats()
@@ -532,6 +546,17 @@ export default function DataCollectionPage() {
         setError((e as Error).message ?? '로드 실패');
       })
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/admin/backend-health', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        const h = d?.health;
+        const data = h?.data as { version?: string; services?: { database?: string } } | undefined;
+        setBackend({ ok: !!h?.ok, version: data?.version, database: data?.services?.database });
+      })
+      .catch(() => setBackend({ ok: false }));
   }, []);
 
   if (loading) return <LoadingSpinner message="데이터 수집 현황 로딩 중..." />;
@@ -848,20 +873,80 @@ export default function DataCollectionPage() {
       {/* ── 파이프라인 헬스 ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
         <h3 className="font-semibold text-gray-900 mb-1">데이터 파이프라인 헬스</h3>
-        <p className="text-xs text-gray-500 mb-4">
+        <p className="text-xs text-gray-500 mb-1">
           🟢 정상 · 🟡 이슈 (작동 가능하나 개선 필요) · ⚪ 미설정 (계획됨)
         </p>
+        <p className="text-xs text-gray-400 mb-4">
+          <span className="inline-flex items-center gap-1 mr-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> LIVE = 이 페이지 로드 시 실측
+          </span>
+          <span className="inline-flex items-center gap-1">
+            ⏱ 확인 = 정적 선언(수동 검증일) — 날짜가 오래됐으면 재확인 필요
+          </span>
+        </p>
         <ul className="space-y-2.5">
-          {PIPELINE_STATUS.map((item) => (
-            <li key={item.name} className="flex items-start">
-              {pipelineDot(item.status)}
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">{item.name}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
-              </div>
-            </li>
-          ))}
+          {(() => {
+            const bank = stats.remoteQuestionBank;
+            const items: Array<PipelineItem & { live?: boolean; liveText?: string }> =
+              PIPELINE_STATUS.map((item) => {
+                // 원격 문항 뱅크 — Firestore에서 실측한 값으로 덮어쓴다 (하드코딩 X)
+                if (item.name.startsWith('결큐 질문 원격화')) {
+                  return {
+                    ...item,
+                    status: bank.total > 0 ? 'ok' : 'warn',
+                    live: true,
+                    detail:
+                      bank.total > 0
+                        ? `✅ 원격 오버레이 라이브 — gyeolQuestionBank ${bank.total}개 문서${bank.retired > 0 ? ` (은퇴 ${bank.retired})` : ''}. 앱 v3.0.18 daily_question_service가 번들 위에 적용(retired 제외).`
+                        : '⚠ 원격 뱅크 비어있음 — 번들 165개만 사용 중. "결큐 질문 관리"에서 수정/시드하면 활성화.',
+                  };
+                }
+                return item;
+              });
+            return items.map((item) => (
+              <li key={item.name} className="flex items-start">
+                {pipelineDot(item.status)}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 flex items-center flex-wrap gap-x-2 gap-y-1">
+                    {item.name}
+                    {item.live ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        LIVE
+                      </span>
+                    ) : item.verifiedAt ? (
+                      <span
+                        className="inline-flex items-center text-[10px] font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
+                        title={item.reverify ? `재확인: ${item.reverify}` : undefined}
+                      >
+                        ⏱ 확인 {item.verifiedAt}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
+                </div>
+              </li>
+            ));
+          })()}
         </ul>
+
+        {/* 백엔드 런타임 실측 (기존 /api/admin/backend-health 프록시) */}
+        <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> LIVE
+          </span>
+          <span className="text-sm font-medium text-gray-800">FastAPI 백엔드</span>
+          {backend === null ? (
+            <span className="text-xs text-gray-400">확인 중…</span>
+          ) : backend.ok ? (
+            <span className="text-xs text-emerald-600">
+              정상{backend.version ? ` · v${backend.version}` : ''}
+              {backend.database ? ` · DB ${backend.database}` : ''}
+            </span>
+          ) : (
+            <span className="text-xs text-rose-600">응답 없음 — /dashboard/health 확인</span>
+          )}
+        </div>
       </div>
 
       {/* ── 데이터 흐름 다이어그램 (텍스트 ASCII art alternative) ── */}
