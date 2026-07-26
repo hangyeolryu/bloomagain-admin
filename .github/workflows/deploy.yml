@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Firebase Hosting 자동 배포 (main 푸시 시)
+#
+# 이 앱은 Firebase Hosting의 "web frameworks" 지원으로 배포된다 —
+# `firebase deploy`가 내부적으로 `next build`를 돌리고, SSR을 Cloud Run
+# 서비스(ssrbloomagainkorea · asia-northeast3 · project bloomagain-korea)로
+# 올린다. next.config.ts가 백엔드 크리덴셜을 "빌드 시점에 inline"하므로
+# (Firebase 스탠드얼론이 런타임에 .env를 안 읽음) 빌드 전에 .env.production을
+# 만들어 공개/서버 값을 모두 채워 준다.
+#
+# ── 필요한 GitHub Secrets (Settings → Secrets and variables → Actions) ────────
+#   인증
+#     FIREBASE_SERVICE_ACCOUNT        서비스계정 키 JSON 전체 (아래 IAM 참고)
+#   공개 값 (클라이언트 번들에 포함 — 민감하지 않지만 환경마다 달라 Secret로 관리)
+#     NEXT_PUBLIC_FIREBASE_API_KEY
+#     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+#     NEXT_PUBLIC_FIREBASE_APP_ID
+#     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID   (선택 — 없으면 빈 값)
+#   서버 값 (빌드 시 inline)
+#     BLOOMAGAIN_BACKEND_URL
+#     NICE_BACKEND_URL
+#     BACKEND_APP_ID
+#     BACKEND_API_KEY
+#     TITA_OFFICIAL_SENDER_UID          (선택)
+#
+# ── 서비스계정 IAM 역할 (bloomagain-korea 프로젝트) ──────────────────────────
+#   Firebase Hosting Admin, Cloud Run Admin, Cloud Functions Admin,
+#   Artifact Registry Admin, Cloud Build Editor, Service Account User,
+#   Firebase Authentication Viewer(또는 Editor). 프레임워크 배포는 Cloud Run/
+#   Build를 건드리므로 위 조합이 필요하다. (최소권한은 배포 로그 보며 조정)
+#
+#   키 발급: GCP Console → IAM → 서비스 계정 → 키 추가(JSON) →
+#            그 JSON 전체를 FIREBASE_SERVICE_ACCOUNT Secret에 붙여넣기.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # 수동 실행(Actions 탭 → Run workflow)도 허용
+
+# 같은 브랜치 배포가 겹치지 않게 — 새 푸시가 오면 진행 중인 배포는 취소.
+concurrency:
+  group: deploy-firebase-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 공개 상수(도메인/프로젝트/버킷)는 .env.example의 고정값을 그대로 쓰고,
+      # 나머지 민감·환경별 값은 Secrets에서 채운다. 서버 값은 next.config.ts가
+      # process.env로 읽어 빌드 시 inline하므로 여기서 함께 넣어 줘야 한다.
+      - name: Write .env.production
+        run: |
+          cat > .env.production <<EOF
+          NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=bloomagain-korea.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID=bloomagain-korea
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=bloomagain-korea.firebasestorage.app
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+          BLOOMAGAIN_BACKEND_URL=${{ secrets.BLOOMAGAIN_BACKEND_URL }}
+          NICE_BACKEND_URL=${{ secrets.NICE_BACKEND_URL }}
+          BACKEND_APP_ID=${{ secrets.BACKEND_APP_ID }}
+          BACKEND_API_KEY=${{ secrets.BACKEND_API_KEY }}
+          TITA_OFFICIAL_SENDER_UID=${{ secrets.TITA_OFFICIAL_SENDER_UID }}
+          EOF
+
+      # 서비스계정 JSON을 파일로 쓰고 GOOGLE_APPLICATION_CREDENTIALS로 노출.
+      # firebase-tools가 이 경로를 읽어 인증한다(대화형 로그인/토큰 불필요).
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Firebase Hosting
+        run: npx --yes firebase-tools@latest deploy --only hosting --project bloomagain-korea --non-interactive
