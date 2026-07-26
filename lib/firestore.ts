@@ -1381,6 +1381,7 @@ export async function getMatchingStats(): Promise<MatchingStats> {
 export interface DataCollectionStats {
   // High-level
   totalUsers: number;
+  usersCompletedProfile: number;    // 온보딩 'completed' — NICE + displayName + (city|interests). 참여율 분모.
   usersWithTags: number;            // users.dailyQuestionTags non-empty
   usersWithEmbedding: number;       // users.embedding non-empty
   usersAtDailyCap: number;          // users that hit today's 8 answers
@@ -1429,6 +1430,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
   })();
 
   const tagCounter = new Map<string, number>();
+  let usersCompletedProfile = 0;
   let usersWithTags = 0;
   let usersWithEmbedding = 0;
   let usersAtDailyCap = 0;
@@ -1436,6 +1438,9 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
 
   for (const d of usersSnap.docs) {
     const data = d.data();
+    // 프로필 셋업 완료 = 온보딩 'completed' 단계 (참여율 등 engagement 지표의
+    // 올바른 분모 — 가입만 하고 온보딩 안 끝낸 사람을 분모에서 제외).
+    if (classifyOnboardingStage(data as UserProfile) === 'completed') usersCompletedProfile++;
     const tags = (data.dailyQuestionTags as unknown[] | undefined)?.filter(
       (x): x is string => typeof x === 'string',
     ) ?? [];
@@ -1630,6 +1635,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
 
   return {
     totalUsers: usersSnap.size,
+    usersCompletedProfile,
     usersWithTags,
     usersWithEmbedding,
     usersAtDailyCap,

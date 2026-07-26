@@ -246,9 +246,11 @@ function buildInsights(s: DataCollectionStats): Insight[] {
   const answeredUsers =
     s.totalUsers - (s.depthBuckets.find((b) => b.label.startsWith('0'))?.count ?? 0);
 
-  // 1) 참여율 — 가입자 중 결큐를 실제로 답한 비율
-  if (s.totalUsers > 0) {
-    const partRate = s.usersWithTags / s.totalUsers;
+  // 1) 참여율 — 프로필 셋업 완료자 중 결큐를 실제로 답한 비율.
+  //    분모는 '가입자 전체'가 아니라 '온보딩 완료자' — 가입만 하고 온보딩을
+  //    안 끝낸 사람까지 넣으면 참여율이 부당하게 낮게 보인다.
+  if (s.usersCompletedProfile > 0) {
+    const partRate = s.usersWithTags / s.usersCompletedProfile;
     out.push(
       partRate >= 0.5
         ? {
@@ -257,7 +259,7 @@ function buildInsights(s: DataCollectionStats): Insight[] {
             icon: '🌱',
             title: '결큐 참여율',
             metric: pct(partRate),
-            reading: `가입자 ${s.totalUsers}명 중 ${s.usersWithTags}명이 태그를 쌓았습니다. 매칭 엔진이 굴러갈 최소 연료가 확보된 상태.`,
+            reading: `프로필 완료자 ${s.usersCompletedProfile}명 중 ${s.usersWithTags}명이 태그를 쌓았습니다. 매칭 엔진이 굴러갈 최소 연료가 확보된 상태.`,
             action: '현 수준 유지. 참여자를 게이트(3답)·결모임(7답) 쪽으로 밀어 올리는 데 집중.',
           }
         : {
@@ -266,7 +268,7 @@ function buildInsights(s: DataCollectionStats): Insight[] {
             icon: '🌱',
             title: '결큐 참여율 낮음',
             metric: pct(partRate),
-            reading: `가입자 ${s.totalUsers}명 중 ${s.usersWithTags}명만 답변을 시작했습니다. 나머지는 태그가 0이라 추천 대상에서 사실상 제외됩니다.`,
+            reading: `프로필 완료자 ${s.usersCompletedProfile}명 중 ${s.usersWithTags}명만 답변을 시작했습니다. 나머지는 태그가 0이라 추천 대상에서 사실상 제외됩니다. (가입만 하고 온보딩 미완료자는 분모에서 제외)`,
             action:
               '온보딩 직후 첫 결큐 1문항을 강제 노출(스킵 불가) 또는 홈 상단 고정 배너. "3개만 답하면 사람이 보여요" 카피로 게이트 보상을 미리 알리기.',
           },
@@ -476,7 +478,8 @@ function InsightCard({ i }: { i: Insight }) {
 function ParticipationFunnel({ s }: { s: DataCollectionStats }) {
   const answered = s.totalUsers - (s.depthBuckets.find((b) => b.label.startsWith('0'))?.count ?? 0);
   const stages = [
-    { label: '가입', value: s.totalUsers, color: 'from-blue-400 to-blue-500' },
+    { label: '가입', value: s.totalUsers, color: 'from-slate-300 to-slate-400' },
+    { label: '프로필 완료', value: s.usersCompletedProfile, color: 'from-blue-400 to-blue-500' },
     { label: '답변 시작 (≥1)', value: answered, color: 'from-teal-400 to-emerald-500' },
     { label: '결 게이트 (≥3)', value: s.gateEligible, color: 'from-emerald-400 to-green-500' },
     { label: '결모임 자격 (≥7)', value: s.moimEligible, color: 'from-green-500 to-emerald-600' },
@@ -533,7 +536,9 @@ export default function DataCollectionPage() {
   if (!stats) return null;
 
   const tagPropagationRate =
-    stats.totalUsers > 0 ? Math.round((stats.usersWithTags / stats.totalUsers) * 100) : 0;
+    stats.usersCompletedProfile > 0
+      ? Math.round((stats.usersWithTags / stats.usersCompletedProfile) * 100)
+      : 0;
   const embeddingCoverage =
     stats.usersWithTags > 0 ? Math.round((stats.usersWithEmbedding / stats.usersWithTags) * 100) : 0;
   const insights = buildInsights(stats);
@@ -594,6 +599,7 @@ export default function DataCollectionPage() {
         <ParticipationFunnel s={stats} />
         <p className="text-xs text-gray-400 mt-3">
           각 단계 사이 전환율(↓%)이 가장 낮은 지점이 지금 손봐야 할 병목입니다.
+          가입→프로필 완료 = 온보딩 이탈, 프로필 완료→답변 = 결큐 참여 이탈로 성격이 다릅니다.
           제품 임계값: 3답=사람 리스트 열림 · 7답=결모임 자동 조립 풀 입장.
         </p>
       </div>
@@ -601,7 +607,7 @@ export default function DataCollectionPage() {
       {/* ── 사용자 참여 현황 ── */}
       <div className="mb-6">
         <SectionHeading>사용자 참여</SectionHeading>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <StatsCard
             label="총 사용자"
             value={stats.totalUsers}
@@ -609,11 +615,22 @@ export default function DataCollectionPage() {
             color="bg-blue-50"
           />
           <StatsCard
+            label="프로필 완료"
+            value={stats.usersCompletedProfile}
+            icon="✅"
+            color="bg-sky-50"
+            delta={
+              stats.totalUsers > 0
+                ? `${Math.round((stats.usersCompletedProfile / stats.totalUsers) * 100)}% (온보딩 완료)`
+                : '온보딩 완료'
+            }
+          />
+          <StatsCard
             label="태그 보유 사용자"
             value={stats.usersWithTags}
             icon="🏷️"
             color="bg-emerald-50"
-            delta={`${tagPropagationRate}% 참여율`}
+            delta={`${tagPropagationRate}% 참여 (프로필 완료자 중)`}
           />
           <StatsCard
             label="Embedding 보유"
