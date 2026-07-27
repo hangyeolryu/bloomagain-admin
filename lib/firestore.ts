@@ -2878,6 +2878,109 @@ export const GYEOL_GENDER_LABELS: Record<string, string> = {
 export const GYEOL_AGE_LABELS: Record<string, string> = {
   under45: '만 45세 미만', '45-54': '45–54세', '55-64': '55–64세', '65plus': '65세 이상',
 };
+
+// ─── 니즈 설문 ("요즘 나에게 필요한 것" — /needs, 5060 광고 퍼널) ────────────
+// 겉은 테스트, 속은 수요 설문. situation(자녀독립·이혼·사별·은퇴)=세그먼트,
+// activity=모임 주제 수요, worry=광고 첫 줄 각도. 컬렉션: needs_survey_events.
+
+export interface NeedsStats {
+  totals: { start: number; complete: number; download: number; share: number };
+  completionRate: number; // complete / start
+  downloadRate: number; // download / complete
+  situation: { key: string; count: number }[]; // ⭐ 삶의 변화 세그먼트
+  activity: { key: string; count: number }[]; // ⭐ 하고 싶은 것
+  worry: { key: string; count: number }[]; // ⭐ 걱정 (광고 각도)
+  person: { key: string; count: number }[];
+  funnel: { key: string; count: number }[];
+  moment: { key: string; count: number }[];
+  ageBand: { key: string; count: number }[];
+  underAgeShare: number;
+  bySource: { source: string; count: number }[];
+  // "또는, 직접 쓸게요" 원문 — 보기 밖 수요 발굴의 재료 (최신순).
+  customTexts: { dim: string; text: string; createdAt?: Date }[];
+  capped: boolean;
+}
+
+export const NEEDS_LABELS: Record<string, string> = {
+  // situation
+  empty_nest: '자녀 독립 (빈 둥지)', divorce: '이혼 후 새 출발', bereave: '사별',
+  retire: '은퇴·일 쉼', no_change: '큰 변화 없음',
+  // activity
+  walk: '동네 산책', tea: '차 한잔·맛집', hobby: '취미 함께', chat: '편한 수다',
+  // worry
+  scam: '사기·이상한 사람', awkward: '어색함', time: '시간 부담', none: '딱히 없음',
+  // person
+  same: '동성 또래', any: '결만 맞으면', calm: '조용한 분', lively: '활발한 분',
+  // funnel
+  online: '온라인 대화 먼저', offline: '만나서 얼굴 보고',
+  // moment
+  meal: '맛집 발견했을 때', talk: '얘기하고 싶을 때', weekend: '주말이 길 때',
+  // 공통 — "또는, 직접 쓸게요"
+  other: '✏️ 직접 입력',
+};
+
+export const NEEDS_DIM_LABELS: Record<string, string> = {
+  moment: "'누가 있었으면' 순간", situation: '삶의 변화', activity: '하고 싶은 것',
+  person: '편한 사람', worry: '걱정', funnel: '온라인/만남',
+};
+
+export async function getNeedsStats(): Promise<NeedsStats> {
+  const CAP = 2000;
+  const snap = await getDocs(
+    query(collection(db, 'needs_survey_events'), orderBy('createdAt', 'desc'), limit(CAP))
+  );
+
+  const totals = { start: 0, complete: 0, download: 0, share: 0 };
+  const dims = ['situation', 'activity', 'worry', 'person', 'funnel', 'moment', 'ageBand'] as const;
+  const counts: Record<string, Map<string, number>> = {};
+  dims.forEach((d) => { counts[d] = new Map(); });
+  const sourceCount = new Map<string, number>();
+  const customTexts: NeedsStats['customTexts'] = [];
+
+  snap.forEach((d) => {
+    const x = d.data() as DocumentData;
+    const phase = String(x.phase ?? '');
+    if (phase in totals) totals[phase as keyof typeof totals] += 1;
+    // 답 분포는 complete 이벤트 기준(전체 답이 한 번에 실림) — 중복 집계 방지.
+    if (phase !== 'complete') return;
+    for (const dim of dims) {
+      const v = x[dim];
+      if (typeof v === 'string' && v) {
+        counts[dim].set(v, (counts[dim].get(v) ?? 0) + 1);
+      }
+      // "직접 입력" 원문 수집 (momentText 등) — 보기 밖 수요의 원석.
+      const txt = x[`${dim}Text`];
+      if (typeof txt === 'string' && txt.trim() && customTexts.length < 100) {
+        customTexts.push({ dim, text: txt.trim(), createdAt: toDate(x.createdAt) });
+      }
+    }
+    const s = (x.source as string) || '(직접/알수없음)';
+    sourceCount.set(s, (sourceCount.get(s) ?? 0) + 1);
+  });
+
+  const toArr = (m: Map<string, number>) =>
+    [...m.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
+  const ageTotal = [...counts.ageBand.values()].reduce((a, b) => a + b, 0);
+
+  return {
+    totals,
+    completionRate: totals.start ? totals.complete / totals.start : 0,
+    downloadRate: totals.complete ? totals.download / totals.complete : 0,
+    situation: toArr(counts.situation),
+    activity: toArr(counts.activity),
+    worry: toArr(counts.worry),
+    person: toArr(counts.person),
+    funnel: toArr(counts.funnel),
+    moment: toArr(counts.moment),
+    ageBand: toArr(counts.ageBand),
+    underAgeShare: ageTotal ? (counts.ageBand.get('under45') ?? 0) / ageTotal : 0,
+    bySource: [...sourceCount.entries()]
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count),
+    customTexts,
+    capped: snap.size >= CAP,
+  };
+}
 export const GYEOL_COMFORT_LABELS: Record<string, string> = {
   same: '동성 친구가 편해요', any: '상관없어요, 결만 맞으면', opp: '이성 친구도 좋아요',
 };
