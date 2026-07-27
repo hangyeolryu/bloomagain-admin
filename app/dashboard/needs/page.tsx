@@ -103,6 +103,11 @@ export default function NeedsDashboardPage() {
       </div>
 
       <Section
+        title="⭐ 지금 그 시간을 어떻게 보내나 (실태)"
+        hint='사실상 경쟁자 조사 — TV·유튜브가 경쟁자인지, "그냥 흘러가요"(핵심 타겟)가 몇인지'
+        data={stats.timeuse}
+      />
+      <Section
         title="⭐ 삶의 변화 (왜 시간이 많아졌나)"
         hint='"비슷한 길을 걷는 사람끼리" 세그먼트 — 자녀독립·이혼·사별·은퇴별 모임/카피 근거'
         data={stats.situation}

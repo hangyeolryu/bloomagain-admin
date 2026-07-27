@@ -2887,6 +2887,7 @@ export interface NeedsStats {
   totals: { start: number; complete: number; download: number; share: number };
   completionRate: number; // complete / start
   downloadRate: number; // download / complete
+  timeuse: { key: string; count: number }[]; // ⭐ 실태(지금 그 시간을 뭘로 채우나)
   situation: { key: string; count: number }[]; // ⭐ 삶의 변화 세그먼트
   activity: { key: string; count: number }[]; // ⭐ 하고 싶은 것
   worry: { key: string; count: number }[]; // ⭐ 걱정 (광고 각도)
@@ -2903,6 +2904,9 @@ export interface NeedsStats {
 }
 
 export const NEEDS_LABELS: Record<string, string> = {
+  // timeuse (실태)
+  tv: 'TV·유튜브', solo_out: '혼자 산책·운동', hobby_alone: '혼자 취미',
+  with_people: '친구·모임 만나며', drift: '그냥 흘러가요',
   // situation
   empty_nest: '자녀 독립 (빈 둥지)', spouse_diff: '배우자와 결이 다름', divorce: '이혼 후 새 출발', bereave: '사별',
   retire: '은퇴·일 쉼', no_change: '큰 변화 없음',
@@ -2925,6 +2929,7 @@ export const NEEDS_LABELS: Record<string, string> = {
 };
 
 export const NEEDS_DIM_LABELS: Record<string, string> = {
+  timeuse: '시간을 보내는 법',
   moment: "'누가 있었으면' 순간", situation: '삶의 변화', activity: '하고 싶은 것',
   person: '편한 사람', worry: '걱정', funnel: '온라인/만남',
 };
@@ -2936,7 +2941,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   );
 
   const totals = { start: 0, complete: 0, download: 0, share: 0 };
-  const dims = ['situation', 'activity', 'worry', 'person', 'gender', 'funnel', 'moment', 'ageBand'] as const;
+  const dims = ['timeuse', 'situation', 'activity', 'worry', 'person', 'gender', 'funnel', 'moment', 'ageBand'] as const;
   const counts: Record<string, Map<string, number>> = {};
   dims.forEach((d) => { counts[d] = new Map(); });
   const sourceCount = new Map<string, number>();
@@ -2971,6 +2976,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     totals,
     completionRate: totals.start ? totals.complete / totals.start : 0,
     downloadRate: totals.complete ? totals.download / totals.complete : 0,
+    timeuse: toArr(counts.timeuse),
     situation: toArr(counts.situation),
     activity: toArr(counts.activity),
     worry: toArr(counts.worry),
