@@ -22,6 +22,22 @@ function fmtDateTime(d: Date | null) {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
+function genderLabel(g: string): { label: string; cls: string } {
+  const s = (g ?? '').trim().toLowerCase();
+  if (['f', 'female', '여', '여성'].includes(s)) return { label: '여', cls: 'text-rose-600' };
+  if (['m', 'male', '남', '남성'].includes(s)) return { label: '남', cls: 'text-sky-600' };
+  return { label: '—', cls: 'text-gray-300' };
+}
+function fmtAgo(d: Date | null): string {
+  if (!d) return '';
+  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return '방금';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  return `${Math.floor(h / 24)}일 전`;
+}
 
 function Tile({ label, value, hint, strong }: { label: string; value: string | number; hint?: string; strong?: boolean }) {
   return (
@@ -123,6 +139,7 @@ export default function MoimDashboardPage() {
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                     <th className="py-2 pr-3">등록자</th>
+                    <th className="py-2 pr-3">성별</th>
                     <th className="py-2 pr-3">종류</th>
                     <th className="py-2 pr-3">조건</th>
                     <th className="py-2 pr-3">상태</th>
@@ -152,6 +169,12 @@ export default function MoimDashboardPage() {
                           <span className="ml-1 font-mono text-[10px] text-gray-400">
                             {r.uid.slice(0, 6)}…
                           </span>
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          {(() => {
+                            const g = genderLabel(r.gender);
+                            return <span className={`text-xs font-medium ${g.cls}`}>{g.label}</span>;
+                          })()}
                         </td>
                         <td className="py-2.5 pr-3">
                           <span
@@ -198,6 +221,19 @@ export default function MoimDashboardPage() {
             <Tile label="만료" value={p.expired} />
             <Tile label="무산 (수락 부족)" value={p.notFormed} />
             <Tile label="전체 제안" value={p.total} />
+          </div>
+
+          {/* 방이 열린 뒤 실제로 대화가 오갔는지 — 결의 진짜 성패(빈 방 사망 감시) */}
+          <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-bold text-gray-900">방이 열린 뒤, 대화는?</h3>
+            <p className="mb-3 mt-0.5 text-xs text-gray-500">
+              방 생성이 끝이 아니에요. 실제로 멤버가 말문을 텄는지가 결의 성패 — 시스템 안내만 뜨고 조용하면 ‘빈 방’이에요.
+            </p>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <Tile label="대화 시작된 방" value={p.roomsAlive} strong hint={`방 ${p.roomCreated}개 중`} />
+              <Tile label="빈 방 (아무도 말 안 함)" value={p.roomsSilent} hint="시스템 안내만" />
+              <Tile label="대화 시작률" value={pct(p.roomCreated > 0 ? p.roomsAlive / p.roomCreated : null)} />
+            </div>
           </div>
         </section>
 
@@ -248,7 +284,8 @@ export default function MoimDashboardPage() {
                     <th className="py-2 pr-3">묶인 분들 (자동 조립)</th>
                     <th className="py-2 pr-3">수락/응답</th>
                     <th className="py-2 pr-3">minPair</th>
-                    <th className="py-2">상태</th>
+                    <th className="py-2 pr-3">상태</th>
+                    <th className="py-2">대화</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -271,7 +308,7 @@ export default function MoimDashboardPage() {
                       </td>
                       <td className="py-2 pr-3 tabular-nums">{r.accepted}/{r.responded}</td>
                       <td className="py-2 pr-3 tabular-nums text-gray-600">{r.minPair === null ? '—' : r.minPair.toFixed(3)}</td>
-                      <td className="py-2">
+                      <td className="py-2 pr-3">
                         <span className={
                           r.status === 'room_created' ? 'rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800' :
                           r.status === 'proposed' ? 'rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800' :
@@ -279,6 +316,22 @@ export default function MoimDashboardPage() {
                         }>
                           {STATUS_LABELS[r.status] ?? r.status}
                         </span>
+                      </td>
+                      <td className="py-2 whitespace-nowrap">
+                        {r.status !== 'room_created' ? (
+                          <span className="text-xs text-gray-300">—</span>
+                        ) : r.alive ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                            <span className="font-medium tabular-nums text-gray-700">대화 {r.memberMsgs}</span>
+                            {r.lastMessageAt && <span className="text-gray-400">· {fmtAgo(r.lastMessageAt)}</span>}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />
+                            조용함
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

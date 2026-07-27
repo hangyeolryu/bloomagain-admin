@@ -3237,6 +3237,8 @@ export interface MoimStats {
     inviteAcceptRate: number | null; // 응답 슬롯 중 수락 비율
     responseRate: number | null; // 초대 슬롯 중 응답 비율
     avgMinPair: number | null; // 방 생성된 제안의 평균 minPair (캘리브레이션)
+    roomsAlive: number; // 방 생성 중 멤버가 실제로 대화한 방 (시스템 메시지 외)
+    roomsSilent: number; // 방 생성됐지만 아무도 말 안 한 '빈 방'
   };
   recentProposals: {
     createdAt: Date | null;
@@ -3248,6 +3250,11 @@ export interface MoimStats {
     responded: number;
     status: string;
     minPair: number | null;
+    // 방이 생성된 제안(room_created)의 대화 진행 상황:
+    conversationId: string | null;
+    memberMsgs: number | null; // 시스템 메시지 제외, 멤버가 실제로 보낸 메시지 수
+    lastMessageAt: Date | null; // 방의 마지막 활동
+    alive: boolean | null; // 멤버가 한 마디라도 했으면 true (빈 방 아님)
   }[];
   // 최근 등록된 자리표 — 누가·뭘·언제 (등록자 이름/uid 포함)
   recentTickets: {
@@ -3260,6 +3267,7 @@ export interface MoimStats {
     timeSlots: string[];
     topics: string[];
     urgency: string;
+    gender: string;
     createdAt: Date | null;
   }[];
   capped: boolean;
@@ -3306,11 +3314,11 @@ export async function getMoimStats(): Promise<MoimStats> {
     'suspended', 'suspended_pending_review', 'restricted', 'blocked',
     'locked', 'shadow_ban', 'shadow_banned', 'blacklisted',
   ]);
-  const ownerInfo = new Map<string, { valid: boolean; name: string }>();
+  const ownerInfo = new Map<string, { valid: boolean; name: string; gender: string }>();
   await Promise.all(
     [...new Set(ticketRows.map((r) => r.uid))].map(async (uid) => {
       if (uid === '(알 수 없음)') {
-        ownerInfo.set(uid, { valid: false, name: '(알 수 없음)' });
+        ownerInfo.set(uid, { valid: false, name: '(알 수 없음)', gender: '' });
         return;
       }
       try {
@@ -3323,9 +3331,10 @@ export async function getMoimStats(): Promise<MoimStats> {
         ownerInfo.set(uid, {
           valid,
           name: (data?.displayName as string) || '(탈퇴한 회원)',
+          gender: (data?.gender as string) ?? '',
         });
       } catch {
-        ownerInfo.set(uid, { valid: false, name: '(조회 실패)' });
+        ownerInfo.set(uid, { valid: false, name: '(조회 실패)', gender: '' });
       }
     }),
   );
@@ -3375,6 +3384,7 @@ export async function getMoimStats(): Promise<MoimStats> {
       timeSlots: (t.timeSlots as string[] | undefined) ?? [],
       topics: (t.topics as string[] | undefined) ?? [],
       urgency: String(t.urgency ?? 'anytime'),
+      gender: ownerInfo.get(r.uid)?.gender ?? '',
       createdAt: r.createdAt,
     };
   });
@@ -3387,7 +3397,12 @@ export async function getMoimStats(): Promise<MoimStats> {
     inviteAcceptRate: null as number | null,
     responseRate: null as number | null,
     avgMinPair: null as number | null,
+    roomsAlive: 0,
+    roomsSilent: 0,
   };
+  // 방 생성된 제안의 conversationId 전부 수집 — 아래에서 방마다 '실제 대화가
+  // 오갔는지(빈 방인지)' 확인한다. 결의 성패는 방 생성이 아니라 '대화 시작'이다.
+  const allRoomConvIds: string[] = [];
   let slots = 0;
   let responded = 0;
   let accepted = 0;
@@ -3417,6 +3432,9 @@ export async function getMoimStats(): Promise<MoimStats> {
       minPairSum += minPair;
       minPairN += 1;
     }
+    const convId =
+      status === 'room_created' ? ((p.conversationId as string | undefined) ?? null) : null;
+    if (convId) allRoomConvIds.push(convId);
     if (recentProposals.length < 40) {
       recentMemberUids.push(members);
       recentProposals.push({
@@ -3429,6 +3447,10 @@ export async function getMoimStats(): Promise<MoimStats> {
         responded: respondedHere,
         status,
         minPair,
+        conversationId: convId,
+        memberMsgs: null, // 아래에서 방 상태 해석
+        lastMessageAt: null,
+        alive: null,
       });
     }
   });
@@ -3455,6 +3477,41 @@ export async function getMoimStats(): Promise<MoimStats> {
   );
   recentProposals.forEach((p, i) => {
     p.memberNames = recentMemberUids[i].map((u) => nameOf.get(u) ?? '(?)');
+  });
+
+  // 방 생성된 제안의 '대화 진행 상황' — 방마다 시스템 메시지(senderId "")를 뺀
+  // 멤버 실제 발화 수를 세어 '살아난 방'과 '빈 방'을 가른다. 결의 목표는 방 생성이
+  // 아니라 대화다: 방만 열리고 아무도 말 안 하면 실패로 본다("빈 방 사망").
+  const convHealth = new Map<string, { memberMsgs: number; lastMessageAt: Date | null }>();
+  await Promise.all(
+    [...new Set(allRoomConvIds)].map(async (cid) => {
+      try {
+        const [cs, cnt] = await Promise.all([
+          getDoc(doc(db, 'conversations', cid)),
+          getCountFromServer(
+            query(collection(db, 'conversations', cid, 'messages'), where('senderId', '!=', '')),
+          ),
+        ]);
+        convHealth.set(cid, {
+          memberMsgs: cnt.data().count,
+          lastMessageAt: toDate(cs.data()?.lastMessageAt) ?? null,
+        });
+      } catch {
+        convHealth.set(cid, { memberMsgs: 0, lastMessageAt: null });
+      }
+    }),
+  );
+  for (const cid of allRoomConvIds) {
+    if ((convHealth.get(cid)?.memberMsgs ?? 0) > 0) proposals.roomsAlive += 1;
+    else proposals.roomsSilent += 1;
+  }
+  recentProposals.forEach((p) => {
+    if (!p.conversationId) return;
+    const h = convHealth.get(p.conversationId);
+    if (!h) return;
+    p.memberMsgs = h.memberMsgs;
+    p.lastMessageAt = h.lastMessageAt;
+    p.alive = h.memberMsgs > 0;
   });
 
   const meetDemand = [...districtCount.entries()]
