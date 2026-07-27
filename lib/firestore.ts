@@ -2891,6 +2891,7 @@ export interface NeedsStats {
   activity: { key: string; count: number }[]; // ⭐ 하고 싶은 것
   worry: { key: string; count: number }[]; // ⭐ 걱정 (광고 각도)
   person: { key: string; count: number }[];
+  gender: { key: string; count: number }[];
   funnel: { key: string; count: number }[];
   moment: { key: string; count: number }[];
   ageBand: { key: string; count: number }[];
@@ -2903,7 +2904,7 @@ export interface NeedsStats {
 
 export const NEEDS_LABELS: Record<string, string> = {
   // situation
-  empty_nest: '자녀 독립 (빈 둥지)', divorce: '이혼 후 새 출발', bereave: '사별',
+  empty_nest: '자녀 독립 (빈 둥지)', spouse_diff: '배우자와 결이 다름', divorce: '이혼 후 새 출발', bereave: '사별',
   retire: '은퇴·일 쉼', no_change: '큰 변화 없음',
   // activity
   walk: '동네 산책', tea: '차 한잔·맛집', hobby: '취미 함께', chat: '편한 수다',
@@ -2915,6 +2916,10 @@ export const NEEDS_LABELS: Record<string, string> = {
   online: '온라인 대화 먼저', offline: '만나서 얼굴 보고',
   // moment
   meal: '맛집 발견했을 때', talk: '얘기하고 싶을 때', weekend: '주말이 길 때',
+  // 성별 (결큐와 동일 코드)
+  f: '여성', m: '남성', na: '말하지 않음',
+  // 연령 5살 밴드 (굵은 밴드는 GYEOL_AGE_LABELS 폴백)
+  '45-49': '45–49세', '50-54': '50–54세', '55-59': '55–59세', '60-64': '60–64세',
   // 공통 — "또는, 직접 쓸게요"
   other: '✏️ 직접 입력',
 };
@@ -2931,7 +2936,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   );
 
   const totals = { start: 0, complete: 0, download: 0, share: 0 };
-  const dims = ['situation', 'activity', 'worry', 'person', 'funnel', 'moment', 'ageBand'] as const;
+  const dims = ['situation', 'activity', 'worry', 'person', 'gender', 'funnel', 'moment', 'ageBand'] as const;
   const counts: Record<string, Map<string, number>> = {};
   dims.forEach((d) => { counts[d] = new Map(); });
   const sourceCount = new Map<string, number>();
@@ -2970,6 +2975,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     activity: toArr(counts.activity),
     worry: toArr(counts.worry),
     person: toArr(counts.person),
+    gender: toArr(counts.gender),
     funnel: toArr(counts.funnel),
     moment: toArr(counts.moment),
     ageBand: toArr(counts.ageBand),
