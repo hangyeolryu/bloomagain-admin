@@ -70,6 +70,7 @@ function RoomInner() {
   const [groupName, setGroupName] = useState('결 그룹방');
   const [createdAt, setCreatedAt] = useState<Date | undefined>();
   const [lastAt, setLastAt] = useState<Date | undefined>();
+  const [lastReadAt, setLastReadAt] = useState<Date | undefined>();
   const [members, setMembers] = useState<Member[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
   const loggedRef = useRef<string | null>(null);
@@ -89,6 +90,7 @@ function RoomInner() {
         setGroupName((c.metadata?.groupName as string) || '결 그룹방');
         setCreatedAt(toDate(c.createdAt));
         setLastAt(toDate(c.lastMessageAt));
+        setLastReadAt(toDate(c.lastReadAt));
 
         const msgSnap = await getDocs(
           query(
@@ -165,8 +167,17 @@ function RoomInner() {
 
   const memberMsgTotal = members.reduce((s, m) => s + m.spoke, 0);
   const spokeCount = members.filter((m) => m.spoke > 0).length;
-  // '읽고 조용' = 다 읽었는데(unread 0) 한마디도 안 함 → 바로 이탈 위험 신호
-  const readSilent = members.filter((m) => m.spoke === 0 && m.unread === 0);
+  // 멤버가 한 명이라도 말한 방에서만 unread=0이 '읽음'을 뜻한다. 방을 막 만들면
+  // unreadCounts를 전원 0으로 씨딩하므로(시스템 환영 메시지는 안 읽음으로 안 침),
+  // 대화가 0인 방은 unread=0이 '아무도 안 열어봐도' 뜨는 기본값 → '읽고 조용'은 거짓.
+  const roomHasConversation = memberMsgTotal > 0;
+  // lastReadAt(전역)이 생성 이후로 갱신됐으면 '누군가' 방을 열어본 것(누구인지는 모름).
+  const roomOpened =
+    !!lastReadAt && !!createdAt && lastReadAt.getTime() - createdAt.getTime() > 3000;
+  // '읽고 조용' = (대화가 있는 방에서) 다 읽었는데 한마디도 안 함 → 이탈 위험 신호.
+  const readSilent = roomHasConversation
+    ? members.filter((m) => m.spoke === 0 && m.unread === 0)
+    : [];
 
   return (
     <div className="max-w-3xl">
@@ -204,8 +215,21 @@ function RoomInner() {
             </div>
             {memberMsgTotal === 0 && (
               <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                아직 아무도 말하지 않은 <b>빈 방</b>이에요. 아래 시스템 안내만 떠 있어요 —
-                아이스브레이커에 아무도 답하지 않았는지 대화록에서 확인해 보세요.
+                {roomOpened ? (
+                  <>
+                    <b>열어본 분은 있지만</b> 아직 아무도 말하지 않았어요. 시스템 안내만 떠 있어요 —
+                    첫 물꼬(아이스브레이커)가 약했는지 대화록에서 확인해 보세요.
+                  </>
+                ) : (
+                  <>
+                    <b>아직 아무도 방을 열어보지 않았어요.</b> (열람 기록 없음) — 시스템 안내만 있는
+                    상태예요. 알림이 닿았는지, 타이밍이 괜찮았는지 살펴보세요.
+                  </>
+                )}
+                <br />
+                <span className="text-amber-500">
+                  ※ 대화가 없는 방은 개인별 ‘읽음’ 여부를 알 수 없어요(unread 기본값 0).
+                </span>
               </p>
             )}
             <ul className="divide-y divide-gray-50">
@@ -214,6 +238,9 @@ function RoomInner() {
                 const badge =
                   m.spoke > 0 ? (
                     <Badge variant="green">말함 {m.spoke}</Badge>
+                  ) : !roomHasConversation ? (
+                    // 대화 0인 방: unread=0은 씨딩 기본값이라 '읽음'으로 못 읽는다.
+                    <Badge variant="gray">대기 중</Badge>
                   ) : m.unread === 0 ? (
                     <Badge variant="orange">읽고 조용</Badge>
                   ) : m.unread && m.unread > 0 ? (
