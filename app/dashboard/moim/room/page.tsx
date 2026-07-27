@@ -144,7 +144,24 @@ function RoomInner() {
     if (loading || notFound || !conversationId) return;
     if (!adminUser?.uid || members.length === 0) return;
     if (loggedRef.current === conversationId) return;
-    loggedRef.current = conversationId;
+    loggedRef.current = conversationId; // 이번 마운트 재실행 방지
+
+    // 열람 쓰로틀 — 같은 어드민이 같은 방을 1시간 내 다시 열면(새로고침 포함)
+    // 로그를 다시 남기지 않는다. append-only 룰이라 로그를 되읽을 수 없어,
+    // 브라우저 localStorage에 '이 방 마지막 기록 시각'을 저장해 판단한다.
+    const THROTTLE_MS = 60 * 60 * 1000;
+    const key = `moimRoomAccess:${adminUser.uid}:${conversationId}`;
+    try {
+      const last = Number(localStorage.getItem(key) || 0);
+      if (Date.now() - last < THROTTLE_MS) return; // 최근에 이미 기록함 → 생략
+    } catch {
+      /* localStorage 불가(사생활 모드 등) 시엔 그냥 기록 */
+    }
+    try {
+      localStorage.setItem(key, String(Date.now()));
+    } catch {
+      /* noop */
+    }
     void logMoimRoomAccess({
       viewerUid: adminUser.uid,
       viewerEmail: adminUser.email ?? null,
