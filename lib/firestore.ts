@@ -3558,3 +3558,79 @@ export async function getMoimStats(): Promise<MoimStats> {
     capped: ticketSnap.size >= CAP || proposalSnap.size >= CAP,
   };
 }
+
+// ── 전체 게시물(어드민) ──────────────────────────────────────────────────────
+// users/{uid}/posts·circles/{cid}/posts·루트 posts 를 collectionGroup으로 한 번에.
+export interface AdminPost {
+  postId: string;
+  authorUid: string;
+  authorName: string;
+  region: string | null; // 작성자 프로필의 동네(시·군·구) — 게시물엔 지역이 없다
+  source: 'feed' | 'circle';
+  content: string;
+  imageUrl: string | null;
+  likes: number;
+  comments: number;
+  createdAt: Date | null;
+}
+
+export async function getAllPosts(max = 300): Promise<AdminPost[]> {
+  const snap = await getDocs(
+    query(collectionGroup(db, 'posts'), orderBy('createdAt', 'desc'), limit(max)),
+  );
+  const raw = snap.docs.map((d) => {
+    const p = d.data() as DocumentData;
+    // 작성자: 게시물의 userId/authorId 우선(루트·서클 글), 없으면 부모 경로의
+    // uid(users/{uid}/posts). 부모의 부모가 'circles'면 서클 글로 표시.
+    const parentParent = d.ref.parent.parent;
+    const authorUid =
+      (p.userId as string) || (p.authorId as string) || parentParent?.id || '(알 수 없음)';
+    const source: 'feed' | 'circle' =
+      parentParent?.parent?.id === 'circles' ? 'circle' : 'feed';
+    return { d, p, authorUid, source };
+  });
+
+  const uids = [...new Set(raw.map((r) => r.authorUid))];
+  const info = new Map<string, { name: string; region: string | null }>();
+  await Promise.all(
+    uids.map(async (uid) => {
+      if (uid === '(알 수 없음)') {
+        info.set(uid, { name: '(알 수 없음)', region: null });
+        return;
+      }
+      try {
+        const u = await getDoc(doc(db, 'users', uid));
+        const dd = u.data();
+        const region =
+          (dd?.district as string) || (dd?.city as string) || (dd?.region as string) || null;
+        info.set(uid, { name: (dd?.displayName as string) || '(탈퇴한 회원)', region });
+      } catch {
+        info.set(uid, { name: '(조회 실패)', region: null });
+      }
+    }),
+  );
+
+  return raw.map(({ d, p, authorUid, source }) => {
+    const likedBy = p.likedBy as string[] | undefined;
+    const likes =
+      typeof p.likes === 'number' ? p.likes : typeof p.likeCount === 'number' ? p.likeCount : likedBy?.length ?? 0;
+    const comments =
+      typeof p.comments === 'number'
+        ? p.comments
+        : typeof p.commentCount === 'number'
+          ? p.commentCount
+          : 0;
+    return {
+      postId: d.id,
+      authorUid,
+      authorName: info.get(authorUid)?.name ?? '(?)',
+      region: info.get(authorUid)?.region ?? null,
+      source,
+      content: (p.content as string) ?? '',
+      imageUrl: (p.imageUrl as string) ?? (p.image as string) ?? null,
+      likes,
+      comments,
+      createdAt: toDate(p.createdAt) ?? null,
+    };
+  });
+}
