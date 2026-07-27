@@ -3634,3 +3634,84 @@ export async function getAllPosts(max = 300): Promise<AdminPost[]> {
     };
   });
 }
+
+// ── 그룹 찻자리 방 목록(어드민, 메타데이터 전용) ──────────────────────────────
+// 대화 '내용'이 아니라 활동 메타데이터(누가 몇 개 보냈나·읽음 여부·마지막 열람/대화
+// 시각)만 본다. 내용을 안 읽으므로 열람 감사로그를 남기지 않는다. 수동 생성한 방도
+// 여기 다 뜬다(제안 없이 만든 방은 결모임 '제안' 리스트엔 안 보이므로).
+export interface MoimRoomMember {
+  uid: string;
+  name: string;
+  spoke: number; // 이 방에서 보낸 메시지 수(내용은 안 읽고 카운트만)
+  unread: number | null;
+}
+export interface AdminMoimRoom {
+  conversationId: string;
+  groupName: string;
+  members: MoimRoomMember[];
+  memberMsgTotal: number;
+  createdAt: Date | null;
+  lastMessageAt: Date | null;
+  lastReadAt: Date | null; // 전역(누구인지는 모름) — '누군가 마지막으로 연 시각'
+}
+
+export async function getMoimRooms(max = 30): Promise<AdminMoimRoom[]> {
+  // conversationType=='group' 단일 필드 쿼리(자동 인덱스). 정렬은 클라에서.
+  const snap = await getDocs(
+    query(collection(db, 'conversations'), where('conversationType', '==', 'group'), limit(200)),
+  );
+  const rows = snap.docs.map((d) => ({ id: d.id, c: d.data() as DocumentData }));
+  rows.sort(
+    (a, b) => (toDate(b.c.lastMessageAt)?.getTime() ?? 0) - (toDate(a.c.lastMessageAt)?.getTime() ?? 0),
+  );
+  const top = rows.slice(0, max);
+
+  const allUids = [...new Set(top.flatMap((r) => (r.c.participants as string[]) ?? []))];
+  const nameMap = new Map<string, string>();
+  await Promise.all(
+    allUids.map(async (uid) => {
+      try {
+        const u = await getDoc(doc(db, 'users', uid));
+        nameMap.set(uid, (u.data()?.displayName as string) || '(탈퇴한 회원)');
+      } catch {
+        nameMap.set(uid, '(조회 실패)');
+      }
+    }),
+  );
+
+  return Promise.all(
+    top.map(async ({ id, c }) => {
+      const participants = (c.participants as string[]) ?? [];
+      const unreadCounts = (c.unreadCounts as Record<string, number>) ?? {};
+      const members = await Promise.all(
+        participants.map(async (uid) => {
+          let spoke = 0;
+          try {
+            // getCountFromServer = 서버 집계, 메시지 '내용'을 가져오지 않는다(메타데이터만).
+            const cnt = await getCountFromServer(
+              query(collection(db, 'conversations', id, 'messages'), where('senderId', '==', uid)),
+            );
+            spoke = cnt.data().count;
+          } catch {
+            /* 카운트 실패 시 0 */
+          }
+          return {
+            uid,
+            name: nameMap.get(uid) ?? '(?)',
+            spoke,
+            unread: typeof unreadCounts[uid] === 'number' ? unreadCounts[uid] : null,
+          };
+        }),
+      );
+      return {
+        conversationId: id,
+        groupName: (c.metadata?.groupName as string) || '결 그룹방',
+        members,
+        memberMsgTotal: members.reduce((s, m) => s + m.spoke, 0),
+        createdAt: toDate(c.createdAt) ?? null,
+        lastMessageAt: toDate(c.lastMessageAt) ?? null,
+        lastReadAt: toDate(c.lastReadAt) ?? null,
+      };
+    }),
+  );
+}

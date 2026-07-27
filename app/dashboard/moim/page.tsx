@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { getMoimStats, type MoimStats } from '@/lib/firestore';
+import { getMoimStats, getMoimRooms, type MoimStats, type AdminMoimRoom } from '@/lib/firestore';
 
 const SLOT_LABEL: Record<string, string> = {
   day: '낮', evening: '저녁', weekend: '주말',
@@ -77,6 +77,7 @@ function pct(v: number | null): string {
 
 export default function MoimDashboardPage() {
   const [stats, setStats] = useState<MoimStats | null>(null);
+  const [rooms, setRooms] = useState<AdminMoimRoom[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -85,6 +86,10 @@ export default function MoimDashboardPage() {
       .then(setStats)
       .catch((e) => setErr(e?.message ?? '불러오기 실패'))
       .finally(() => setLoading(false));
+    // 그룹방 활동은 메타데이터만(내용 안 읽음) — 열람 로그 없이 별도 로드.
+    getMoimRooms()
+      .then(setRooms)
+      .catch(() => setRooms([]));
   }, []);
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
@@ -113,6 +118,82 @@ export default function MoimDashboardPage() {
           </div>
           <span className="text-green-700">→</span>
         </Link>
+
+        {/* 그룹 찻자리 방 — 활동 메타데이터만(내용 안 읽음 → 열람 로그 없음).
+            수동 생성한 방도 여기 다 뜬다. '대화 보기'로 들어가야 내용+로그 기록. */}
+        <section className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mb-1 flex items-baseline justify-between">
+            <h2 className="text-sm font-bold text-gray-900">그룹 찻자리 방</h2>
+            <span className="text-xs text-gray-400">{rooms?.length ?? 0}개 · 열람 기록 안 남김</span>
+          </div>
+          <p className="mb-3 text-xs text-gray-500">
+            누가 몇 개 보냈나·읽음 여부·마지막 활동만 봐요(대화 내용 아님). 내용을 열면 그때만 감사로그가 남아요.
+          </p>
+          {rooms === null ? (
+            <p className="text-sm text-gray-400">불러오는 중…</p>
+          ) : rooms.length === 0 ? (
+            <p className="text-sm text-gray-400">아직 그룹 찻자리 방이 없어요.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {rooms.map((r) => (
+                <div key={r.conversationId} className="rounded-lg border border-gray-100 p-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-sm font-semibold text-gray-900">{r.groupName}</span>
+                    <span className="text-xs text-gray-400">{r.members.length}명</span>
+                    {r.memberMsgTotal > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />대화 {r.memberMsgTotal}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />조용함
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-gray-400">
+                      마지막 대화 {r.lastMessageAt ? fmtAgo(r.lastMessageAt) : '—'}
+                      {' · '}
+                      마지막 열람 {r.lastReadAt ? fmtAgo(r.lastReadAt) : '기록 없음'}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {r.members.map((m) => {
+                      const label =
+                        m.spoke > 0
+                          ? `${m.name} · 말함 ${m.spoke}`
+                          : r.memberMsgTotal > 0 && m.unread === 0
+                            ? `${m.name} · 읽고 조용`
+                            : r.memberMsgTotal > 0 && (m.unread ?? 0) > 0
+                              ? `${m.name} · 안 읽음 ${m.unread}`
+                              : `${m.name} · 대기`;
+                      const cls =
+                        m.spoke > 0
+                          ? 'bg-green-50 text-green-700'
+                          : r.memberMsgTotal > 0 && m.unread === 0
+                            ? 'bg-orange-50 text-orange-700'
+                            : 'bg-gray-50 text-gray-500';
+                      return (
+                        <span key={m.uid} className={`rounded-full px-2 py-0.5 text-xs ${cls}`}>
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2">
+                    <Link
+                      href={`/dashboard/moim/room?id=${r.conversationId}`}
+                      className="text-xs font-medium text-green-700 hover:underline"
+                    >
+                      대화 보기 → <span className="text-gray-400">(내용 열람, 기록됨)</span>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-2 text-[11px] text-gray-400">
+            ※ ‘마지막 열람’은 방 전체 기준이라 누가 열었는지는 알 수 없어요. 대화 0인 방은 개인 ‘읽음’ 판정 불가(‘대기’로 표시).
+          </p>
+        </section>
 
         {/* 자리표 현황 */}
         <section>
