@@ -5,7 +5,7 @@
 // 또래 방이라, 발신자를 섞지 않고 각자 말풍선으로 보여주고 답장창도 두지 않는다.
 // 핵심 질문 두 가지에 답한다: (1) 무슨 얘기가 오갔나 (2) 누가 읽고도 조용한가.
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -18,6 +18,8 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { logMoimRoomAccess } from '@/lib/firestore';
+import { useAuth } from '@/lib/auth-context';
 import Header from '@/components/layout/Header';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -61,6 +63,7 @@ function fmt(date?: Date) {
 function RoomInner() {
   const router = useRouter();
   const conversationId = useSearchParams().get('id') ?? '';
+  const { user: adminUser, role } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -69,6 +72,7 @@ function RoomInner() {
   const [lastAt, setLastAt] = useState<Date | undefined>();
   const [members, setMembers] = useState<Member[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
+  const loggedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -131,6 +135,22 @@ function RoomInner() {
       }
     })();
   }, [conversationId]);
+
+  // 열람 감사로그 — 방(내용)을 실제로 연 사실을 방당 한 번 기록한다. 어드민은
+  // 이 방의 당사자가 아니므로 누가·언제·어떤 방·누구의 메시지를 봤는지 남긴다.
+  useEffect(() => {
+    if (loading || notFound || !conversationId) return;
+    if (!adminUser?.uid || members.length === 0) return;
+    if (loggedRef.current === conversationId) return;
+    loggedRef.current = conversationId;
+    void logMoimRoomAccess({
+      viewerUid: adminUser.uid,
+      viewerEmail: adminUser.email ?? null,
+      viewerRole: role ?? null,
+      conversationId,
+      participantUids: members.map((m) => m.uid),
+    }).catch((e) => console.error('[moim room] audit log failed:', e));
+  }, [loading, notFound, conversationId, adminUser, role, members]);
 
   if (!conversationId) {
     return <div className="py-16 text-center text-gray-400">방 ID가 없습니다.</div>;
@@ -268,7 +288,7 @@ function RoomInner() {
           </div>
 
           <p className="mt-3 text-[11px] text-gray-400">
-            읽기 전용이에요. 멤버들의 방이라 어드민이 끼어들지 않아요.
+            읽기 전용이에요. 멤버들의 방이라 어드민이 끼어들지 않아요. · 안전·품질 목적의 열람이며, 접근은 기록됩니다.
           </p>
         </>
       )}

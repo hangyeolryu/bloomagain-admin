@@ -274,6 +274,33 @@ export async function logIdentityPiiAccess(params: {
   });
 }
 
+/**
+ * Audit an operator opening a member-only 결(moim) group room to read its
+ * conversation content. Same append-only `admin_pii_access_logs` collection as
+ * identity reveals — operators are not participants of these rooms, so every
+ * content view is logged (who, when, which room, whose messages). Disclosed in
+ * the privacy policy (안전 보호 및 서비스 품질 개선 목적, 접근 기록됨).
+ *
+ * Best-effort: never throws — a logging hiccup must not block the operator.
+ */
+export async function logMoimRoomAccess(params: {
+  viewerUid: string;
+  viewerEmail: string | null;
+  viewerRole: string | null;
+  conversationId: string;
+  participantUids: string[];
+}): Promise<void> {
+  await addDoc(collection(db, 'admin_pii_access_logs'), {
+    viewerUid: params.viewerUid,
+    viewerEmail: params.viewerEmail,
+    viewerRole: params.viewerRole,
+    conversationId: params.conversationId,
+    participantUids: params.participantUids,
+    action: 'view_moim_room',
+    viewedAt: serverTimestamp(),
+  });
+}
+
 export async function blockUser(uid: string, reason: string, adminUid: string) {
   // 1. Block the user account
   await updateDoc(doc(db, 'users', uid), {
