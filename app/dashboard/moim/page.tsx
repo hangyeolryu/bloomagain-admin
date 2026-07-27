@@ -318,19 +318,28 @@ export default function MoimDashboardPage() {
                         </span>
                       </td>
                       <td className="py-2 whitespace-nowrap">
-                        {r.status !== 'room_created' ? (
+                        {r.status !== 'room_created' || !r.conversationId ? (
                           <span className="text-xs text-gray-300">—</span>
-                        ) : r.alive ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                            <span className="font-medium tabular-nums text-gray-700">대화 {r.memberMsgs}</span>
-                            {r.lastMessageAt && <span className="text-gray-400">· {fmtAgo(r.lastMessageAt)}</span>}
-                          </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />
-                            조용함
-                          </span>
+                          <Link
+                            href={`/dashboard/moim/room?id=${r.conversationId}`}
+                            className="inline-flex items-center gap-1.5 text-xs hover:underline"
+                            title="방 열어보기"
+                          >
+                            {r.alive ? (
+                              <>
+                                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                <span className="font-medium tabular-nums text-gray-700">대화 {r.memberMsgs}</span>
+                                {r.lastMessageAt && <span className="text-gray-400">· {fmtAgo(r.lastMessageAt)}</span>}
+                              </>
+                            ) : (
+                              <>
+                                <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />
+                                <span className="text-gray-400">조용함</span>
+                              </>
+                            )}
+                            <span className="text-gray-300">›</span>
+                          </Link>
                         )}
                       </td>
                     </tr>
