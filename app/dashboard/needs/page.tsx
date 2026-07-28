@@ -124,6 +124,12 @@ export default function NeedsDashboardPage() {
         </section>
       )}
 
+      {/* 분포 기준 안내 — 타일(정확 집계 이후)과 분모가 다름을 명시 */}
+      <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+        아래 응답 분포는 <b>누적 완주 {stats.allTotals.complete}명 전체</b> 기준이에요
+        (상단 타일은 7/28 14:19 정확 집계 이후만 세서 숫자가 달라요).
+      </p>
+
       <Section
         title="⭐ 지금 그 시간을 어떻게 보내나 (실태)"
         hint='사실상 경쟁자 조사 — TV·유튜브가 경쟁자인지, "그냥 흘러가요"(핵심 타겟)가 몇인지'
