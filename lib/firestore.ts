@@ -2919,7 +2919,9 @@ export const NEEDS_LABELS: Record<string, string> = {
   // funnel
   online: '온라인 대화 먼저', offline: '만나서 얼굴 보고',
   // moment
-  meal: '맛집 발견했을 때', talk: '얘기하고 싶을 때', weekend: '주말이 길 때',
+  meal: '맛집 발견했을 때', meal_alone: '혼자 밥 먹을 때', talk: '얘기하고 싶을 때',
+  goodnews: '좋은 일 알릴 데 없을 때', sick: '몸이 아픈 날', weekend: '주말·연휴가 길 때',
+  travel: '같이 여행 갈 사람 없을 때',
   // 성별 (결큐와 동일 코드)
   f: '여성', m: '남성', na: '말하지 않음',
   // 연령 5살 밴드 (굵은 밴드는 GYEOL_AGE_LABELS 폴백)
