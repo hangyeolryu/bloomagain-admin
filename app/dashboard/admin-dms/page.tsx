@@ -21,6 +21,7 @@ import { getOfficialAdminUid } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import CsInboxCard from './CsInbox';
 
 // One row per admin-initiated conversation. Read status is derived from the
 // most recent admin-authored message in the thread (isRead flag flipped by
@@ -490,6 +491,8 @@ export default function AdminDmsPage() {
       />
 
       <BroadcastPushCard />
+
+      <CsInboxCard />
 
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 mb-5 text-sm text-blue-700">
         <span className="text-lg">ℹ️</span>
