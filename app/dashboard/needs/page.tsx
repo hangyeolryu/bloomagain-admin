@@ -102,6 +102,21 @@ export default function NeedsDashboardPage() {
         <Tile label="공유" value={t.share} />
       </div>
 
+      {/* 질문별 이탈 — answer 이벤트 도입(2026-07-28) 이후 세션부터 잡힌다 */}
+      {stats.stepFunnel.some((f) => f.reached > 0) && (
+        <section>
+          <h2 className="mb-1 text-sm font-semibold text-gray-900">어디서 관두나 (질문별 도달)</h2>
+          <p className="mb-3 text-xs text-gray-400">
+            각 질문에 답한 세션 수 — 급락하는 지점이 고칠 질문
+          </p>
+          <div className="space-y-2">
+            {stats.stepFunnel.map((f) => (
+              <Bar key={f.step} label={f.label} count={f.reached} max={stats.stepFunnel[0]?.reached ?? 0} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <Section
         title="⭐ 지금 그 시간을 어떻게 보내나 (실태)"
         hint='사실상 경쟁자 조사 — TV·유튜브가 경쟁자인지, "그냥 흘러가요"(핵심 타겟)가 몇인지'

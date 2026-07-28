@@ -2896,6 +2896,8 @@ export interface NeedsStats {
   funnel: { key: string; count: number }[];
   moment: { key: string; count: number }[];
   ageBand: { key: string; count: number }[];
+  // 질문별 도달 세션 수(answer 이벤트 기반) — 어느 질문에서 관두는지.
+  stepFunnel: { step: number; label: string; reached: number }[];
   underAgeShare: number;
   bySource: { source: string; count: number }[];
   // "또는, 직접 쓸게요" 원문 — 보기 밖 수요 발굴의 재료 (최신순).
@@ -2948,11 +2950,20 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   dims.forEach((d) => { counts[d] = new Map(); });
   const sourceCount = new Map<string, number>();
   const customTexts: NeedsStats['customTexts'] = [];
+  // 질문별 이탈: answer 이벤트의 세션별 최대 step. start만 있고 answer 없는
+  // 세션은 Q1도 못 넘긴 것.
+  const startSids = new Set<string>();
+  const maxStepBySid = new Map<string, number>();
 
   snap.forEach((d) => {
     const x = d.data() as DocumentData;
     const phase = String(x.phase ?? '');
     if (phase in totals) totals[phase as keyof typeof totals] += 1;
+    const sid = (x.sessionId as string) || d.id;
+    if (phase === 'start') startSids.add(sid);
+    if (phase === 'answer' && typeof x.step === 'number') {
+      maxStepBySid.set(sid, Math.max(maxStepBySid.get(sid) ?? -1, x.step));
+    }
     // 답 분포는 complete 이벤트 기준(전체 답이 한 번에 실림) — 중복 집계 방지.
     if (phase !== 'complete') return;
     for (const dim of dims) {
@@ -2974,6 +2985,18 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     [...m.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
   const ageTotal = [...counts.ageBand.values()].reduce((a, b) => a + b, 0);
 
+  // 질문 순서 라벨 — 웹 QUESTIONS 순서와 일치해야 한다.
+  const STEP_LABELS = [
+    '1. 시간을 어떻게 보내나', '2. 누가 있었으면 순간', '3. 삶의 변화',
+    '4. 하고 싶은 것', '5. 편한 사람', '6. 걱정',
+    '7. 온라인 vs 만나서', '8. 성별', '9. 연령',
+  ];
+  const stepFunnel = STEP_LABELS.map((label, i) => {
+    let reached = 0;
+    maxStepBySid.forEach((mx) => { if (mx >= i) reached += 1; });
+    return { step: i, label, reached };
+  });
+
   return {
     totals,
     completionRate: totals.start ? totals.complete / totals.start : 0,
@@ -2987,6 +3010,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     funnel: toArr(counts.funnel),
     moment: toArr(counts.moment),
     ageBand: toArr(counts.ageBand),
+    stepFunnel,
     underAgeShare: ageTotal ? (counts.ageBand.get('under45') ?? 0) / ageTotal : 0,
     bySource: [...sourceCount.entries()]
       .map(([source, count]) => ({ source, count }))
