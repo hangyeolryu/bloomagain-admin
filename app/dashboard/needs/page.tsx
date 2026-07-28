@@ -96,7 +96,7 @@ export default function NeedsDashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile label="시작" value={t.start} />
+        <Tile label="도착 (실제 본)" value={t.start} hint="7/28 14:19 정확 집계 이후" />
         <Tile label="완료" value={t.complete} hint={`완료율 ${pct(stats.completionRate)}`} />
         <Tile label="다운클릭" value={t.download} hint={`완료→다운 ${pct(stats.downloadRate)}`} />
         <Tile label="공유" value={t.share} />
@@ -107,11 +107,18 @@ export default function NeedsDashboardPage() {
         <section>
           <h2 className="mb-1 text-sm font-semibold text-gray-900">어디서 관두나 (질문별 도달)</h2>
           <p className="mb-3 text-xs text-gray-400">
-            7/28 답변 추적 도입 이후 세션 기준 — 급락하는 지점이 고칠 질문 (시작 대비 Q1 미달 = 인트로에서 이탈)
+            7/28 14:19(정확 집계) 이후 — 도달=답한 세션, "보고 나감"=그 질문을 보다가 답 없이 떠남
           </p>
           <div className="space-y-2">
             {stats.stepFunnel.map((f) => (
-              <Bar key={f.step} label={f.label} count={f.reached} max={stats.stepFunnel[0]?.reached ?? 0} />
+              <div key={f.step} className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Bar label={f.label} count={f.reached} max={stats.stepFunnel[0]?.reached ?? 0} />
+                </div>
+                <span className={`w-24 shrink-0 text-right text-xs tabular-nums ${f.abandonedHere > 0 ? 'text-red-600 font-semibold' : 'text-gray-300'}`}>
+                  {f.abandonedHere > 0 ? `보고 나감 ${f.abandonedHere}` : ''}
+                </span>
+              </div>
             ))}
           </div>
         </section>

@@ -2897,7 +2897,7 @@ export interface NeedsStats {
   moment: { key: string; count: number }[];
   ageBand: { key: string; count: number }[];
   // 질문별 도달 세션 수(answer 이벤트 기반) — 어느 질문에서 관두는지.
-  stepFunnel: { step: number; label: string; reached: number }[];
+  stepFunnel: { step: number; label: string; reached: number; abandonedHere: number }[];
   underAgeShare: number;
   bySource: { source: string; count: number }[];
   // "또는, 직접 쓸게요" 원문 — 보기 밖 수요 발굴의 재료 (최신순).
@@ -2954,23 +2954,32 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   // 세션은 Q1도 못 넘긴 것.
   const startSids = new Set<string>();
   const maxStepBySid = new Map<string, number>();
-  // answer 이벤트 도입 시각 — 이후의 start만 퍼널 기준선으로 쓴다(이전 세션은
-  // answer가 없어 "Q1 전 이탈"과 구분 불가라 섞으면 퍼널이 왜곡됨).
-  const ANSWER_TRACKING_SINCE = new Date('2026-07-28T04:00:00Z').getTime();
+  // 정확 집계 시점(7/28 14:19 KST) = 인트로 제거 + 프리로드 팬텀 차단 배포.
+  // 이전 start는 의미가 섞여(버튼클릭/도착/팬텀) 지표에서 제외한다.
+  const CLEAN_SINCE = new Date('2026-07-28T05:20:00Z').getTime();
   const eraStartSids = new Set<string>();
+  const eraTotals = { start: 0, complete: 0, download: 0, share: 0 };
+  // abandon: 세션별 "나갈 때 보던 질문" (답변으로 이어졌으면 무시)
+  const abandonStepBySid = new Map<string, number>();
 
   snap.forEach((d) => {
     const x = d.data() as DocumentData;
     const phase = String(x.phase ?? '');
     if (phase in totals) totals[phase as keyof typeof totals] += 1;
     const sid = (x.sessionId as string) || d.id;
+    const at = toDate(x.createdAt)?.getTime() ?? 0;
+    if (at >= CLEAN_SINCE && phase in eraTotals) {
+      eraTotals[phase as keyof typeof eraTotals] += 1;
+    }
     if (phase === 'start') {
       startSids.add(sid);
-      const at = toDate(x.createdAt)?.getTime() ?? 0;
-      if (at >= ANSWER_TRACKING_SINCE) eraStartSids.add(sid);
+      if (at >= CLEAN_SINCE) eraStartSids.add(sid);
     }
-    if (phase === 'answer' && typeof x.step === 'number') {
+    if (phase === 'answer' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       maxStepBySid.set(sid, Math.max(maxStepBySid.get(sid) ?? -1, x.step));
+    }
+    if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
+      abandonStepBySid.set(sid, x.step);
     }
     // 답 분포는 complete 이벤트 기준(전체 답이 한 번에 실림) — 중복 집계 방지.
     if (phase !== 'complete') return;
@@ -3002,17 +3011,24 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const stepFunnel = STEP_LABELS.map((label, i) => {
     let reached = 0;
     maxStepBySid.forEach((mx) => { if (mx >= i) reached += 1; });
-    return { step: i, label, reached };
+    // 이 질문을 "보다가" 나간 세션 — 이후 답변으로 이어졌으면(복귀) 제외.
+    let abandonedHere = 0;
+    abandonStepBySid.forEach((ab, sid) => {
+      if (ab === i && (maxStepBySid.get(sid) ?? -1) < i) abandonedHere += 1;
+    });
+    return { step: i, label, reached, abandonedHere };
   });
   // 기준선: 추적 도입 이후 '시작' 세션 — Q1 전에 나간 사람이 여기서 보인다.
   // answer는 있는데 start 유실(네트워크)인 세션도 기준선에 포함.
   const eraBase = new Set([...eraStartSids, ...maxStepBySid.keys()]).size;
-  stepFunnel.unshift({ step: -1, label: '설문 시작', reached: eraBase });
+  stepFunnel.unshift({ step: -1, label: '도착 (실제 본)', reached: eraBase, abandonedHere: 0 });
 
   return {
-    totals,
-    completionRate: totals.start ? totals.complete / totals.start : 0,
-    downloadRate: totals.complete ? totals.download / totals.complete : 0,
+    // 상단 타일은 정확 집계(7/28 14:19 KST) 이후만 — 그 전 start는 의미가
+    // 섞인 숫자라 버린다. 응답 분포는 전체 complete 기준 유지.
+    totals: eraTotals,
+    completionRate: eraTotals.start ? eraTotals.complete / eraTotals.start : 0,
+    downloadRate: eraTotals.complete ? eraTotals.download / eraTotals.complete : 0,
     timeuse: toArr(counts.timeuse),
     situation: toArr(counts.situation),
     activity: toArr(counts.activity),
