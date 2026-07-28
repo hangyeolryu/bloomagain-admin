@@ -107,7 +107,7 @@ export default function NeedsDashboardPage() {
         <section>
           <h2 className="mb-1 text-sm font-semibold text-gray-900">어디서 관두나 (질문별 도달)</h2>
           <p className="mb-3 text-xs text-gray-400">
-            각 질문에 답한 세션 수 — 급락하는 지점이 고칠 질문
+            7/28 답변 추적 도입 이후 세션 기준 — 급락하는 지점이 고칠 질문 (시작 대비 Q1 미달 = 인트로에서 이탈)
           </p>
           <div className="space-y-2">
             {stats.stepFunnel.map((f) => (

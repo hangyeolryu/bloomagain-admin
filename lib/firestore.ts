@@ -2954,13 +2954,21 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   // 세션은 Q1도 못 넘긴 것.
   const startSids = new Set<string>();
   const maxStepBySid = new Map<string, number>();
+  // answer 이벤트 도입 시각 — 이후의 start만 퍼널 기준선으로 쓴다(이전 세션은
+  // answer가 없어 "Q1 전 이탈"과 구분 불가라 섞으면 퍼널이 왜곡됨).
+  const ANSWER_TRACKING_SINCE = new Date('2026-07-28T04:00:00Z').getTime();
+  const eraStartSids = new Set<string>();
 
   snap.forEach((d) => {
     const x = d.data() as DocumentData;
     const phase = String(x.phase ?? '');
     if (phase in totals) totals[phase as keyof typeof totals] += 1;
     const sid = (x.sessionId as string) || d.id;
-    if (phase === 'start') startSids.add(sid);
+    if (phase === 'start') {
+      startSids.add(sid);
+      const at = toDate(x.createdAt)?.getTime() ?? 0;
+      if (at >= ANSWER_TRACKING_SINCE) eraStartSids.add(sid);
+    }
     if (phase === 'answer' && typeof x.step === 'number') {
       maxStepBySid.set(sid, Math.max(maxStepBySid.get(sid) ?? -1, x.step));
     }
@@ -2996,6 +3004,10 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     maxStepBySid.forEach((mx) => { if (mx >= i) reached += 1; });
     return { step: i, label, reached };
   });
+  // 기준선: 추적 도입 이후 '시작' 세션 — Q1 전에 나간 사람이 여기서 보인다.
+  // answer는 있는데 start 유실(네트워크)인 세션도 기준선에 포함.
+  const eraBase = new Set([...eraStartSids, ...maxStepBySid.keys()]).size;
+  stepFunnel.unshift({ step: -1, label: '설문 시작', reached: eraBase });
 
   return {
     totals,
