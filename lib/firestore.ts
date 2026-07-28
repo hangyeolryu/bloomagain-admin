@@ -2898,6 +2898,8 @@ export interface NeedsStats {
   ageBand: { key: string; count: number }[];
   // 질문별 도달 세션 수(answer 이벤트 기반) — 어느 질문에서 관두는지.
   stepFunnel: { step: number; label: string; reached: number; abandonedHere: number }[];
+  // 누적(집계 기준 변경 전 포함) — 타일 옆에 참고로 표기
+  allTotals: { start: number; complete: number; download: number; share: number };
   underAgeShare: number;
   bySource: { source: string; count: number }[];
   // "또는, 직접 쓸게요" 원문 — 보기 밖 수요 발굴의 재료 (최신순).
@@ -3027,6 +3029,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     // 상단 타일은 정확 집계(7/28 14:19 KST) 이후만 — 그 전 start는 의미가
     // 섞인 숫자라 버린다. 응답 분포는 전체 complete 기준 유지.
     totals: eraTotals,
+    allTotals: totals,
     completionRate: eraTotals.start ? eraTotals.complete / eraTotals.start : 0,
     downloadRate: eraTotals.complete ? eraTotals.download / eraTotals.complete : 0,
     timeuse: toArr(counts.timeuse),

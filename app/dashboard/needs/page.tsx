@@ -96,10 +96,10 @@ export default function NeedsDashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile label="도착 (실제 본)" value={t.start} hint="7/28 14:19 정확 집계 이후" />
-        <Tile label="완료" value={t.complete} hint={`완료율 ${pct(stats.completionRate)}`} />
-        <Tile label="다운클릭" value={t.download} hint={`완료→다운 ${pct(stats.downloadRate)}`} />
-        <Tile label="공유" value={t.share} />
+        <Tile label="도착 (실제 본)" value={t.start} hint={`7/28 14:19 정확 집계 이후 · 누적 ${stats.allTotals.start}`} />
+        <Tile label="완료" value={t.complete} hint={`완료율 ${pct(stats.completionRate)} · 누적 ${stats.allTotals.complete}`} />
+        <Tile label="다운클릭" value={t.download} hint={`완료→다운 ${pct(stats.downloadRate)} · 누적 ${stats.allTotals.download}`} />
+        <Tile label="공유" value={t.share} hint={`누적 ${stats.allTotals.share}`} />
       </div>
 
       {/* 질문별 이탈 — answer 이벤트 도입(2026-07-28) 이후 세션부터 잡힌다 */}
