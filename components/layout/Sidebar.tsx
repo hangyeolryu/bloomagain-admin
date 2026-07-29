@@ -37,6 +37,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/users', label: '사용자 관리', icon: '👥', permission: 'viewUsers' },
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
   { href: '/dashboard/posts', label: '전체 게시물', icon: '📸' },
+  { href: '/dashboard/stories', label: '사연 투고', icon: '✍️' },
   // ── 신뢰·안전 (한 그룹으로 묶음) ──
   { href: '/dashboard/safety', label: '안전 센터', icon: '🛟', section: '신뢰·안전' },
   { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전', sub: true },
