@@ -2915,7 +2915,8 @@ export const NEEDS_LABELS: Record<string, string> = {
   empty_nest: '자녀 독립 (빈 둥지)', spouse_diff: '배우자와 결이 다름', divorce: '이혼 후 새 출발', bereave: '사별',
   retire: '은퇴·일 쉼', no_change: '큰 변화 없음',
   // activity
-  walk: '동네 산책', tea: '차 한잔·맛집', hobby: '취미 함께', chat: '편한 수다',
+  walk: '동네 산책', tea: '차 한잔·맛집', culture: '전시·공연 나들이',
+  exercise: '운동·등산', travel: '같이 여행', hobby: '취미·배움', chat: '편한 수다',
   // worry
   scam: '사기·이상한 사람', awkward: '어색함', time: '시간 부담', none: '딱히 없음',
   // person
@@ -2925,7 +2926,6 @@ export const NEEDS_LABELS: Record<string, string> = {
   // moment
   meal: '맛집 발견했을 때', meal_alone: '혼자 밥 먹을 때', talk: '얘기하고 싶을 때',
   goodnews: '좋은 일 알릴 데 없을 때', sick: '몸이 아픈 날', weekend: '주말·연휴가 길 때',
-  travel: '같이 여행 갈 사람 없을 때',
   // 성별 (결큐와 동일 코드)
   f: '여성', m: '남성', na: '말하지 않음',
   // 연령 5살 밴드 (굵은 밴드는 GYEOL_AGE_LABELS 폴백)
