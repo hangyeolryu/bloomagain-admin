@@ -116,18 +116,27 @@ export default function InterviewsPage() {
   );
   const [recent, setRecent] = useState<StreetInterview[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // 최근 목록 읽기 실패 — 빈 목록과 반드시 구분해서 보여준다.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Load stats + recent on mount and after every save
+  // Load stats + recent on mount and after every save.
+  //
+  // allSettled로 둘을 독립 처리한다 — 하나가 죽어도 나머지는 살리고, 실패는
+  // 반드시 화면에 띄운다. 특히 '최근 10건'은 "내 저장이 들어갔나"를 확인하는
+  // 목록이라, 읽기 실패로 빈 화면이 되면 현장에서 저장 유실로 오해한다.
   const refresh = async () => {
-    try {
-      const [s, r] = await Promise.all([
-        getStreetInterviewStats(),
-        getRecentStreetInterviews(10),
-      ]);
-      setStats(s);
-      setRecent(r);
-    } catch (e) {
-      console.warn('[interviews] refresh failed:', e);
+    const [s, r] = await Promise.allSettled([
+      getStreetInterviewStats(),
+      getRecentStreetInterviews(10),
+    ]);
+    if (s.status === 'fulfilled') setStats(s.value);
+    if (r.status === 'fulfilled') {
+      setRecent(r.value);
+      setLoadError(null);
+    } else {
+      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.warn('[interviews] recent list failed:', r.reason);
+      setLoadError(msg);
     }
   };
 
@@ -347,6 +356,18 @@ export default function InterviewsPage() {
       </div>
 
       {/* ── Recent entries (collapsible feel) ── */}
+      {loadError && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">
+            최근 기록을 불러오지 못했어요
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            저장이 안 된 게 아니라 <strong>목록 조회</strong>가 실패한 거예요. 방금 저장한 내용은
+            그대로 있습니다.
+          </p>
+          <p className="mt-2 break-all font-mono text-xs text-amber-700">{loadError}</p>
+        </div>
+      )}
       {recent.length > 0 && (
         <div className="mt-10 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-50">

@@ -1232,11 +1232,15 @@ export async function saveStreetInterview(
  * Recent interviews — used on the form page so the interviewer sees their
  * count for the day and the last few entries (a confidence check that
  * saves are actually landing). Limited to 20 to keep mobile fast.
+ *
+ * saveStreetInterview와 같은 이유로 실패를 삼키지 않고 throw한다: 이 목록이
+ * "내 저장이 실제로 들어갔나"를 확인하는 용도라, 읽기 실패로 빈 목록이 뜨면
+ * 현장에서 "저장이 날아갔다"로 읽힌다. 호출부가 잡아 화면에 띄운다.
  */
 export async function getRecentStreetInterviews(
   max: number = 20,
 ): Promise<StreetInterview[]> {
-  try {
+  {
     const snap = await getDocs(
       query(
         collection(db, 'street_interviews'),
@@ -1263,9 +1267,6 @@ export async function getRecentStreetInterviews(
         createdBy: data.createdBy ?? '',
       } as StreetInterview;
     });
-  } catch (e) {
-    console.warn('[getRecentStreetInterviews] failed:', e);
-    return [];
   }
 }
 
