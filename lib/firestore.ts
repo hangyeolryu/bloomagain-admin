@@ -667,12 +667,19 @@ export async function getDistrictDensity(): Promise<DistrictDensityRecord[]> {
 
 export async function getSuspiciousMessages(
   pageSize = 30,
-  source?: string,  // e.g. 'message' | 'circle' | 'profile_image'
+  // 'message' | 'circle' | 'profile_image' | 'client_filter' …
+  // 배열을 주면 여러 소스를 한 번에 본다(같은 복합 인덱스로 동작).
+  source?: string | string[],
   cursor?: QueryDocumentSnapshot,
 ): Promise<PaginatedResult<SuspiciousMessage>> {
+  const sourceFilter = Array.isArray(source)
+    ? [where('source', 'in', source)]
+    : source
+      ? [where('source', '==', source)]
+      : [];
   const q = query(
     collection(db, 'suspicious_messages'),
-    ...(source ? [where('source', '==', source)] : []),
+    ...sourceFilter,
     orderBy('timestamp', 'desc'),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),
