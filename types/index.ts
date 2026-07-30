@@ -247,6 +247,9 @@ export interface DashboardStats {
   totalWaves: number;
   totalConversations: number;
   pendingDeleteRequests: number;
+  // 실패한 집계 — 조용히 0을 보여주지 않기 위해(StatWarnings 배너로 노출).
+  // 권한/인덱스 문제와 "정말 0건"이 화면에서 구분되어야 한다.
+  warnings: Array<{ label: string; message: string }>;
 }
 
 export type DeleteRequestStatus = 'pending' | 'completed' | 'cancelled';

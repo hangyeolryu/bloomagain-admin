@@ -21,6 +21,7 @@ import type {
   ActivationFunnel,
 } from '@/lib/firestore';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import StatWarnings from '@/components/ui/StatWarnings';
 
 // 인증 시도 추정 라벨. Phase 2에서 verification_attempts 실제 로그가
 // 들어오면 이 라벨은 확정 사유로 교체됩니다.
@@ -148,7 +149,8 @@ export default function OnboardingFunnelPage() {
         const act = await getActivationFunnel();
         if (!cancelled) setActivation(act);
       } catch {
-        /* 활성화 섹션은 실패해도 조용히 숨김 */
+        /* 활성화 섹션 자체를 못 불러오면 섹션을 숨긴다. 부분 실패(activation.warnings)는
+           아래 StatWarnings로 드러낸다 — 재방문 0%가 "실패"인지 "사실"인지 구분되어야 한다. */
       }
     })();
     return () => {
@@ -238,6 +240,7 @@ export default function OnboardingFunnelPage() {
       </div>
 
       {/* 가입 후 활성화(0일차) — 온보딩을 끝낸 사람이 실제로 '쓰기' 시작하나 */}
+      {activation && <StatWarnings warnings={activation.warnings} className="mb-6" />}
       <ActivationSection data={activation} />
 
       {/* Attempt hint summary + device filter (signed_up 단계만) */}

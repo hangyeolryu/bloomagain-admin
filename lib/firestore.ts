@@ -859,17 +859,28 @@ export async function toggleAnnouncementActive(
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
-async function safeCount(q: Parameters<typeof getCountFromServer>[0], label: string): Promise<number> {
+/**
+ * 카운트 집계. 실패해도 0을 돌려 페이지를 죽이지 않되, [sink]에 실패를 담아
+ * 화면(StatWarnings)까지 올린다 — 0과 "못 셌음"이 구분되어야 한다.
+ */
+async function safeCount(
+  q: Parameters<typeof getCountFromServer>[0],
+  label: string,
+  sink?: Array<{ label: string; message: string }>,
+): Promise<number> {
   try {
     const snap = await getCountFromServer(q);
     return snap.data().count;
   } catch (e) {
     console.warn(`[getDashboardStats] count failed for "${label}":`, e);
+    sink?.push({ label, message: e instanceof Error ? e.message : String(e) });
     return 0;
   }
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
+  // 실패한 카운트를 모아 대시보드 상단에 띄운다(조용한 0 방지).
+  const warnings: DashboardStats['warnings'] = [];
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -890,15 +901,15 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalConversations,
     pendingDeleteRequests,
   ] = await Promise.all([
-    safeCount(collection(db, 'circles'), 'circles'),
-    safeCount(query(collection(db, 'reports'), where('status', '==', 'pending')), 'pending reports'),
-    safeCount(query(collection(db, 'admin_alerts'), where('resolved', '==', false)), 'unresolved alerts'),
-    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'new users 7d'),
-    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), 'new users 30d'),
-    safeCount(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'active users 7d'),
-    safeCount(collection(db, 'waves'), 'waves'),
-    safeCount(collection(db, 'conversations'), 'conversations'),
-    safeCount(query(collection(db, 'delete_requests'), where('status', '==', 'pending')), 'pending delete requests'),
+    safeCount(collection(db, 'circles'), 'circles', warnings),
+    safeCount(query(collection(db, 'reports'), where('status', '==', 'pending')), 'pending reports', warnings),
+    safeCount(query(collection(db, 'admin_alerts'), where('resolved', '==', false)), 'unresolved alerts', warnings),
+    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'new users 7d', warnings),
+    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), 'new users 30d', warnings),
+    safeCount(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'active users 7d', warnings),
+    safeCount(collection(db, 'waves'), 'waves', warnings),
+    safeCount(collection(db, 'conversations'), 'conversations', warnings),
+    safeCount(query(collection(db, 'delete_requests'), where('status', '==', 'pending')), 'pending delete requests', warnings),
   ]);
 
   return {
@@ -914,6 +925,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalWaves,
     totalConversations,
     pendingDeleteRequests,
+    warnings,
   };
 }
 
@@ -2406,11 +2418,15 @@ export interface ActivationFunnel {
     eligible: number;
     returned: number;
   }[];
+  // 실패한 집계. activity_daily 쿼리가 죽으면 returned가 조용히 0이 되어
+  // "아무도 안 돌아왔다"로 읽힌다 — 그 둘은 반드시 구분되어야 한다.
+  warnings: Array<{ label: string; message: string }>;
 }
 
 export async function getActivationFunnel(
   windowDays = 30,
 ): Promise<ActivationFunnel> {
+  const warnings: ActivationFunnel['warnings'] = [];
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const fromKey = yyyymmdd(cutoff);
   const todayKey = yyyymmdd(new Date());
@@ -2440,7 +2456,11 @@ export async function getActivationFunnel(
       (activeDays.get(uid) ?? activeDays.set(uid, new Set()).get(uid)!).add(dayKey);
     }
   } catch (e) {
-    console.warn('[getOnboardingFunnel] activity_daily failed:', e);
+    console.warn('[getActivationFunnel] activity_daily failed:', e);
+    warnings.push({
+      label: '재방문(활동일) 집계',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 
   // 3) 답변 수: 유저별 dailyQuestions 카운트 (collectionGroup 권한 이슈 회피 위해
@@ -2499,7 +2519,7 @@ export async function getActivationFunnel(
 
   return {
     windowDays, signups, answered1, gateCleared,
-    returnedEligible, returned, daily,
+    returnedEligible, returned, daily, warnings,
   };
 }
 

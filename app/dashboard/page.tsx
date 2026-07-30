@@ -6,6 +6,7 @@ import { getDashboardStats, getAdminAlerts, getReports } from '@/lib/firestore';
 import type { DashboardStats, AdminAlert, Report } from '@/types';
 import StatsCard from '@/components/ui/StatsCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import StatWarnings from '@/components/ui/StatWarnings';
 import Badge from '@/components/ui/Badge';
 
 function formatDate(date?: Date) {
@@ -54,6 +55,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-900">대시보드</h1>
         <p className="text-gray-500 text-sm mt-1">티타 서비스 현황 요약</p>
       </div>
+
+      {stats && <StatWarnings warnings={stats.warnings} className="mb-8" />}
 
       {stats && (
         <div className="space-y-6 mb-8">
