@@ -624,6 +624,40 @@ export default function DataCollectionPage() {
         </p>
       </div>
 
+      {/* 부분 실패 — 조용히 0을 보여주면 룰 누락·인덱스 누락이 "응답 없음"과
+          구분되지 않는다(2026-06 가입경로 245명 유실이 이렇게 6주간 묻혔다).
+          권한/인덱스 오류 메시지에는 콘솔 생성 링크가 들어 있어 그대로 노출한다. */}
+      {stats.warnings.length > 0 && (
+        <div className="mb-8 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <p className="font-semibold text-amber-900">
+            일부 집계를 불러오지 못했어요 ({stats.warnings.length}건)
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            아래 항목은 <strong>0이 아니라 &ldquo;알 수 없음&rdquo;</strong>입니다. 수치를 그대로 믿지 마세요.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {stats.warnings.map((w) => (
+              <li key={w.label} className="rounded-lg border border-amber-200 bg-white p-3">
+                <p className="text-sm font-medium text-amber-900">{w.label}</p>
+                <p className="mt-1 break-all whitespace-pre-wrap font-mono text-xs text-amber-700">
+                  {w.message}
+                </p>
+                {/https?:\/\/\S+/.test(w.message) && (
+                  <a
+                    href={w.message.match(/https?:\/\/\S+/)![0]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block text-xs font-semibold text-emerald-700 underline"
+                  >
+                    콘솔에서 인덱스 만들기 →
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── 핵심 인사이트 & 액션 (stats에서 파생) ── */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -809,7 +843,13 @@ export default function DataCollectionPage() {
         <SectionHeading>
           가입 경로 — 온보딩 &ldquo;어디서 알게 되셨어요?&rdquo; ({stats.acquisitionAnswered}명 응답)
         </SectionHeading>
-        {stats.acquisitionChannels.length === 0 ? (
+        {stats.warnings.some((w) => w.label === '가입 경로 집계') ? (
+          // 집계가 실패했으면 "응답 없음"이라고 말하지 않는다 — 그 거짓말이
+          // 245명분 유실을 6주간 가렸다.
+          <p className="text-sm font-medium text-amber-700">
+            집계를 불러오지 못했습니다. 위 오류를 확인하세요 (0명이 아니라 &ldquo;알 수 없음&rdquo;).
+          </p>
+        ) : stats.acquisitionChannels.length === 0 ? (
           <p className="text-sm text-gray-400 italic">아직 응답이 없습니다 (선택 단계라 스킵 가능).</p>
         ) : (
           <CategoryBarChart

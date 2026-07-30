@@ -1439,6 +1439,13 @@ export interface DataCollectionStats {
   dailyTrend: Array<{ date: string; count: number }>;
   // 질문별 응답 분포 — 답변 수 상위 질문의 선택지 쏠림 확인용
   questionStats: Array<{ id: string; total: number; options: Record<string, number> }>;
+  // 부분 실패 목록. 집계 하나가 죽어도 페이지 전체를 죽이지는 않지만, 조용히
+  // 0을 보여주면 안 된다 — 화면 상단에 그대로 띄운다.
+  //
+  // ⚠️ 2026-06~07: users/*/analytics_milestones 룰 누락으로 가입경로 집계가
+  // permission-denied였는데, 이 자리가 console.warn뿐이라 6주간 "응답 0명"으로만
+  // 보였다(245명분 유실). 새 집계를 추가할 때도 반드시 warnings에 담을 것.
+  warnings: Array<{ label: string; message: string }>;
   // 온보딩 "어디서 알게 되셨어요?" 응답 집계 (users/*/analytics_milestones)
   acquisitionChannels: Array<{ channel: string; count: number }>;
   acquisitionAnswered: number;      // 응답한 사용자 수 (스킵 제외)
@@ -1454,6 +1461,15 @@ export interface DataCollectionStats {
  * accurate and fast enough for the first ~10k users.
  */
 export async function getDataCollectionStats(): Promise<DataCollectionStats> {
+  // 집계별 부분 실패를 모아 화면까지 올린다. console.warn만 남기면 permission-
+  // denied나 인덱스 누락이 "0명"과 구분되지 않는다(2026-06 가입경로 사고).
+  const warnings: DataCollectionStats['warnings'] = [];
+  const noteFailure = (label: string, e: unknown) => {
+    const message = e instanceof Error ? e.message : String(e);
+    console.warn(`[data-collection] ${label} failed:`, e);
+    warnings.push({ label, message });
+  };
+
   // 1) Pull all user docs once. We need to inspect dailyQuestionTags arrays,
   //    which getCountFromServer can't filter on, so a single bulk read is
   //    actually cheaper than several aggregate queries with limits.
@@ -1527,7 +1543,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
       questionCounter.set(qid, q);
     }
   } catch (e) {
-    console.warn('[data-collection] dailyQuestions fetch failed:', e);
+    noteFailure('결큐 답변 집계', e);
   }
 
   // 답변 깊이 버킷 — 제품 임계값(게이트 3 / 결모임 7)에 맞춘 경계
@@ -1582,7 +1598,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
       }
     }
   } catch (e) {
-    console.warn('[data-collection] acquisition fetch failed:', e);
+    noteFailure('가입 경로 집계', e);
   }
   const acquisitionChannels = Array.from(acqCounter.entries())
     .map(([channel, count]) => ({ channel, count }))
@@ -1594,7 +1610,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
       const snap = await getCountFromServer(cg);
       return snap.data().count;
     } catch (e) {
-      console.warn('[data-collection] mini_pulses count failed:', e);
+      noteFailure('미니펄스 응답 수', e);
       return 0;
     }
   })();
@@ -1612,7 +1628,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
       if (tags.includes('lonely_high')) miniPulsesWithLonelyHigh++;
     }
   } catch (e) {
-    console.warn('[data-collection] mini pulse tag sample failed:', e);
+    noteFailure('미니펄스 태그 표본', e);
   }
 
   // 4) Daily Question category counts — derived from the bundled questions
@@ -1679,7 +1695,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     for (const d of snap.docs) if (d.data().retired === true) retired++;
     remoteQuestionBank = { total: snap.size, retired };
   } catch (e) {
-    console.warn('[data-collection] gyeolQuestionBank count failed:', e);
+    noteFailure('원격 질문 뱅크', e);
   }
 
   return {
@@ -1704,6 +1720,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     acquisitionChannels,
     acquisitionAnswered,
     remoteQuestionBank,
+    warnings,
   };
 }
 
