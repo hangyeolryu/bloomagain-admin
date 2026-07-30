@@ -47,7 +47,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-type LicenseStatus = 'public' | 'received' | 'pending' | 'blocked';
+type LicenseStatus = 'public' | 'received' | 'conditional' | 'pending' | 'blocked';
 
 interface LicenseRow {
   tool: string;
@@ -61,7 +61,7 @@ const LICENSE_TABLE: LicenseRow[] = [
   { tool: 'Cantril Ladder (1-item)', source: 'Gallup World Poll, public', status: 'public', note: 'Mini Pulse 사용 중' },
   { tool: 'Single-item Loneliness', source: 'ONS / 자체 한국 우회 표현', status: 'public', note: 'Daily Q35 우회 측정' },
   { tool: 'LSIS-6', source: 'Hwang et al. 2021, NMHSK 표준', status: 'pending', note: '홍진표 교수 메일 발송 — 회신 대기 (공공누리 4유형 NC-ND)' },
-  { tool: 'WHO-5 Wellbeing Index', source: 'WHO 1998, Kim 2010 한국 번역', status: 'pending', note: '⚠ WHO 허가 ✅ (Catalina 2026-05-14). 한국어 verbatim 미확보 — 트립 후 처리 예정 (Kim 2010 paper 구매 또는 Moon 교수 컨택). 현재 PHQ-2 + Cantril로 baseline 운영 충분.' },
+  { tool: 'WHO-5 Wellbeing Index', source: 'WHO 1998, Kim 2010 한국 번역', status: 'conditional', note: 'WHO 정식 허가 (Request ID 202608972, CC BY-NC-SA 3.0 IGO). ⚠ NC·인터넷 배포 조항(Clause 4·5) — 상업 앱 사용 범위 WHO 서면 확인 후 배포 (permissions@who.int, 제목에 Request ID). 자체 번역 허용(disclaimer 부착). 현재 PHQ-2 + Cantril로 baseline 운영.' },
   { tool: 'UCLA-3 Loneliness', source: 'Hughes 2004, 김옥수 1997 한국 lineage', status: 'pending', note: 'Russell (Iowa State) 메일 발송' },
   { tool: 'SWLS', source: 'Diener 1985, Lee 2024 IRT 검증', status: 'pending', note: 'Diener Education Fund (info@nobascholar.com) 메일 발송' },
 ];
@@ -117,6 +117,7 @@ function licenseBadge(status: LicenseStatus) {
   const map = {
     public: { label: 'Public', cls: 'bg-emerald-100 text-emerald-800' },
     received: { label: '허가 완료', cls: 'bg-blue-100 text-blue-800' },
+    conditional: { label: '조건부 (배포 확인)', cls: 'bg-orange-100 text-orange-800' },
     pending: { label: '회신 대기', cls: 'bg-amber-100 text-amber-800' },
     blocked: { label: '차단', cls: 'bg-red-100 text-red-800' },
   } as const;
