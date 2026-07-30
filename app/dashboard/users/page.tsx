@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { getUsers, blockUser, unblockUser, updateUserStatus, type UserSortKey } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
+import Toast, { type ToastState } from '@/components/ui/Toast';
 import type { UserProfile, AccountStatus } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -238,6 +239,7 @@ export default function UsersPage() {
   const [actionModal, setActionModal]   = useState<{ user: UserProfile; type: 'block' | 'unblock' | 'suspend' } | null>(null);
   const [reason, setReason]             = useState('');
   const [acting, setActing]             = useState(false);
+  const [toast, setToast]               = useState<ToastState | null>(null);
 
   // ── PostgreSQL status ──────────────────────────────────────────────────────
   // null  = not yet fetched for this uid
@@ -422,7 +424,11 @@ export default function UsersPage() {
     setActing(true);
     try {
       if (actionModal.type === 'block') {
-        await blockUser(actionModal.user.id, reason, adminUser.uid);
+        const { warnings } = await blockUser(actionModal.user.id, reason, adminUser.uid);
+        setToast(warnings.length
+          ? { kind: 'warning', title: '차단은 됐지만 후처리가 일부 실패했어요',
+              details: warnings.map((w) => `${w.label}: ${w.message}`) }
+          : { kind: 'success', title: '차단하고 정리까지 마쳤어요' });
       } else if (actionModal.type === 'unblock') {
         await unblockUser(actionModal.user.id);
       } else if (actionModal.type === 'suspend') {
@@ -481,6 +487,7 @@ export default function UsersPage() {
 
   return (
     <div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <Header
         title="사용자 관리"
         subtitle={`로드된 ${allUsers.length}명 중 ${filtered.length}명 표시`}

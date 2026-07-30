@@ -6,6 +6,7 @@ import { getUser, blockUser, unblockUser, updateUserStatus, getUserActivity, get
 import questionMeta from '@/lib/gyeolq-questions.json';
 import { useAuth } from '@/lib/auth-context';
 import type { UserProfile, UserActivity } from '@/types';
+import Toast, { type ToastState } from '@/components/ui/Toast';
 import { versionStatus, VERSION_STATUS_LABEL, LATEST_APP_VERSION } from '@/lib/app-version';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -128,6 +129,7 @@ export default function UserDetailClient({ id }: { id: string }) {
   const [dmToast, setDmToast] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [acting, setActing] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [grantResult, setGrantResult] = useState<{
     foundingNumber: number | null;
@@ -156,7 +158,11 @@ export default function UserDetailClient({ id }: { id: string }) {
     setActing(true);
     try {
       if (modal === 'block') {
-        await blockUser(profile.id, reason, adminUser.uid);
+        const { warnings } = await blockUser(profile.id, reason, adminUser.uid);
+        setToast(warnings.length
+          ? { kind: 'warning', title: '차단은 됐지만 후처리가 일부 실패했어요',
+              details: warnings.map((w) => `${w.label}: ${w.message}`) }
+          : { kind: 'success', title: '차단하고 정리까지 마쳤어요' });
         setProfile((p) => p ? { ...p, isBlacklisted: true, accountStatus: 'blocked', blacklistReason: reason } : p);
       } else if (modal === 'unblock') {
         await unblockUser(profile.id);
@@ -285,6 +291,7 @@ export default function UserDetailClient({ id }: { id: string }) {
 
   return (
     <div className="max-w-3xl">
+      <Toast toast={toast} onClose={() => setToast(null)} />
       {/* Back */}
       <button
         onClick={() => router.back()}

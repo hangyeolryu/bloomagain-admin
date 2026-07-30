@@ -301,7 +301,20 @@ export async function logMoimRoomAccess(params: {
   });
 }
 
-export async function blockUser(uid: string, reason: string, adminUid: string) {
+/**
+ * 계정 차단 + 후처리(대기 웨이브 삭제, 진행 대화에 차단 표시).
+ *
+ * 차단 자체(1)는 실패하면 throw하지만, 후처리(2·3)는 실패해도 차단을 되돌리지
+ * 않는다 — 차단이 걸린 게 더 중요하다. 다만 조용히 넘기면 관리자는 "정리까지
+ * 다 됐다"고 믿게 되므로, 실패를 돌려주어 호출부가 토스트로 알린다.
+ * (남은 웨이브·표시 안 된 대화는 사람이 직접 확인해야 한다.)
+ */
+export async function blockUser(
+  uid: string,
+  reason: string,
+  adminUid: string,
+): Promise<{ warnings: Array<{ label: string; message: string }> }> {
+  const warnings: Array<{ label: string; message: string }> = [];
   // 1. Block the user account
   await updateDoc(doc(db, 'users', uid), {
     isBlacklisted: true,
@@ -326,6 +339,10 @@ export async function blockUser(uid: string, reason: string, adminUid: string) {
     await Promise.all(pendingWaves.map((d) => deleteDoc(d.ref)));
   } catch (e) {
     console.warn('[blockUser] wave cleanup failed:', e);
+    warnings.push({
+      label: '대기 중 웨이브 삭제',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 
   // 3. Mark active conversations so the Flutter app can show "차단된 사용자" UI.
@@ -342,7 +359,13 @@ export async function blockUser(uid: string, reason: string, adminUid: string) {
     );
   } catch (e) {
     console.warn('[blockUser] conversation flag failed:', e);
+    warnings.push({
+      label: '진행 중 대화에 차단 표시',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
+
+  return { warnings };
 }
 
 export async function unblockUser(uid: string) {
