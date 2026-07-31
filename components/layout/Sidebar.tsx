@@ -32,7 +32,6 @@ const navItems: NavItem[] = [
   { href: '/dashboard/data-collection', label: '결큐 인사이트', icon: '🌱' },
   { href: '/dashboard/gyeolq-bank', label: '결큐 질문 관리', icon: '📝' },
   { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞' },
-  { href: '/dashboard/interviews', label: '길거리 인터뷰', icon: '📋' },
   { href: '/dashboard/onboarding', label: '온보딩 드롭오프', icon: '🪜' },
   { href: '/dashboard/users', label: '사용자 관리', icon: '👥', permission: 'viewUsers' },
   { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },

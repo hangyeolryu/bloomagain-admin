@@ -33,7 +33,7 @@ export type PaginatedResult<T> = {
   lastDoc: QueryDocumentSnapshot | null;
 };
 import { db } from './firebase';
-import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus, SupportInquiry, SupportInquiryStatus, StreetInterview } from '@/types';
+import type { AdminRole, UserProfile, Circle, CircleEvent, Report, AdminAlert, SuspiciousMessage, DashboardStats, UserActivity, Announcement, AnnouncementType, Wave, Conversation, DeleteRequest, DeleteRequestStatus, SupportInquiry, SupportInquiryStatus } from '@/types';
 
 // ─── Admin Account Management ────────────────────────────────────────────────
 
@@ -1208,99 +1208,6 @@ export async function resolveSupportInquiry(
     ...(status === 'resolved' ? { resolvedAt: Timestamp.now(), resolvedBy } : {}),
     ...(note ? { note } : {}),
   });
-}
-
-// ─── Street Interviews (field marketing) ───────────────────────────────────
-// Added 2026-05-16 for the May trip. The interviewer fills out a 7-question
-// form on mobile, hits save, the form resets, on to the next person.
-
-/**
- * Persist a single interview. Throws on permission failure so the UI shows
- * a banner — silent drops would be invisible to the field interviewer.
- */
-export async function saveStreetInterview(
-  data: Omit<StreetInterview, 'id' | 'conductedAt'>,
-): Promise<string> {
-  const ref = await addDoc(collection(db, 'street_interviews'), {
-    ...data,
-    conductedAt: Timestamp.now(),
-  });
-  return ref.id;
-}
-
-/**
- * Recent interviews — used on the form page so the interviewer sees their
- * count for the day and the last few entries (a confidence check that
- * saves are actually landing). Limited to 20 to keep mobile fast.
- *
- * saveStreetInterview와 같은 이유로 실패를 삼키지 않고 throw한다: 이 목록이
- * "내 저장이 실제로 들어갔나"를 확인하는 용도라, 읽기 실패로 빈 목록이 뜨면
- * 현장에서 "저장이 날아갔다"로 읽힌다. 호출부가 잡아 화면에 띄운다.
- */
-export async function getRecentStreetInterviews(
-  max: number = 20,
-): Promise<StreetInterview[]> {
-  {
-    const snap = await getDocs(
-      query(
-        collection(db, 'street_interviews'),
-        orderBy('conductedAt', 'desc'),
-        limit(max),
-      ),
-    );
-    return snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        conductedAt: toDate(data.conductedAt) ?? undefined,
-        location: data.location ?? 'other',
-        interviewer: data.interviewer ?? '',
-        ageBand: data.ageBand ?? 'unknown',
-        gender: data.gender ?? 'undisclosed',
-        region: data.region ?? 'unknown',
-        knowsHobbyApps: data.knowsHobbyApps ?? 'unsure',
-        appsKnown: Array.isArray(data.appsKnown) ? data.appsKnown : [],
-        nonUseReasons: Array.isArray(data.nonUseReasons) ? data.nonUseReasons : [],
-        willingnessToUse: data.willingnessToUse ?? 'somewhat',
-        desiredFeatures: Array.isArray(data.desiredFeatures) ? data.desiredFeatures : [],
-        freeText: data.freeText ?? undefined,
-        createdBy: data.createdBy ?? '',
-      } as StreetInterview;
-    });
-  }
-}
-
-/**
- * Quick aggregate stats for the form page header — total count today and
- * lifetime. Used as a progress / motivation indicator for the interviewer.
- */
-export async function getStreetInterviewStats(): Promise<{
-  total: number;
-  today: number;
-  thisWeek: number;
-}> {
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  const [total, today, thisWeek] = await Promise.all([
-    safeCount(collection(db, 'street_interviews'), 'interviews_total'),
-    safeCount(
-      query(
-        collection(db, 'street_interviews'),
-        where('conductedAt', '>=', Timestamp.fromDate(startOfDay)),
-      ),
-      'interviews_today',
-    ),
-    safeCount(
-      query(
-        collection(db, 'street_interviews'),
-        where('conductedAt', '>=', Timestamp.fromDate(sevenDaysAgo)),
-      ),
-      'interviews_7d',
-    ),
-  ]);
-  return { total, today, thisWeek };
 }
 
 // ─── Matching Monitoring Dashboard ──────────────────────────────────────────
