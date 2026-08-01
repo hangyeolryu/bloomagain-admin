@@ -709,11 +709,18 @@ export async function getSuspiciousMessages(
   );
   const snap = await getDocs(q);
   return {
-    items: snap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-      timestamp: toDate(d.data().timestamp),
-    })) as SuspiciousMessage[],
+    items: snap.docs.map((d) => {
+      const x = d.data();
+      return {
+        ...x,
+        id: d.id,
+        // 본문 필드 이름이 쓰는 쪽마다 다르다 — 서버(analyzeMessage)는 content,
+        // 앱의 클라 필터(recordClientDecision)는 message. 맞춰 읽지 않으면
+        // 클라가 막은 건이 본문 없이 빈 줄로 뜬다(2026-08-01 확인).
+        content: x.content ?? x.message ?? '',
+        timestamp: toDate(x.timestamp),
+      };
+    }) as SuspiciousMessage[],
     lastDoc: snap.docs[snap.docs.length - 1] ?? null,
   };
 }
