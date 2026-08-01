@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  collection, doc, getDocs, limit, orderBy, query, Timestamp, updateDoc,
+  collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp,
+  Timestamp, updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Header from '@/components/layout/Header';
@@ -57,6 +58,9 @@ export default function StoriesPage() {
   const [filter, setFilter] = useState<string>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [draftPen, setDraftPen] = useState('');
 
   const load = useCallback(() => {
     getDocs(query(
@@ -94,6 +98,55 @@ export default function StoriesPage() {
       await updateDoc(doc(db, 'story_submissions', id), { status });
       setRows((prev) => (prev
         ? prev.map((r) => (r.id === id ? { ...r, status } : r)) : prev));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function startEdit(row: StorySubmission) {
+    setEditingId(row.id);
+    setDraft(row.text);
+    setDraftPen(row.penName);
+  }
+
+  // 원문을 고친다. 다듬어 싣기 전 오탈자를 바로잡거나, 본인이 문의로
+  // "이 문장만 빼주세요"라고 부탁한 경우를 여기서 처리한다.
+  async function saveEdit(id: string) {
+    const text = draft.trim();
+    if (text.length < 10) {
+      setError('본문이 10자보다 짧아요.');
+      return;
+    }
+    setBusyId(id);
+    try {
+      const penName = draftPen.trim();
+      await updateDoc(doc(db, 'story_submissions', id), {
+        text,
+        penName,
+        editedByAdminAt: serverTimestamp(),
+      });
+      setRows((prev) => (prev
+        ? prev.map((r) => (r.id === id ? { ...r, text, penName } : r)) : prev));
+      setEditingId(null);
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // 본인은 검토 중일 때만 지울 수 있다(룰). 실린 뒤 지워달라는 요청은
+  // 문의로 들어오므로 여기서 대신 지운다.
+  async function removeStory(row: StorySubmission) {
+    const head = row.text.slice(0, 30).replace(/\s+/g, ' ');
+    if (!confirm(`"${head}…"\n\n${row.penName || '익명'} 님의 사연을 지웁니다. 되돌릴 수 없습니다.`)) return;
+    setBusyId(row.id);
+    try {
+      await deleteDoc(doc(db, 'story_submissions', row.id));
+      setRows((prev) => (prev ? prev.filter((r) => r.id !== row.id) : prev));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -182,9 +235,29 @@ export default function StoriesPage() {
                         </span>
                       </div>
 
-                      <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-800">
-                        {r.text}
-                      </p>
+                      {editingId === r.id ? (
+                        <div className="space-y-2">
+                          <input
+                            value={draftPen}
+                            onChange={(e) => setDraftPen(e.target.value)}
+                            placeholder="필명 (비우면 익명)"
+                            className="w-56 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                          />
+                          <textarea
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            rows={Math.min(20, Math.max(6, draft.split('\n').length + 2))}
+                            className="w-full rounded-lg border border-gray-300 p-3 text-[15px] leading-relaxed"
+                          />
+                          <p className="text-xs text-gray-500">
+                            {draft.trim().length}자 · 원문을 고칩니다. 보낸 분께는 고쳐진 글이 보여요.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-800">
+                          {r.text}
+                        </p>
+                      )}
 
                       {r.consentText && (
                         <p className="mt-3 border-l-2 border-amber-300 bg-amber-50 py-2 pl-3 text-xs leading-relaxed text-amber-900">
@@ -197,6 +270,25 @@ export default function StoriesPage() {
                       )}
 
                       <div className="mt-4 flex flex-wrap gap-2">
+                        {editingId === r.id ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busyId === r.id}
+                              onClick={() => saveEdit(r.id)}
+                              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                            >
+                              저장
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              그만두기
+                            </button>
+                          </>
+                        ) : (
                         <button
                           type="button"
                           onClick={() => copyText(r)}
@@ -204,7 +296,18 @@ export default function StoriesPage() {
                         >
                           {copiedId === r.id ? '복사됨' : '본문 복사'}
                         </button>
-                        {(['reviewed', 'published', 'rejected'] as const)
+                        )}
+                        {editingId !== r.id && (
+                          <button
+                            type="button"
+                            onClick={() => startEdit(r)}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                          >
+                            고치기
+                          </button>
+                        )}
+                        {editingId !== r.id
+                          && (['reviewed', 'published', 'rejected'] as const)
                           .filter((s) => s !== r.status)
                           .map((s) => (
                             <button
@@ -217,6 +320,16 @@ export default function StoriesPage() {
                               {STATUS_META[s].label}으로
                             </button>
                           ))}
+                        {editingId !== r.id && (
+                          <button
+                            type="button"
+                            disabled={busyId === r.id}
+                            onClick={() => removeStory(r)}
+                            className="ml-auto rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            지우기
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
