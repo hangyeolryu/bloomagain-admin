@@ -2879,6 +2879,9 @@ export interface NeedsStats {
   bySource: { source: string; count: number }[];
   // "또는, 직접 쓸게요" 원문 — 보기 밖 수요 발굴의 재료 (최신순).
   customTexts: { dim: string; text: string; createdAt?: Date }[];
+  // 설문 건너뛰고 앱만 받는 우회로(2026-08-01 도입). 첫 질문에서 78%가 떠나는데
+  // 그때까지 받을 데가 없어서 뚫었다. 열어본 사람 / 실제로 스토어로 나간 사람.
+  skip: { open: number; download: number };
   capped: boolean;
 }
 
@@ -2927,12 +2930,17 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const CAP = 8000;
   const col = collection(db, 'needs_survey_events');
 
-  const phases = ['start', 'complete', 'download', 'share'] as const;
+  const phases = ['start', 'complete', 'download', 'share', 'skip_open', 'skip_download'] as const;
   const counted = await Promise.all(phases.map(async (p) => {
     const agg = await getCountFromServer(query(col, where('phase', '==', p)));
     return [p, agg.data().count] as const;
   }));
-  const totals = Object.fromEntries(counted) as Record<typeof phases[number], number>;
+  const counts0 = Object.fromEntries(counted) as Record<typeof phases[number], number>;
+  const totals = {
+    start: counts0.start, complete: counts0.complete,
+    download: counts0.download, share: counts0.share,
+  };
+  const skip = { open: counts0.skip_open, download: counts0.skip_download };
 
   const compSnap = await getDocs(
     query(col, where('phase', '==', 'complete'), orderBy('createdAt', 'desc'), limit(2000))
@@ -3045,6 +3053,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count),
     customTexts,
+    skip,
     // 상한에 걸리면 퍼널만 최근 구간 기준이 된다(합계·분포는 영향 없음).
     capped: snap.size >= CAP,
   };

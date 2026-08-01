@@ -102,6 +102,23 @@ export default function NeedsDashboardPage() {
         <Tile label="공유" value={t.share} hint={`누적 ${stats.allTotals.share}`} />
       </div>
 
+      {/* 설문 건너뛰고 앱만 받기 — 첫 질문에서 떠나는 사람에게 뚫어준 길.
+          여기 숫자가 붙으면 그만큼은 원래 그냥 잃던 사람이다. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Tile
+          label="건너뛰기 열어봄"
+          value={stats.skip.open}
+          hint="첫 질문에서 '앱만 받을게요'"
+        />
+        <Tile
+          label="건너뛰기로 다운"
+          value={stats.skip.download}
+          hint={stats.skip.open
+            ? `열어본 사람의 ${pct(stats.skip.download / stats.skip.open)}`
+            : '아직 없음'}
+        />
+      </div>
+
       {/* 질문별 이탈 — answer 이벤트 도입(2026-07-28) 이후 세션부터 잡힌다 */}
       {stats.stepFunnel.some((f) => f.reached > 0) && (
         <section>
