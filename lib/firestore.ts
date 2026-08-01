@@ -2916,12 +2916,32 @@ export const NEEDS_DIM_LABELS: Record<string, string> = {
 };
 
 export async function getNeedsStats(): Promise<NeedsStats> {
-  const CAP = 2000;
-  const snap = await getDocs(
-    query(collection(db, 'needs_survey_events'), orderBy('createdAt', 'desc'), limit(CAP))
+  // 이벤트 한 벌을 통째로 읽어 다 세던 방식은 응답이 쌓이자 무너졌다. answer·
+  // abandon이 완주의 15배라, 상한에 걸리면 잘려 나가는 건 정작 제일 귀한
+  // complete다(2026-08-01 기준 94건 중 10건이 이미 안 보였다).
+  //
+  // 그래서 셋으로 나눈다.
+  //   1) 합계 — 서버 집계(count)라 상한도 오차도 없다.
+  //   2) 응답 분포 — complete만 따로 읽어 잘릴 일이 없다.
+  //   3) 질문별 퍼널 — 세션을 재구성해야 해서 원본이 필요하다. 여기만 상한.
+  const CAP = 8000;
+  const col = collection(db, 'needs_survey_events');
+
+  const phases = ['start', 'complete', 'download', 'share'] as const;
+  const counted = await Promise.all(phases.map(async (p) => {
+    const agg = await getCountFromServer(query(col, where('phase', '==', p)));
+    return [p, agg.data().count] as const;
+  }));
+  const totals = Object.fromEntries(counted) as Record<typeof phases[number], number>;
+
+  const compSnap = await getDocs(
+    query(col, where('phase', '==', 'complete'), orderBy('createdAt', 'desc'), limit(2000))
   );
 
-  const totals = { start: 0, complete: 0, download: 0, share: 0 };
+  const snap = await getDocs(
+    query(col, orderBy('createdAt', 'desc'), limit(CAP))
+  );
+
   const dims = ['timeuse', 'situation', 'activity', 'worry', 'person', 'gender', 'funnel', 'moment', 'ageBand'] as const;
   const counts: Record<string, Map<string, number>> = {};
   dims.forEach((d) => { counts[d] = new Map(); });
@@ -2942,7 +2962,6 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   snap.forEach((d) => {
     const x = d.data() as DocumentData;
     const phase = String(x.phase ?? '');
-    if (phase in totals) totals[phase as keyof typeof totals] += 1;
     const sid = (x.sessionId as string) || d.id;
     const at = toDate(x.createdAt)?.getTime() ?? 0;
     if (at >= CLEAN_SINCE && phase in eraTotals) {
@@ -2958,8 +2977,12 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       abandonStepBySid.set(sid, x.step);
     }
-    // 답 분포는 complete 이벤트 기준(전체 답이 한 번에 실림) — 중복 집계 방지.
-    if (phase !== 'complete') return;
+  });
+
+  // 답 분포는 complete 기준 — 그 한 건에 아홉 답이 다 실려 있다.
+  // answer 이벤트도 같은 필드를 들고 다녀서, 섞어 세면 한 사람이 여러 번 세진다.
+  compSnap.forEach((d) => {
+    const x = d.data() as DocumentData;
     for (const dim of dims) {
       const v = x[dim];
       if (typeof v === 'string' && v) {
@@ -3022,6 +3045,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count),
     customTexts,
+    // 상한에 걸리면 퍼널만 최근 구간 기준이 된다(합계·분포는 영향 없음).
     capped: snap.size >= CAP,
   };
 }

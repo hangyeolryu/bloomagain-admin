@@ -126,7 +126,7 @@ export default function NeedsDashboardPage() {
 
       {/* 분포 기준 안내 — 타일(정확 집계 이후)과 분모가 다름을 명시 */}
       <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-        아래 응답 분포는 <b>누적 완주 {stats.allTotals.complete}명 전체</b> 기준이에요
+        아래 응답 분포는 <b>완주 {stats.allTotals.complete}명 전체</b> 기준이에요
         (상단 타일은 7/28 14:19 정확 집계 이후만 세서 숫자가 달라요).
       </p>
 
@@ -189,7 +189,9 @@ export default function NeedsDashboardPage() {
       } />
 
       {stats.capped && (
-        <p className="text-xs text-amber-600">⚠️ 최근 2,000건까지만 집계했어요.</p>
+        <p className="text-xs text-amber-600">
+          질문별 퍼널은 최근 8,000건까지만 봤어요 (합계·응답 분포는 전체 기준).
+        </p>
       )}
     </div>
   );
