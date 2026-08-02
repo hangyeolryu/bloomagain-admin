@@ -1776,6 +1776,13 @@ export interface OnboardingFunnel {
   // Drop-offs created in last 7 days who never completed — sorted oldest
   // first so we surface the longest-stalled people on top.
   recentDropoffs: OnboardingDropoff[];
+  // 본인인증 '안'에서 어디까지 갔나 — 미인증자만, 계측이 붙은 창(가입 30일 내)에서.
+  // 전체 퍼널은 "가입 → NICE 완료"까지만 보여줘서, 정작 제일 큰 누수인
+  // NICE 단계 내부가 안 보였다(미인증 127명 중 117명이 시도조차 안 함, 2026-08-02).
+  niceStages: { key: string; label: string; count: number }[];
+  // 계측이 실제로 닿은 비율 — 이 숫자를 모르면 위 분해를 과신하게 된다.
+  niceStageCovered: number;
+  niceStageTotal: number;
 }
 
 /**
@@ -1845,6 +1852,12 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
   const recentDropoffs: OnboardingDropoff[] = [];
 
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  // 앱 계측(verificationStage)이 실제로 붙은 시점. 그 전 가입자는 기록이 없는
+  // 게 정상이라, 분해에 섞으면 "기록 없음"만 커져 아무 것도 못 읽는다.
+  const instrumentedSince = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const niceStageCount: Record<string, number> = {};
+  let niceStageCovered = 0;
+  let niceStageTotal = 0;
 
   // Backend가 verification_attempts에 남긴 지난 30일 시도들을 미리 pull해서
   // uid별 요약. 30일 창은 미완료 사용자가 그 이전에 시도했다가 최근 재접속했을
@@ -1873,6 +1886,17 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
     else if (stage === 'nice_done') niceDone++;
     else if (stage === 'profile_partial') profilePartial++;
     else completed++;
+
+    // 본인인증 단계 분해 — 아직 인증 안 된 사람만, 계측이 붙은 뒤 가입자만.
+    // 그 전 가입자는 기록이 없는 게 당연해서 섞으면 "기록 없음"이 부풀려진다.
+    if (data.identityVerified !== true && profile.createdAt
+        && profile.createdAt.getTime() >= instrumentedSince) {
+      niceStageTotal++;
+      const st = (data.verificationStage as string | undefined) ?? '';
+      if (st) niceStageCovered++;
+      const key = st || 'no_record';
+      niceStageCount[key] = (niceStageCount[key] ?? 0) + 1;
+    }
 
     // Surface non-completed users who signed up in the last week.
     if (stage !== 'completed' && profile.createdAt) {
@@ -1988,6 +2012,17 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
     pctProfilePartial: pct(profilePartial),
     pctCompleted: pct(completed),
     recentDropoffs,
+    // 사람이 읽을 순서로 — 흐름을 따라간다. 0인 단계는 화면에서 접는다.
+    niceStages: [
+      {key: 'no_record', label: '기록 없음'},
+      {key: 'intro_viewed', label: '안내만 보고 나감'},
+      {key: 'started', label: '시작했는데 안 끝남'},
+      {key: 'failed', label: '실패'},
+      {key: 'blocked', label: '차단(연령 미달 등)'},
+      {key: 'abandoned', label: '중간 이탈'},
+    ].map((x) => ({...x, count: niceStageCount[x.key] ?? 0})),
+    niceStageCovered,
+    niceStageTotal,
   };
 }
 

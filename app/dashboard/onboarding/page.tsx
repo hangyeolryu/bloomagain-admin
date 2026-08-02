@@ -243,6 +243,14 @@ export default function OnboardingFunnelPage() {
       {activation && <StatWarnings warnings={activation.warnings} className="mb-6" />}
       <ActivationSection data={activation} />
 
+      {/* 본인인증 '안'에서 어디까지 갔나 — 위 퍼널은 "가입 → NICE 완료"까지만
+          보여줘서, 정작 제일 큰 누수인 NICE 단계 내부가 안 보였다. */}
+      <NiceStageSection
+        stages={data.niceStages}
+        covered={data.niceStageCovered}
+        total={data.niceStageTotal}
+      />
+
       {/* Attempt hint summary + device filter (signed_up 단계만) */}
       <DropoffTable
         rows={data.recentDropoffs}
@@ -260,6 +268,60 @@ export default function OnboardingFunnelPage() {
         <span className="font-mono">onboarding_page_view</span> events로 구성.
       </div>
     </div>
+  );
+}
+
+// ── 본인인증 단계 분해 ────────────────────────────────────────────────────
+//
+// 인증을 못 끝낸 사람이 **어디서** 멈췄나. 실패한 사람보다 시작조차 안 한
+// 사람이 훨씬 많다는 걸 이 표가 처음 보여준다(2026-08-02 기준 117 대 10).
+// 고칠 곳이 "인증 실패 처리"가 아니라 "안내 화면"이라는 뜻이다.
+function NiceStageSection({
+  stages, covered, total,
+}: {
+  stages: { key: string; label: string; count: number }[];
+  covered: number;
+  total: number;
+}) {
+  const shown = stages.filter((s) => s.count > 0);
+  if (!total) return null;
+  const max = Math.max(...shown.map((s) => s.count), 1);
+  const pct = Math.round((covered / total) * 100);
+  return (
+    <section className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="text-sm font-semibold text-gray-900">
+        본인인증을 못 끝낸 분들 — 어디서 멈췄나
+      </h2>
+      <p className="mt-1 mb-4 text-xs text-gray-400">
+        최근 30일 가입자 {total}명 중 아직 인증 전 · 앱 계측 도달{' '}
+        <b className={pct < 70 ? 'text-amber-600' : ''}>{pct}%</b>
+        {pct < 70 && ' — 나머지는 계측 이전 버전이라 판단에 주의'}
+      </p>
+      {shown.length === 0 ? (
+        <p className="text-sm text-gray-400">인증 전 상태로 남은 분이 없어요.</p>
+      ) : (
+        <div className="space-y-2">
+          {shown.map((s) => (
+            <div key={s.key} className="flex items-center gap-3">
+              <div className="w-40 shrink-0 truncate text-sm text-gray-700">
+                {s.label}
+              </div>
+              <div className="relative h-6 flex-1 overflow-hidden rounded bg-gray-100">
+                <div
+                  className={`absolute inset-y-0 left-0 rounded ${
+                    s.key === 'no_record' ? 'bg-gray-400/70' : 'bg-emerald-600/80'
+                  }`}
+                  style={{ width: `${Math.round((s.count / max) * 100)}%` }}
+                />
+              </div>
+              <div className="w-12 shrink-0 text-right text-sm tabular-nums text-gray-600">
+                {s.count}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
