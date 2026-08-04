@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  formatNiceUpstreamError,
-  isNonHumanNiceRequest,
-  niceBackendBase,
-} from '@/lib/nice-upstream';
+import { formatNiceUpstreamError, niceBackendBase } from '@/lib/nice-upstream';
 
 /**
  * POST /api/nice/init
@@ -12,17 +8,6 @@ import {
  * The backend owns NICE credentials and all crypto logic.
  */
 export async function POST(request: NextRequest) {
-  // 사람이 아닌 요청은 업스트림에 가기 전에 끊는다 — 여기가 과금 지점이다.
-  // 세는 건 계속한다(원인을 찾는 중이라 규모 추이를 봐야 한다).
-  const ua = request.headers.get('user-agent');
-  if (isNonHumanNiceRequest(ua)) {
-    console.warn(
-      `[/api/nice/init] blocked non-human request ua="${ua}" ` +
-      `referer="${request.headers.get('referer') ?? ''}"`
-    );
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
   const backendUrl = niceBackendBase();
   if (!backendUrl) {
     return NextResponse.json(

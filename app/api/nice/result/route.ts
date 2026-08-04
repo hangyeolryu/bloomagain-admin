@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  formatNiceUpstreamError,
-  isNonHumanNiceRequest,
-  niceBackendBase,
-} from '@/lib/nice-upstream';
+import { formatNiceUpstreamError, niceBackendBase } from '@/lib/nice-upstream';
 
 const MAIN_BACKEND_URL = (process.env.BLOOMAGAIN_BACKEND_URL ?? '').replace(/\/$/, '');
 const BACKEND_APP_ID = process.env.BACKEND_APP_ID ?? '';
@@ -19,19 +15,6 @@ const BACKEND_API_KEY = process.env.BACKEND_API_KEY ?? '';
  * /api/v1/nice/store-result (API-key protected) to generate a one-time token.
  */
 export async function POST(request: NextRequest) {
-  // init보다 여기가 더 위험하다. 이 경로는 인증 결과를 실제로 처리(일회용
-  // 토큰 발급)하는 자리인데, 2026-07-20~08-04 54건 중 45건(83%)이 hmdsAgent
-  // 요청이었고 전부 HTTP 200으로 처리됐다. nice_req_no가 전부 달라 각각이
-  // 별개의 인증 세션이다 — 봇이 init부터 콜백까지 흐름 전체를 혼자 돈다.
-  const ua = request.headers.get('user-agent');
-  if (isNonHumanNiceRequest(ua)) {
-    console.warn(
-      `[/api/nice/result] blocked non-human request ua="${ua}" ` +
-      `referer="${request.headers.get('referer') ?? ''}"`
-    );
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
   const backendUrl = niceBackendBase();
   if (!backendUrl) {
     return NextResponse.json(

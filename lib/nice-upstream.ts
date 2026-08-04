@@ -10,23 +10,19 @@ export function niceBackendBase(): string {
 }
 
 /**
- * 사람이 아닌 요청인가 — NICE 인증 세션은 건당 과금이라 미리 걸러야 한다.
+ * ⚠️ `hmdsAgent`가 붙은 요청을 봇으로 오인하지 말 것 — 2026-08-04에 그렇게
+ * 판단해 차단했다가 안드로이드 본인인증을 통째로 막았다(약 20분).
  *
- * 2026-08-04에 발견: 지난 30일 /api/nice/init 189건 중 134건(71%)이 UA 끝에
- * `hmdsAgent`가 붙은 요청이었다. IP는 매번 다른 구글 대역(66.249.82.x),
- * referer는 실제 유저의 `/verify?uid=...`. 88개 uid를 따라다녔고 한 uid는
- * 30번 반복했다. 7/31 하루는 34건이 전부 이것이고 실제 사용자는 0명이었다.
+ * NICE 표준창이 인앱 웹뷰를 알아보려면 User-Agent 끝에 `hmdsAgent` 마커가
+ * 있어야 해서 우리 앱이 **안드로이드에서 직접 그 UA를 설정한다**
+ * (bloomagain-korea/lib/features/identity/nice_verification_webview.dart:129).
+ * 없으면 NICE가 "PASS앱을 실행할 수 없는 환경입니다"를 띄우고 인증 결과가
+ * 돌아오지 않는다.
  *
- * robots.txt는 이미 `Disallow: /`인데 지키지 않는다. 그래서 코드에서 막는다.
- *
- * 막는 게 증상 대응인 건 안다 — 저 URL이 어떻게 밖으로 새는지는 아직 못
- * 밝혔다. 다만 원인을 찾는 동안에도 과금과 세션 무효화는 계속되므로 먼저
- * 멈춘다. 실제 사용자의 웹뷰는 이 UA를 달 수 없다.
+ * 서버 로그에 이 UA가 구글 IP(google-proxy-*.google.com)로 찍히는 것도
+ * 정상이다 — 안드로이드 WebView 트래픽이 그 경로를 탄다. UA·IP만 보고
+ * "크롤러"로 읽으면 안 된다. 실제 사용자다.
  */
-export function isNonHumanNiceRequest(userAgent: string | null): boolean {
-  if (!userAgent) return false;
-  return /hmdsAgent/i.test(userAgent);
-}
 
 export function formatNiceUpstreamError(
   upstreamStatus: number,
