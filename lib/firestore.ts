@@ -2929,10 +2929,44 @@ export interface NeedsStats {
   //
   // 추가 읽기는 없다 — 질문별 퍼널 때문에 이미 통째로 읽어 둔 스냅샷에서 센다.
   daily: NeedsDay[];
+  // 첫 질문 교체 전/후 비교. 라벨이 시기마다 달라서 한 표에 못 겹친다.
+  swap: { before: NeedsSwapEra; after: NeedsSwapEra };
   // 캡에 걸리면 스냅샷의 가장 오래된 날은 하루치가 다 안 들어온다. 그 날짜를
   // 넘겨 화면에서 잘라낸다 — 반쪽 숫자를 온전한 것처럼 보여주면 안 된다.
   dailyPartialFrom: string | null;
   capped: boolean;
+}
+
+// 첫 질문 교체 — 2026-08-04 18:55 KST 배포(웹 36563c7).
+// "그 시간을 어떻게 보내세요?"(보기 다섯 중 넷이 자기 고백) → "요즘 어떤 시기를
+// 지나고 계세요?"(사실 확인). 도착의 58%가 첫 질문에서 아무것도 안 누르고
+// 나가던 걸 고치려는 변경이다.
+export const NEEDS_Q_SWAP_AT = new Date('2026-08-04T09:55:00Z');
+const Q_SWAP_AT = NEEDS_Q_SWAP_AT.getTime();
+
+// 질문 순서 라벨 — 웹 QUESTIONS 순서와 일치해야 한다.
+// step은 숫자로만 저장돼서, 교체 전 이벤트의 step 0은 '시간 사용'이고 교체 후는
+// '삶의 변화'다. 그래서 라벨을 시기별로 따로 둔다 — 한 벌로 두면 서로 다른
+// 질문을 같은 줄에 놓고 견주게 된다.
+export const NEEDS_STEP_LABELS = [
+  '1. 삶의 변화', '2. 누가 있었으면 순간', '3. 시간을 어떻게 보내나',
+  '4. 하고 싶은 것', '5. 편한 사람', '6. 걱정',
+  '7. 온라인 vs 만나서', '8. 성별', '9. 연령',
+];
+export const NEEDS_STEP_LABELS_BEFORE = [
+  '1. 시간을 어떻게 보내나', '2. 누가 있었으면 순간', '3. 삶의 변화',
+  '4. 하고 싶은 것', '5. 편한 사람', '6. 걱정',
+  '7. 온라인 vs 만나서', '8. 성별', '9. 연령',
+];
+
+export interface NeedsSwapEra {
+  title: string; // '교체 전' / '교체 후'
+  firstQuestion: string; // 그때 첫 화면에 있던 질문
+  base: number; // 도착 세션
+  q1Abandoned: number; // 첫 질문에서 아무것도 안 누르고 나감
+  complete: number;
+  download: number; // 설문 완주 + 건너뛰기 합
+  funnel: { step: number; label: string; reached: number; abandonedHere: number }[];
 }
 
 export interface NeedsDay {
@@ -3026,6 +3060,14 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const eraTotals = { start: 0, complete: 0, download: 0, share: 0 };
   // abandon: 세션별 "나갈 때 보던 질문" (답변으로 이어졌으면 무시)
   const abandonStepBySid = new Map<string, number>();
+  // 첫 질문 교체(2026-08-04 18:55 KST) 전후를 가르는 선. 세션은 시작 시각으로
+  // 한쪽에 붙인다 — 교체 순간에 걸친 세션을 이벤트마다 쪼개면 어느 쪽 숫자도
+  // 안 맞는다.
+  const swapFirstAtBySid = new Map<string, number>();
+  const swapTotals = {
+    before: { complete: 0, download: 0 },
+    after: { complete: 0, download: 0 },
+  };
   // 나날의 현황 — 같은 스냅샷을 한 번 더 훑는 대신 여기서 같이 센다.
   const dayMap = new Map<string, NeedsDay>();
   const DAY_KEYS: Record<string, keyof NeedsDay> = {
@@ -3064,6 +3106,16 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       abandonStepBySid.set(sid, x.step);
     }
+    // 세션의 가장 이른 시각 — 교체 전/후를 가를 기준.
+    if (at >= CLEAN_SINCE && (phase === 'start' || phase === 'answer' || phase === 'abandon')) {
+      const prev = swapFirstAtBySid.get(sid);
+      if (prev === undefined || at < prev) swapFirstAtBySid.set(sid, at);
+    }
+    if (at >= CLEAN_SINCE) {
+      const side = at >= Q_SWAP_AT ? swapTotals.after : swapTotals.before;
+      if (phase === 'complete') side.complete += 1;
+      if (phase === 'download' || phase === 'skip_download') side.download += 1;
+    }
   });
 
   // 답 분포는 complete 기준 — 그 한 건에 아홉 답이 다 실려 있다.
@@ -3089,31 +3141,58 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     [...m.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
   const ageTotal = [...counts.ageBand.values()].reduce((a, b) => a + b, 0);
 
-  // 질문 순서 라벨 — 웹 QUESTIONS 순서와 일치해야 한다.
-  //
-  // ⚠️ 2026-08-04에 1번과 3번을 맞바꿨다(시간 사용 ↔ 삶의 변화). step은 숫자로
-  // 저장돼서 그 전 이벤트의 step 0은 '시간 사용', 이후는 '삶의 변화'다. 아래
-  // 라벨은 지금 순서 기준이므로, 8/4 이전 구간의 1·3번 라벨은 서로 바꿔 읽어야
-  // 한다. 이 표로 교체 효과를 판단할 땐 8/4 이후만 본다.
-  const STEP_LABELS = [
-    '1. 삶의 변화', '2. 누가 있었으면 순간', '3. 시간을 어떻게 보내나',
-    '4. 하고 싶은 것', '5. 편한 사람', '6. 걱정',
-    '7. 온라인 vs 만나서', '8. 성별', '9. 연령',
-  ];
-  const stepFunnel = STEP_LABELS.map((label, i) => {
-    let reached = 0;
-    maxStepBySid.forEach((mx) => { if (mx >= i) reached += 1; });
-    // 이 질문을 "보다가" 나간 세션 — 이후 답변으로 이어졌으면(복귀) 제외.
-    let abandonedHere = 0;
-    abandonStepBySid.forEach((ab, sid) => {
-      if (ab === i && (maxStepBySid.get(sid) ?? -1) < i) abandonedHere += 1;
+  // 질문별 퍼널을 세션 집합 하나에서 만든다. 교체 전/후로 각각 부르면 같은
+  // 코드로 두 벌이 나온다.
+  const buildFunnel = (labels: string[], sids: Set<string>) => {
+    const rows = labels.map((label, i) => {
+      let reached = 0;
+      sids.forEach((sid) => { if ((maxStepBySid.get(sid) ?? -1) >= i) reached += 1; });
+      // 이 질문을 "보다가" 나간 세션 — 이후 답변으로 이어졌으면(복귀) 제외.
+      let abandonedHere = 0;
+      sids.forEach((sid) => {
+        if (abandonStepBySid.get(sid) === i && (maxStepBySid.get(sid) ?? -1) < i) {
+          abandonedHere += 1;
+        }
+      });
+      return { step: i, label, reached, abandonedHere };
     });
-    return { step: i, label, reached, abandonedHere };
+    // 기준선: '시작' 세션 — Q1 전에 나간 사람이 여기서 보인다.
+    rows.unshift({ step: -1, label: '도착 (실제 본)', reached: sids.size, abandonedHere: 0 });
+    return rows;
+  };
+
+  // answer는 있는데 start가 유실(네트워크)된 세션도 기준선에 포함한다.
+  const allSids = new Set([...eraStartSids, ...maxStepBySid.keys(), ...abandonStepBySid.keys()]);
+  const beforeSids = new Set<string>();
+  const afterSids = new Set<string>();
+  allSids.forEach((sid) => {
+    const at = swapFirstAtBySid.get(sid);
+    if (at === undefined) return;
+    (at >= Q_SWAP_AT ? afterSids : beforeSids).add(sid);
   });
-  // 기준선: 추적 도입 이후 '시작' 세션 — Q1 전에 나간 사람이 여기서 보인다.
-  // answer는 있는데 start 유실(네트워크)인 세션도 기준선에 포함.
-  const eraBase = new Set([...eraStartSids, ...maxStepBySid.keys()]).size;
-  stepFunnel.unshift({ step: -1, label: '도착 (실제 본)', reached: eraBase, abandonedHere: 0 });
+
+  const stepFunnel = buildFunnel(NEEDS_STEP_LABELS, allSids);
+
+  const era = (
+    title: string, firstQuestion: string, sids: Set<string>,
+    labels: string[], tot: { complete: number; download: number },
+  ): NeedsSwapEra => {
+    const funnel = buildFunnel(labels, sids);
+    return {
+      title, firstQuestion,
+      base: sids.size,
+      q1Abandoned: funnel.find((f) => f.step === 0)?.abandonedHere ?? 0,
+      complete: tot.complete,
+      download: tot.download,
+      funnel,
+    };
+  };
+  const swap = {
+    before: era('교체 전', '그 시간을 어떻게 보내세요?', beforeSids,
+      NEEDS_STEP_LABELS_BEFORE, swapTotals.before),
+    after: era('교체 후', '요즘 어떤 시기를 지나고 계세요?', afterSids,
+      NEEDS_STEP_LABELS, swapTotals.after),
+  };
 
   // 캡에 걸렸을 때만 잘라낸다. 안 걸렸으면 가장 오래된 날이 곧 데이터의
   // 시작이라 그 하루는 온전하다.
@@ -3148,6 +3227,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     skip,
     daily,
     dailyPartialFrom,
+    swap,
     // 상한에 걸리면 퍼널만 최근 구간 기준이 된다(합계·분포는 영향 없음).
     capped: snap.size >= CAP,
   };

@@ -106,6 +106,107 @@ function Summary({ stats }: { stats: NeedsStats }) {
   );
 }
 
+// 첫 질문 교체 효과 — 교체 전/후를 나란히 놓는다.
+//
+// 한 표에 겹쳐 그릴 수 없다. step이 숫자로만 저장돼서 교체 전 step 0은
+// '시간 사용', 교체 후는 '삶의 변화'다. 겹치면 서로 다른 질문을 같은 줄에서
+// 견주게 된다. 그래서 두 벌을 각자 라벨로 그리고, 비교는 "첫 질문"이라는
+// 자리끼리만 한다 — 우리가 바꾼 게 바로 그 자리다.
+function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
+  const { before, after } = swap;
+  // 표본이 적을 때 퍼센트를 크게 띄우면 소음을 신호로 읽는다. 최소치를 두고
+  // 그 아래면 판정을 미룬다.
+  const MIN = 80;
+  const ready = after.base >= MIN;
+  const rate = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
+  const q1Before = rate(before.q1Abandoned, before.base);
+  const q1After = rate(after.q1Abandoned, after.base);
+  const diff = q1After - q1Before;
+
+  const Col = ({ era, tone }: { era: typeof before; tone: 'gray' | 'green' }) => {
+    const head = tone === 'green'
+      ? 'border-emerald-200 bg-emerald-50/50'
+      : 'border-gray-200 bg-gray-50';
+    return (
+      <div className={`rounded-xl border ${head} p-4`}>
+        <div className="text-xs font-semibold text-gray-500">{era.title}</div>
+        <div className="mt-0.5 text-sm font-medium text-gray-900">
+          첫 질문: “{era.firstQuestion}”
+        </div>
+        <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+          {[
+            ['도착', era.base, null],
+            ['첫 질문 이탈', era.q1Abandoned, rate(era.q1Abandoned, era.base)],
+            ['완주', era.complete, rate(era.complete, era.base)],
+          ].map(([label, n, p]) => (
+            <div key={label as string} className="rounded-lg bg-white px-2 py-2">
+              <dt className="text-[11px] text-gray-500">{label}</dt>
+              <dd className="text-lg font-semibold tabular-nums text-gray-900">{n as number}</dd>
+              {p !== null && (
+                <dd className="text-[11px] tabular-nums text-gray-400">
+                  {Math.round(p as number)}%
+                </dd>
+              )}
+            </div>
+          ))}
+        </dl>
+        <div className="mt-3 space-y-1.5">
+          {era.funnel.map((f) => (
+            <Bar key={f.step} label={f.label} count={f.reached} max={era.base || 1} />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">첫 질문 교체 효과</h2>
+      <p className="mb-3 text-xs text-gray-400">
+        2026-08-04 18:55 교체. 세션은 시작 시각으로 한쪽에 붙습니다. 질문 순서가
+        달라 각 시기의 라벨은 그때 순서 그대로입니다 — <b>비교는 &apos;첫 질문&apos; 자리끼리만</b> 하세요.
+      </p>
+
+      <div
+        className={`mb-3 rounded-xl border p-4 ${
+          ready
+            ? diff < 0
+              ? 'border-emerald-200 bg-emerald-50'
+              : 'border-red-200 bg-red-50'
+            : 'border-amber-200 bg-amber-50'
+        }`}
+      >
+        {ready ? (
+          <p className="text-sm text-gray-800">
+            첫 질문 이탈률{' '}
+            <b className="tabular-nums">{Math.round(q1Before)}%</b> →{' '}
+            <b className="tabular-nums">{Math.round(q1After)}%</b>{' '}
+            <b className={diff < 0 ? 'text-emerald-700' : 'text-red-700'}>
+              ({diff < 0 ? '▼' : '▲'}
+              {Math.abs(Math.round(diff))}%p)
+            </b>
+            {diff < 0 ? ' — 교체가 먹혔습니다.' : ' — 교체 전이 더 나았습니다.'}
+          </p>
+        ) : (
+          <p className="text-sm text-amber-900">
+            교체 후 도착이 아직 <b className="tabular-nums">{after.base}</b>명입니다
+            (판정 기준 {MIN}명). 지금 퍼센트는 몇 사람에 따라 크게 흔들리니
+            <b> 판단을 미뤄 주세요.</b>{' '}
+            {after.base === 0
+              ? `교체 전 첫 질문 이탈률은 ${Math.round(q1Before)}%였습니다 — 이 숫자보다 낮아지면 성공입니다.`
+              : `참고로 지금은 ${Math.round(q1Before)}% → ${Math.round(q1After)}%입니다.`}
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <Col era={before} tone="gray" />
+        <Col era={after} tone="green" />
+      </div>
+    </section>
+  );
+}
+
 // 나날의 현황 — 누적만 보면 소재를 바꾸거나 화면을 고친 날이 평균에 묻힌다.
 function DailyTable({ daily, partialFrom }: { daily: NeedsDay[]; partialFrom: string | null }) {
   const rows = daily.slice(-14).reverse(); // 최신이 위
@@ -287,6 +388,8 @@ export default function NeedsDashboardPage() {
         />
       </div>
 
+      <SwapCompare swap={stats.swap} />
+
       <DailyTable daily={stats.daily} partialFrom={stats.dailyPartialFrom} />
 
       {/* 질문별 이탈 — answer 이벤트 도입(2026-07-28) 이후 세션부터 잡힌다 */}
@@ -296,12 +399,10 @@ export default function NeedsDashboardPage() {
           <p className="mb-3 text-xs text-gray-400">
             7/28 14:19(정확 집계) 이후 — 도달=답한 세션, "보고 나감"=그 질문을 보다가 답 없이 떠남
           </p>
-          {/* 순서를 바꾼 날을 화면에 남긴다. 안 적어두면 몇 주 뒤에 이 표를 보고
-              "1번 이탈이 줄었다"를 서로 다른 질문끼리 견주게 된다. */}
-          <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            8/4에 1번과 3번 질문을 맞바꿨습니다(시간 사용 ↔ 삶의 변화). 라벨은 지금
-            순서 기준이라 <b>8/4 이전 구간은 1·3번을 서로 바꿔 읽어야</b> 합니다.
-            교체 효과는 8/4 이후만 보고 판단하세요.
+          {/* 이 표는 두 시기가 섞여 있다. 교체 효과를 볼 자리는 위의 비교 카드다. */}
+          <p className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+            이 표는 <b>교체 전후가 섞여</b> 있고 라벨은 지금 순서 기준입니다(8/4에 1번과
+            3번을 맞바꿈). 교체 효과는 위의 <b>&lsquo;첫 질문 교체 효과&rsquo;</b>에서 보세요.
           </p>
           <div className="space-y-2">
             {stats.stepFunnel.map((f) => (
