@@ -296,6 +296,13 @@ export default function NeedsDashboardPage() {
           <p className="mb-3 text-xs text-gray-400">
             7/28 14:19(정확 집계) 이후 — 도달=답한 세션, "보고 나감"=그 질문을 보다가 답 없이 떠남
           </p>
+          {/* 순서를 바꾼 날을 화면에 남긴다. 안 적어두면 몇 주 뒤에 이 표를 보고
+              "1번 이탈이 줄었다"를 서로 다른 질문끼리 견주게 된다. */}
+          <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            8/4에 1번과 3번 질문을 맞바꿨습니다(시간 사용 ↔ 삶의 변화). 라벨은 지금
+            순서 기준이라 <b>8/4 이전 구간은 1·3번을 서로 바꿔 읽어야</b> 합니다.
+            교체 효과는 8/4 이후만 보고 판단하세요.
+          </p>
           <div className="space-y-2">
             {stats.stepFunnel.map((f) => (
               <div key={f.step} className="flex items-center gap-2">
