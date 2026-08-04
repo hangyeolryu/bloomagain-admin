@@ -2924,7 +2924,25 @@ export interface NeedsStats {
   // 설문 건너뛰고 앱만 받는 우회로(2026-08-01 도입). 첫 질문에서 78%가 떠나는데
   // 그때까지 받을 데가 없어서 뚫었다. 열어본 사람 / 실제로 스토어로 나간 사람.
   skip: { open: number; download: number };
+  // 나날의 현황 (KST 기준, 오래된 → 최신). 누적 숫자만 보면 소재를 바꾸거나
+  // 화면을 고친 날 무슨 일이 있었는지가 평균에 묻힌다.
+  //
+  // 추가 읽기는 없다 — 질문별 퍼널 때문에 이미 통째로 읽어 둔 스냅샷에서 센다.
+  daily: NeedsDay[];
+  // 캡에 걸리면 스냅샷의 가장 오래된 날은 하루치가 다 안 들어온다. 그 날짜를
+  // 넘겨 화면에서 잘라낸다 — 반쪽 숫자를 온전한 것처럼 보여주면 안 된다.
+  dailyPartialFrom: string | null;
   capped: boolean;
+}
+
+export interface NeedsDay {
+  day: string; // YYYY-MM-DD (KST)
+  start: number;
+  complete: number;
+  download: number;
+  share: number;
+  skipOpen: number;
+  skipDownload: number;
 }
 
 export const NEEDS_LABELS: Record<string, string> = {
@@ -3008,6 +3026,14 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const eraTotals = { start: 0, complete: 0, download: 0, share: 0 };
   // abandon: 세션별 "나갈 때 보던 질문" (답변으로 이어졌으면 무시)
   const abandonStepBySid = new Map<string, number>();
+  // 나날의 현황 — 같은 스냅샷을 한 번 더 훑는 대신 여기서 같이 센다.
+  const dayMap = new Map<string, NeedsDay>();
+  const DAY_KEYS: Record<string, keyof NeedsDay> = {
+    start: 'start', complete: 'complete', download: 'download',
+    share: 'share', skip_open: 'skipOpen', skip_download: 'skipDownload',
+  };
+  let oldestAt = Infinity;
+  const kstDay = (ms: number) => new Date(ms + 9 * 3600_000).toISOString().slice(0, 10);
 
   snap.forEach((d) => {
     const x = d.data() as DocumentData;
@@ -3016,6 +3042,17 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     const at = toDate(x.createdAt)?.getTime() ?? 0;
     if (at >= CLEAN_SINCE && phase in eraTotals) {
       eraTotals[phase as keyof typeof eraTotals] += 1;
+    }
+    const dayField = DAY_KEYS[phase];
+    if (at > 0 && dayField) {
+      if (at < oldestAt) oldestAt = at;
+      const key = kstDay(at);
+      let row = dayMap.get(key);
+      if (!row) {
+        row = { day: key, start: 0, complete: 0, download: 0, share: 0, skipOpen: 0, skipDownload: 0 };
+        dayMap.set(key, row);
+      }
+      (row[dayField] as number) += 1;
     }
     if (phase === 'start') {
       startSids.add(sid);
@@ -3073,6 +3110,14 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const eraBase = new Set([...eraStartSids, ...maxStepBySid.keys()]).size;
   stepFunnel.unshift({ step: -1, label: '도착 (실제 본)', reached: eraBase, abandonedHere: 0 });
 
+  // 캡에 걸렸을 때만 잘라낸다. 안 걸렸으면 가장 오래된 날이 곧 데이터의
+  // 시작이라 그 하루는 온전하다.
+  const dailyPartialFrom = snap.size >= CAP && Number.isFinite(oldestAt) ? kstDay(oldestAt) : null;
+  const daily = [...dayMap.values()]
+    .filter((r) => !dailyPartialFrom || r.day > dailyPartialFrom)
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .slice(-21); // 화면은 14일을 쓰고, 나머지 7일은 직전 주 비교용
+
   return {
     // 상단 타일은 정확 집계(7/28 14:19 KST) 이후만 — 그 전 start는 의미가
     // 섞인 숫자라 버린다. 응답 분포는 전체 complete 기준 유지.
@@ -3096,6 +3141,8 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       .sort((a, b) => b.count - a.count),
     customTexts,
     skip,
+    daily,
+    dailyPartialFrom,
     // 상한에 걸리면 퍼널만 최근 구간 기준이 된다(합계·분포는 영향 없음).
     capped: snap.size >= CAP,
   };

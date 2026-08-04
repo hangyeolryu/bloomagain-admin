@@ -13,7 +13,173 @@ import {
   NEEDS_DIM_LABELS,
   GYEOL_AGE_LABELS,
   type NeedsStats,
+  type NeedsDay,
 } from '@/lib/firestore';
+
+const sumOf = (rows: NeedsDay[], k: keyof NeedsDay) =>
+  rows.reduce((a, r) => a + (typeof r[k] === 'number' ? (r[k] as number) : 0), 0);
+// 다운로드는 두 갈래로 들어온다 — 설문을 끝내고 받는 길, 첫 질문에서 건너뛰고
+// 받는 길. 둘을 따로만 보면 "오늘 몇 명이 받았나"를 매번 암산해야 한다.
+const totalDown = (rows: NeedsDay[]) => sumOf(rows, 'download') + sumOf(rows, 'skipDownload');
+
+function Delta({ now, prev }: { now: number; prev: number }) {
+  if (prev <= 0) return null;
+  const d = Math.round(((now - prev) / prev) * 100);
+  if (d === 0) return <span className="text-gray-400">직전 7일과 같음</span>;
+  return (
+    <span className={d > 0 ? 'font-medium text-emerald-600' : 'font-medium text-red-600'}>
+      직전 7일 {d > 0 ? '▲' : '▼'}{Math.abs(d)}%
+    </span>
+  );
+}
+
+// 요약 — 표를 읽기 전에 "지금 어떤 상태인가"를 문장으로 먼저 준다.
+// 기간이 섞이면 거짓말이 되므로, 최근 7일과 전체 기간을 갈라서 말한다.
+function Summary({ stats }: { stats: NeedsStats }) {
+  const d = stats.daily;
+  if (d.length === 0) return null;
+  const last7 = d.slice(-7);
+  // 직전 주가 온전히 7일 있을 때만 비교한다. 7/28부터 데이터가 있어서, 그냥
+  // slice하면 "7일 대 1일"을 견줘 ▲1100% 같은 헛소리가 나온다.
+  const prev7 = d.length >= 14 ? d.slice(-14, -7) : [];
+
+  const start = sumOf(last7, 'start');
+  const complete = sumOf(last7, 'complete');
+  const down = totalDown(last7);
+  const skipOpen = sumOf(last7, 'skipOpen');
+  const skipDown = sumOf(last7, 'skipDownload');
+  const pc = (n: number, d0: number) => (d0 > 0 ? `${Math.round((n / d0) * 100)}%` : '—');
+
+  // 전체 기간 기준 — 여기만 stepFunnel/연령을 쓴다(일자별로는 안 쌓고 있다).
+  const base = stats.stepFunnel[0]?.reached ?? 0;
+  const q1 = stats.stepFunnel.find((f) => f.step === 0);
+  const topSource = stats.bySource[0];
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="text-sm font-semibold text-gray-900">한눈에</h2>
+
+      <p className="mt-3 text-[15px] leading-relaxed text-gray-800">
+        최근 7일 <b className="tabular-nums">{start}</b>명이 도착해{' '}
+        <b className="tabular-nums">{complete}</b>명이 끝까지 답했고(
+        <span className="tabular-nums">{pc(complete, start)}</span>),{' '}
+        <b className="tabular-nums">{down}</b>명이 앱을 받으러 갔습니다(도착의{' '}
+        <span className="tabular-nums">{pc(down, start)}</span>).
+      </p>
+      <p className="mt-1 text-xs text-gray-500">
+        도착 <Delta now={start} prev={sumOf(prev7, 'start')} /> · 다운{' '}
+        <Delta now={down} prev={totalDown(prev7)} />
+      </p>
+
+      <ul className="mt-4 space-y-1.5 text-sm text-gray-700">
+        {q1 && base > 0 && (
+          <li>
+            가장 크게 새는 곳은 여전히 <b>첫 질문</b> — 전체 기간 도착{' '}
+            <span className="tabular-nums">{base}</span>명 중{' '}
+            <b className="tabular-nums text-red-600">{q1.abandonedHere}</b>명(
+            <span className="tabular-nums">{pc(q1.abandonedHere, base)}</span>)이 아무것도
+            안 누르고 나갔습니다.
+          </li>
+        )}
+        <li>
+          건너뛰고 앱만 받는 길은 최근 7일 <b className="tabular-nums">{skipOpen}</b>명이
+          열어 <b className="tabular-nums">{skipDown}</b>명이 스토어로 갔습니다
+          {skipOpen > 0 && <> (<span className="tabular-nums">{pc(skipDown, skipOpen)}</span>)</>}.
+          {down > 0 && (
+            <> 전체 다운의 <span className="tabular-nums">{pc(skipDown, down)}</span>가 이 길에서 나왔습니다.</>
+          )}
+        </li>
+        {stats.underAgeShare > 0 && (
+          <li>
+            완주자의 <b className="tabular-nums text-red-600">{Math.round(stats.underAgeShare * 100)}%</b>가
+            만 45세 미만입니다 — 설치해도 본인인증에서 막힙니다.
+          </li>
+        )}
+        {topSource && (
+          <li>
+            유입 1위는 <b>{topSource.source}</b>
+            <span className="tabular-nums"> ({topSource.count}명 완주)</span>.
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+// 나날의 현황 — 누적만 보면 소재를 바꾸거나 화면을 고친 날이 평균에 묻힌다.
+function DailyTable({ daily, partialFrom }: { daily: NeedsDay[]; partialFrom: string | null }) {
+  const rows = daily.slice(-14).reverse(); // 최신이 위
+  if (rows.length === 0) return null;
+  const maxStart = Math.max(...rows.map((r) => r.start), 1);
+  const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">나날의 현황 (최근 14일)</h2>
+      <p className="mb-3 text-xs text-gray-400">
+        한국 시간 기준. &apos;다운&apos;은 설문을 끝내고 받은 것과 건너뛰고 받은 것을 합친 수입니다.
+        {partialFrom && ` ${partialFrom} 이전은 조회 상한에 걸려 표시하지 않습니다.`}
+      </p>
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 text-xs text-gray-500">
+              <th className="px-4 py-2.5 text-left font-medium">날짜</th>
+              <th className="px-3 py-2.5 text-right font-medium">도착</th>
+              <th className="px-3 py-2.5 text-right font-medium">완주</th>
+              <th className="px-3 py-2.5 text-right font-medium">완주율</th>
+              <th className="px-3 py-2.5 text-right font-medium">다운</th>
+              <th className="px-3 py-2.5 text-right font-medium">도착→다운</th>
+              <th className="px-3 py-2.5 text-right font-medium">건너뛰기</th>
+              <th className="px-3 py-2.5 text-left font-medium">공유</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((r) => {
+              const down = r.download + r.skipDownload;
+              const dt = new Date(`${r.day}T00:00:00Z`);
+              const isToday = r.day === today;
+              return (
+                <tr key={r.day} className={isToday ? 'bg-amber-50/60' : undefined}>
+                  <td className="whitespace-nowrap px-4 py-2 text-gray-700">
+                    {r.day.slice(5).replace('-', '/')}
+                    <span className="ml-1.5 text-xs text-gray-400">{WD[dt.getUTCDay()]}</span>
+                    {isToday && <span className="ml-1.5 text-xs text-amber-600">오늘</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-900">
+                    <div className="flex items-center justify-end gap-2">
+                      {/* 막대를 옆에 붙여야 "어느 날 광고가 세게 돌았나"가 눈으로 잡힌다. */}
+                      <span
+                        className="h-1.5 rounded-full bg-blue-200"
+                        style={{ width: `${Math.max(2, (r.start / maxStart) * 56)}px` }}
+                      />
+                      {r.start}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-900">{r.complete}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                    {r.start > 0 ? `${Math.round((r.complete / r.start) * 100)}%` : '—'}
+                  </td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${down > 0 ? 'font-semibold text-emerald-700' : 'text-gray-300'}`}>
+                    {down}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                    {r.start > 0 ? `${Math.round((down / r.start) * 100)}%` : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                    {r.skipOpen > 0 ? `${r.skipOpen} → ${r.skipDownload}` : '—'}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-gray-400">{r.share || ''}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
 
 function Tile({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
@@ -95,6 +261,8 @@ export default function NeedsDashboardPage() {
         subtitle="tita-app.com/needs — 겉은 1분 테스트, 속은 수요 설문. 답 하나하나가 광고·모임 조준 데이터."
       />
 
+      <Summary stats={stats} />
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="도착 (실제 본)" value={t.start} hint={`7/28 14:19 정확 집계 이후 · 누적 ${stats.allTotals.start}`} />
         <Tile label="완료" value={t.complete} hint={`완료율 ${pct(stats.completionRate)} · 누적 ${stats.allTotals.complete}`} />
@@ -118,6 +286,8 @@ export default function NeedsDashboardPage() {
             : '아직 없음'}
         />
       </div>
+
+      <DailyTable daily={stats.daily} partialFrom={stats.dailyPartialFrom} />
 
       {/* 질문별 이탈 — answer 이벤트 도입(2026-07-28) 이후 세션부터 잡힌다 */}
       {stats.stepFunnel.some((f) => f.reached > 0) && (
