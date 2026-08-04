@@ -448,7 +448,11 @@ export default function NeedsDashboardPage() {
 
       <div className="grid gap-8 md:grid-cols-2">
         <Section title="연령 분포" hint={`45 미만 ${pct(stats.underAgeShare)}`} data={stats.ageBand} redKey="under45" />
-        <Section title="어떤 사람이 편한가" data={stats.person} />
+        <Section
+          title="어떤 사람이 편한가"
+          hint="8/4부터 결큐·앱과 같은 축(동성/상관없음/이성). 그 전 '조용한 분·활발한 분'은 폐지된 보기라 8/4 이전 응답입니다."
+          data={stats.person}
+        />
         <Section title="성별" data={stats.gender} />
         <Section title="온라인 먼저 vs 만나서" data={stats.funnel} />
         <Section title="'누가 있었으면' 순간" data={stats.moment} />

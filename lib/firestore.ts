@@ -2991,8 +2991,10 @@ export const NEEDS_LABELS: Record<string, string> = {
   exercise: '운동·등산', travel: '같이 여행', hobby: '취미·배움', chat: '편한 수다',
   // worry
   scam: '사기·이상한 사람', awkward: '어색함', time: '시간 부담', none: '딱히 없음',
-  // person
-  same: '동성 또래', any: '결만 맞으면', calm: '조용한 분', lively: '활발한 분',
+  // person — 2026-08-04에 결큐·앱과 같은 축(same/any/opp)으로 통일했다.
+  // calm·lively는 그 전 응답이라 라벨을 남긴다(지우면 옛 데이터가 코드로 뜬다).
+  same: '동성 친구가 편해요', any: '상관없어요, 결만 맞으면', opp: '이성 친구도 좋아요',
+  calm: '조용한 분 (~8/4 폐지)', lively: '활발한 분 (~8/4 폐지)',
   // funnel
   online: '온라인 대화 먼저', offline: '만나서 얼굴 보고',
   // moment
