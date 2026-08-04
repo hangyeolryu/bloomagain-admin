@@ -16,6 +16,26 @@ import {
   type NeedsDay,
 } from '@/lib/firestore';
 
+/// 무엇을 언제 바꿨는지 — 표 옆에 두는 이유가 있다.
+///
+/// 몇 주 뒤에 이 표를 보면 숫자가 왜 꺾였는지 아무도 기억 못 한다. 특히
+/// 2026-08-04처럼 하루에 셋을 한꺼번에 바꾼 날은, 기록이 없으면 "질문을 바꿔서
+/// 좋아졌다"처럼 하나에 공을 몰아주게 된다. 실제로는 어느 것 때문인지 갈라낼 수
+/// 없다 — 그 사실 자체를 적어둔다.
+///
+/// 새 변경이 생기면 여기 한 줄 추가한다. day는 KST 기준 YYYY-MM-DD.
+const CHANGE_LOG: { day: string; items: string[] }[] = [
+  {
+    day: '2026-08-04',
+    items: [
+      '18:20 앱 받기 버튼 승격 (밑줄 글줄 → 테두리 버튼, 모든 질문으로 확대)',
+      '18:51 첫 질문 교체 (시간 사용 → 삶의 변화)',
+      '광고 CTA 변경 (지금 신청하기 → 더 알아보기)',
+    ],
+  },
+];
+const changesOn = (day: string) => CHANGE_LOG.find((c) => c.day === day)?.items;
+
 const sumOf = (rows: NeedsDay[], k: keyof NeedsDay) =>
   rows.reduce((a, r) => a + (typeof r[k] === 'number' ? (r[k] as number) : 0), 0);
 // 다운로드는 두 갈래로 들어온다 — 설문을 끝내고 받는 길, 첫 질문에서 건너뛰고
@@ -166,6 +186,13 @@ function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
         2026-08-04 18:55 교체. 세션은 시작 시각으로 한쪽에 붙습니다. 질문 순서가
         달라 각 시기의 라벨은 그때 순서 그대로입니다 — <b>비교는 &apos;첫 질문&apos; 자리끼리만</b> 하세요.
       </p>
+      {/* 이 카드 이름이 '첫 질문 교체 효과'라, 여기 숫자를 질문 교체만의
+          성적표로 읽기 가장 쉽다. 실제로는 같은 날 셋을 바꿨다. */}
+      <p className="mb-3 rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-800">
+        같은 날 <b>앱 받기 버튼 승격</b>과 <b>광고 CTA 변경</b>도 함께 했습니다.
+        여기 차이를 질문 교체만의 결과로 읽지 마세요. 특히 광고 CTA가 바뀌면
+        <b> 오는 사람 자체가 달라져</b> 이탈률의 의미도 달라집니다.
+      </p>
 
       <div
         className={`mb-3 rounded-xl border p-4 ${
@@ -247,6 +274,14 @@ function DailyTable({ daily, partialFrom }: { daily: NeedsDay[]; partialFrom: st
                     {r.day.slice(5).replace('-', '/')}
                     <span className="ml-1.5 text-xs text-gray-400">{WD[dt.getUTCDay()]}</span>
                     {isToday && <span className="ml-1.5 text-xs text-amber-600">오늘</span>}
+                    {changesOn(r.day) && (
+                      <span
+                        className="ml-1.5 rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold text-violet-700"
+                        title={changesOn(r.day)!.join('\n')}
+                      >
+                        변경
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-900">
                     <div className="flex items-center justify-end gap-2">
@@ -278,6 +313,28 @@ function DailyTable({ daily, partialFrom }: { daily: NeedsDay[]; partialFrom: st
           </tbody>
         </table>
       </div>
+      {/* 표 밑에 펼쳐 둔다. 마우스를 올려야 보이는 정보는 없는 것과 같다. */}
+      {CHANGE_LOG.filter((c) => rows.some((r) => r.day === c.day)).map((c) => (
+        <div
+          key={c.day}
+          className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-4"
+        >
+          <div className="text-xs font-semibold text-violet-900">
+            {c.day.slice(5).replace('-', '/')} 바꾼 것
+          </div>
+          <ul className="mt-1.5 space-y-1 text-sm text-violet-900">
+            {c.items.map((it) => (
+              <li key={it}>· {it}</li>
+            ))}
+          </ul>
+          {c.items.length > 1 && (
+            <p className="mt-2 text-xs text-violet-700">
+              하루에 여러 개를 바꿨습니다. 이 날 이후의 변화는 <b>어느 것 때문인지
+              갈라낼 수 없습니다</b> — 합쳐진 결과로만 읽으세요.
+            </p>
+          )}
+        </div>
+      ))}
     </section>
   );
 }
