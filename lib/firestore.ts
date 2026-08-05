@@ -2946,6 +2946,8 @@ export interface NeedsStats {
   // 앱 받기 버튼 승격(8/4 18:20)과 광고 CTA 변경이 살아 있어서, before와
   // reverted를 견주면 **질문 말고 그 둘의 효과**가 보인다.
   swap: { before: NeedsSwapEra; after: NeedsSwapEra; reverted: NeedsSwapEra };
+  // 사람 아닌 접속으로 걸러낸 세션 수(UA 기준, 2026-08-05~ 기록분만).
+  excludedNonHuman: number;
   // 캡에 걸리면 스냅샷의 가장 오래된 날은 하루치가 다 안 들어온다. 그 날짜를
   // 넘겨 화면에서 잘라낸다 — 반쪽 숫자를 온전한 것처럼 보여주면 안 된다.
   dailyPartialFrom: string | null;
@@ -3094,6 +3096,15 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   };
   const creativeBySid = new Map<string, CreativeSess>();
 
+  // 사람 아닌 접속 — 서버가 User-Agent로 분류해 남긴 값(2026-08-05~).
+  // 그 전 이벤트엔 필드가 없어 판정 불가라 사람으로 둔다(없는 걸 봇으로
+  // 몰면 과거 지표가 통째로 흔들린다).
+  //
+  // 광고 URL을 바꾼 직후 한 시간에 Windows 데스크톱 122건이 몰려 '첫 질문
+  // 이탈 94%'가 찍혔던 게 이걸 만든 계기다. 우리 광고는 인스타 모바일
+  // 여성 45+ 대상이라 그 트래픽은 사람일 수가 없었다.
+  const nonHumanSids = new Set<string>();
+
   // 첫 질문 교체(2026-08-04 18:55 KST) 전후를 가르는 선. 세션은 시작 시각으로
   // 한쪽에 붙인다 — 교체 순간에 걸친 세션을 이벤트마다 쪼개면 어느 쪽 숫자도
   // 안 맞는다.
@@ -3141,6 +3152,8 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       abandonStepBySid.set(sid, x.step);
     }
+    if (x.uaBot === true || x.uaDesktop === true) nonHumanSids.add(sid);
+
     if (at >= CLEAN_SINCE) {
       let cs = creativeBySid.get(sid);
       if (!cs) {
@@ -3219,6 +3232,10 @@ export async function getNeedsStats(): Promise<NeedsStats> {
 
   // answer는 있는데 start가 유실(네트워크)된 세션도 기준선에 포함한다.
   const allSids = new Set([...eraStartSids, ...maxStepBySid.keys(), ...abandonStepBySid.keys()]);
+  // 사람 아닌 세션은 퍼널·비교에서 뺀다. 몇 건을 뺐는지는 화면에 남긴다 —
+  // 조용히 빼면 "어제보다 왜 줄었지"가 된다.
+  const excludedNonHuman = [...allSids].filter((sid) => nonHumanSids.has(sid)).length;
+  nonHumanSids.forEach((sid) => allSids.delete(sid));
   const beforeSids = new Set<string>();
   const afterSids = new Set<string>();
   const revertedSids = new Set<string>();
@@ -3261,6 +3278,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   // '(태그 이전)' 한 줄로 뭉친다 — 없는 값을 있는 척 쪼개지 않는다.
   const cmap = new Map<string, NeedsStats['byCreative'][number]>();
   creativeBySid.forEach((cs, sid) => {
+    if (nonHumanSids.has(sid)) return;
     const tagged = cs.campaign || cs.content || cs.term;
     const key = [cs.source, tagged ? cs.campaign : '(태그 이전)', cs.content, cs.term].join('\u0000');
     let row = cmap.get(key);
@@ -3306,6 +3324,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     stepFunnel,
     underAgeShare: ageTotal ? (counts.ageBand.get('under45') ?? 0) / ageTotal : 0,
     byCreative,
+    excludedNonHuman,
     bySource: [...sourceCount.entries()]
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count),

@@ -93,6 +93,15 @@ function Summary({ stats }: { stats: NeedsStats }) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5">
       <h2 className="text-sm font-semibold text-gray-900">한눈에</h2>
+      {stats.excludedNonHuman > 0 && (
+        // 조용히 빼면 "어제보다 왜 줄었지"가 된다. 뺀 만큼 적어 둔다.
+        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          사람 아닌 접속 <b className="tabular-nums">{stats.excludedNonHuman}</b>건을
+          빼고 셌습니다(User-Agent 기준 · 봇 또는 데스크톱). 우리 광고는 인스타그램
+          모바일 대상이라 데스크톱 유입은 사람으로 보지 않습니다.
+          8/5 이전 기록에는 판정 정보가 없어 그대로 포함됩니다.
+        </p>
+      )}
 
       <p className="mt-3 text-[15px] leading-relaxed text-gray-800">
         최근 7일 <b className="tabular-nums">{start}</b>명이 도착해{' '}
