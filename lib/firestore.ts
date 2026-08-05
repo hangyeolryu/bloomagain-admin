@@ -2948,6 +2948,11 @@ export interface NeedsStats {
   swap: { before: NeedsSwapEra; after: NeedsSwapEra; reverted: NeedsSwapEra };
   // 사람 아닌 접속으로 걸러낸 세션 수(UA 기준, 2026-08-05~ 기록분만).
   excludedNonHuman: number;
+  // 랜딩별 성적. 아래 다른 표들은 전부 /needs만 센다 — 여기서만 둘을 견준다.
+  byVariant: {
+    variant: string; label: string; arrivals: number; q1Abandoned: number;
+    completed: number; downloaded: number;
+  }[];
   // 캡에 걸리면 스냅샷의 가장 오래된 날은 하루치가 다 안 들어온다. 그 날짜를
   // 넘겨 화면에서 잘라낸다 — 반쪽 숫자를 온전한 것처럼 보여주면 안 된다.
   dailyPartialFrom: string | null;
@@ -3105,6 +3110,23 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   // 여성 45+ 대상이라 그 트래픽은 사람일 수가 없었다.
   const nonHumanSids = new Set<string>();
 
+  // 랜딩별 성적. /needs(9문항)와 /enjoy(3문항)는 문항 수도 목적도 달라
+  // 기존 표들을 그대로 섞으면 둘 다 못 읽는다. 그래서 아래 집계는 전부
+  // **/needs만** 세고, 두 랜딩 비교는 이 표 하나로 따로 낸다.
+  //
+  // variant가 없는(=기존) 이벤트는 /needs다.
+  const VARIANT_LABELS: Record<string, string> = {
+    needs: '/needs · 9문항',
+    enjoy: '/enjoy · 3문항 (밝은판)',
+  };
+  type VarRow = {
+    variant: string; label: string; arrivals: number; q1Abandoned: number;
+    completed: number; downloaded: number;
+  };
+  const varSess = new Map<string, {
+    variant: string; completed: boolean; downloaded: boolean;
+  }>();
+
   // UA 기록이 붙기 전(2026-08-05 15시 배포) 구간을 위한 소급 판정.
   //
   // 오염 구간의 신호가 깨끗하게 갈렸다:
@@ -3150,6 +3172,23 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     const phase = String(x.phase ?? '');
     const sid = (x.sessionId as string) || d.id;
     const at = toDate(x.createdAt)?.getTime() ?? 0;
+    const variant = typeof x.variant === 'string' && x.variant ? x.variant : 'needs';
+
+    if (at >= CLEAN_SINCE) {
+      let vs = varSess.get(sid);
+      if (!vs) {
+        vs = { variant, completed: false, downloaded: false };
+        varSess.set(sid, vs);
+      }
+      if (variant !== 'needs') vs.variant = variant;
+      if (phase === 'complete') vs.completed = true;
+      if (phase === 'download' || phase === 'skip_download') vs.downloaded = true;
+    }
+
+    // 아래 집계는 전부 /needs 전용이다. 다른 랜딩이 섞이면 어제까지의 숫자와
+    // 이어지지 않아 "왜 갑자기 늘었지"가 된다.
+    if (variant !== 'needs') return;
+
     if (at >= CLEAN_SINCE && phase in eraTotals) {
       eraTotals[phase as keyof typeof eraTotals] += 1;
     }
@@ -3351,6 +3390,28 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   });
   const byCreative = [...cmap.values()].sort((a, b) => b.arrivals - a.arrivals).slice(0, 40);
 
+  // 랜딩별 집계 — 사람 아닌 세션은 여기서도 뺀다.
+  const vmap = new Map<string, VarRow>();
+  varSess.forEach((vs, sid) => {
+    if (nonHumanSids.has(sid)) return;
+    let row = vmap.get(vs.variant);
+    if (!row) {
+      row = {
+        variant: vs.variant,
+        label: VARIANT_LABELS[vs.variant] ?? vs.variant,
+        arrivals: 0, q1Abandoned: 0, completed: 0, downloaded: 0,
+      };
+      vmap.set(vs.variant, row);
+    }
+    row.arrivals += 1;
+    if (abandonStepBySid.get(sid) === 0 && (maxStepBySid.get(sid) ?? -1) < 0) {
+      row.q1Abandoned += 1;
+    }
+    if (vs.completed) row.completed += 1;
+    if (vs.downloaded) row.downloaded += 1;
+  });
+  const byVariant = [...vmap.values()].sort((a, b) => b.arrivals - a.arrivals);
+
   // 캡에 걸렸을 때만 잘라낸다. 안 걸렸으면 가장 오래된 날이 곧 데이터의
   // 시작이라 그 하루는 온전하다.
   const dailyPartialFrom = snap.size >= CAP && Number.isFinite(oldestAt) ? kstDay(oldestAt) : null;
@@ -3378,6 +3439,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     stepFunnel,
     underAgeShare: ageTotal ? (counts.ageBand.get('under45') ?? 0) / ageTotal : 0,
     byCreative,
+    byVariant,
     excludedNonHuman,
     bySource: [...sourceCount.entries()]
       .map(([source, count]) => ({ source, count }))

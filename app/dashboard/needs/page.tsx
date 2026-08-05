@@ -1,6 +1,10 @@
 'use client';
 
-// 니즈 설문 ("요즘 나에게 필요한 것" — tita-app.com/needs) 대시보드.
+// 광고 랜딩 대시보드 — /needs(9문항)와 /enjoy(3문항).
+//
+// 맨 위 "랜딩 비교"에서만 두 랜딩을 견주고, 나머지 표는 전부 /needs만 센다.
+// 문항 수도 목적도 달라 한 표에 섞으면 둘 다 못 읽는다.
+//
 // 5060 광고 퍼널의 수요 데이터: situation(자녀독립·이혼·사별·은퇴) ⭐,
 // activity(하고 싶은 것) ⭐, worry(걱정=광고 각도) ⭐ + 퍼널·연령·유입.
 
@@ -46,6 +50,8 @@ const CHANGE_LOG: { day: string; items: string[] }[] = [
         + '자리가 구조적으로 안 열린다. 도착 수는 줄어드는 게 정상 — 볼 것은 '
         + '도착→다운이다.',
       '리타게팅 픽셀 추가: NeedsAgeQualified(45+) / NeedsUnderage.',
+      '/enjoy 3문항 밝은판 랜딩 신설. 이 페이지의 다른 표는 모두 /needs만 '
+        + '세고, 두 랜딩은 맨 위 "랜딩 비교"에서만 견준다.',
     ],
   },
 ];
@@ -146,6 +152,82 @@ function Summary({ stats }: { stats: NeedsStats }) {
           </li>
         )}
       </ul>
+    </section>
+  );
+}
+
+// 랜딩 비교 — /needs(9문항) vs /enjoy(3문항).
+//
+// 이 페이지의 다른 표는 전부 /needs만 센다. 문항 수도 목적도 달라 섞으면
+// 둘 다 못 읽기 때문이다. 두 랜딩을 견주는 자리는 여기 하나뿐이다.
+//
+// 판정은 '도착 → 앱 받기' 하나로 한다. 완주율은 문항 수가 다르면 비교가
+// 안 된다(3문항이 당연히 높다). 우리가 알고 싶은 건 "같은 광고비로 누가 더
+// 앱을 받게 하나"다.
+function VariantCompare({ rows }: { rows: NeedsStats['byVariant'] }) {
+  if (rows.length === 0) return null;
+  const pc = (n: number, d: number) => (d > 0 ? `${Math.round((n / d) * 100)}%` : '—');
+  const MIN = 80;
+  const best = [...rows]
+    .filter((r) => r.arrivals >= MIN)
+    .sort((a, b) => b.downloaded / b.arrivals - a.downloaded / a.arrivals)[0];
+
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">랜딩 비교</h2>
+      <p className="mb-3 text-xs text-gray-400">
+        아래 다른 표들은 <b>/needs만</b> 셉니다. 문항 수가 달라 한 표에 섞으면 둘 다
+        못 읽습니다. 판정은 <b>도착 → 앱 받기</b>로 하세요 — 완주율은 3문항이 당연히
+        높습니다.
+      </p>
+      <div className="grid gap-3 md:grid-cols-2">
+        {rows.map((r) => {
+          const win = best && best.variant === r.variant && rows.length > 1;
+          return (
+            <div
+              key={r.variant}
+              className={`rounded-xl border p-4 ${win ? 'border-emerald-300 bg-emerald-50/50' : 'border-gray-200 bg-white'}`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-900">{r.label}</div>
+                {win && (
+                  <span className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    앞서는 중
+                  </span>
+                )}
+              </div>
+              <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
+                {[
+                  ['도착', r.arrivals, null],
+                  ['첫 질문 이탈', r.q1Abandoned, pc(r.q1Abandoned, r.arrivals)],
+                  ['완주', r.completed, pc(r.completed, r.arrivals)],
+                  ['앱 받기', r.downloaded, pc(r.downloaded, r.arrivals)],
+                ].map(([label, n, p], i) => (
+                  <div
+                    key={label as string}
+                    className={`rounded-lg px-2 py-2 ${i === 3 ? 'bg-emerald-50' : 'bg-gray-50'}`}
+                  >
+                    <dt className="text-[11px] text-gray-500">{label}</dt>
+                    <dd className="text-lg font-semibold tabular-nums text-gray-900">
+                      {n as number}
+                    </dd>
+                    {p !== null && (
+                      <dd className={`text-[11px] tabular-nums ${i === 3 ? 'font-semibold text-emerald-700' : 'text-gray-400'}`}>
+                        {p as string}
+                      </dd>
+                    )}
+                  </div>
+                ))}
+              </dl>
+              {r.arrivals < MIN && (
+                <p className="mt-2 text-xs text-amber-700">
+                  도착 {r.arrivals}명 — 판정 기준 {MIN}명에 못 미칩니다. 기다려 주세요.
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -549,6 +631,8 @@ export default function NeedsDashboardPage() {
         title="니즈 설문 (5060)"
         subtitle="tita-app.com/needs — 겉은 1분 테스트, 속은 수요 설문. 답 하나하나가 광고·모임 조준 데이터."
       />
+
+      <VariantCompare rows={stats.byVariant} />
 
       <Summary stats={stats} />
 
