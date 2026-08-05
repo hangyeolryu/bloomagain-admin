@@ -141,7 +141,7 @@ function Summary({ stats }: { stats: NeedsStats }) {
 // 견주게 된다. 그래서 두 벌을 각자 라벨로 그리고, 비교는 "첫 질문"이라는
 // 자리끼리만 한다 — 우리가 바꾼 게 바로 그 자리다.
 function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
-  const { before, after } = swap;
+  const { before, after, reverted } = swap;
   // 표본이 적을 때 퍼센트를 크게 띄우면 소음을 신호로 읽는다. 최소치를 두고
   // 그 아래면 판정을 미룬다.
   const MIN = 80;
@@ -149,12 +149,20 @@ function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
   const rate = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
   const q1Before = rate(before.q1Abandoned, before.base);
   const q1After = rate(after.q1Abandoned, after.base);
+  const q1Rev = rate(reverted.q1Abandoned, reverted.base);
   const diff = q1After - q1Before;
+  // 되돌린 뒤는 질문이 '교체 전'과 같다. 그래서 이 차이는 질문이 아니라
+  // 그 사이에 남긴 것들(앱 받기 버튼 승격 · 광고 CTA 변경)의 효과다.
+  const diffRev = q1Rev - q1Before;
+  const revReady = reverted.base >= MIN;
 
-  const Col = ({ era, tone }: { era: typeof before; tone: 'gray' | 'green' }) => {
+  const Col = ({ era, tone }: { era: typeof before; tone: 'gray' | 'green' | 'red' }) => {
     const head = tone === 'green'
       ? 'border-emerald-200 bg-emerald-50/50'
-      : 'border-gray-200 bg-gray-50';
+      : tone === 'red'
+        // 결과가 나빠 되돌린 구간 — 색으로도 "이건 채택 안 됨"을 남긴다.
+        ? 'border-red-200 bg-red-50/40'
+        : 'border-gray-200 bg-gray-50';
     return (
       <div className={`rounded-xl border ${head} p-4`}>
         <div className="text-xs font-semibold text-gray-500">{era.title}</div>
@@ -238,9 +246,43 @@ function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
         )}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      {/* 되돌린 뒤는 질문이 '교체 전'과 같으니, 이 비교는 남아 있는 변경
+          (앱 받기 버튼 · 광고 CTA)의 성적표가 된다. */}
+      <div
+        className={`mb-3 rounded-xl border p-4 ${
+          revReady
+            ? diffRev < 0
+              ? 'border-emerald-200 bg-emerald-50'
+              : 'border-gray-200 bg-gray-50'
+            : 'border-amber-200 bg-amber-50'
+        }`}
+      >
+        <div className="text-xs font-semibold text-gray-500">
+          되돌린 뒤 (질문은 교체 전과 같음 · 앱 버튼 + 새 광고 CTA 적용 중)
+        </div>
+        {revReady ? (
+          <p className="mt-1 text-sm text-gray-800">
+            첫 질문 이탈률{' '}
+            <b className="tabular-nums">{Math.round(q1Before)}%</b> →{' '}
+            <b className="tabular-nums">{Math.round(q1Rev)}%</b>{' '}
+            <b className={diffRev < 0 ? 'text-emerald-700' : 'text-gray-600'}>
+              ({diffRev < 0 ? '▼' : '▲'}
+              {Math.abs(Math.round(diffRev))}%p)
+            </b>
+            {' '}— 질문이 같으니 이 차이는 <b>앱 버튼과 광고 CTA</b>의 몫입니다.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-amber-900">
+            도착이 아직 <b className="tabular-nums">{reverted.base}</b>명입니다
+            (판정 기준 {MIN}명). 되돌린 지 얼마 안 됐으니 <b>기다려 주세요.</b>
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
         <Col era={before} tone="gray" />
-        <Col era={after} tone="green" />
+        <Col era={after} tone="red" />
+        <Col era={reverted} tone="green" />
       </div>
     </section>
   );

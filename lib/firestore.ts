@@ -2929,8 +2929,12 @@ export interface NeedsStats {
   //
   // 추가 읽기는 없다 — 질문별 퍼널 때문에 이미 통째로 읽어 둔 스냅샷에서 센다.
   daily: NeedsDay[];
-  // 첫 질문 교체 전/후 비교. 라벨이 시기마다 달라서 한 표에 못 겹친다.
-  swap: { before: NeedsSwapEra; after: NeedsSwapEra };
+  // 첫 질문 교체 전/후/되돌린 뒤. 라벨이 시기마다 달라 한 표에 못 겹친다.
+  //
+  // reverted가 따로 필요한 이유: 질문은 '교체 전'과 같지만 조건이 다르다.
+  // 앱 받기 버튼 승격(8/4 18:20)과 광고 CTA 변경이 살아 있어서, before와
+  // reverted를 견주면 **질문 말고 그 둘의 효과**가 보인다.
+  swap: { before: NeedsSwapEra; after: NeedsSwapEra; reverted: NeedsSwapEra };
   // 캡에 걸리면 스냅샷의 가장 오래된 날은 하루치가 다 안 들어온다. 그 날짜를
   // 넘겨 화면에서 잘라낸다 — 반쪽 숫자를 온전한 것처럼 보여주면 안 된다.
   dailyPartialFrom: string | null;
@@ -3079,6 +3083,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const swapTotals = {
     before: { complete: 0, download: 0 },
     after: { complete: 0, download: 0 },
+    reverted: { complete: 0, download: 0 },
   };
   // 나날의 현황 — 같은 스냅샷을 한 번 더 훑는 대신 여기서 같이 센다.
   const dayMap = new Map<string, NeedsDay>();
@@ -3124,9 +3129,11 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       if (prev === undefined || at < prev) swapFirstAtBySid.set(sid, at);
     }
     if (at >= CLEAN_SINCE) {
-      const side = at >= Q_SWAP_AT && at < Q_REVERT_AT
-        ? swapTotals.after
-        : swapTotals.before;
+      const side = at >= Q_REVERT_AT
+        ? swapTotals.reverted
+        : at >= Q_SWAP_AT
+          ? swapTotals.after
+          : swapTotals.before;
       if (phase === 'complete') side.complete += 1;
       if (phase === 'download' || phase === 'skip_download') side.download += 1;
     }
@@ -3179,12 +3186,12 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const allSids = new Set([...eraStartSids, ...maxStepBySid.keys(), ...abandonStepBySid.keys()]);
   const beforeSids = new Set<string>();
   const afterSids = new Set<string>();
+  const revertedSids = new Set<string>();
   allSids.forEach((sid) => {
     const at = swapFirstAtBySid.get(sid);
     if (at === undefined) return;
-    // 되돌린 뒤 세션은 다시 옛 순서다 — '교체 전'에 넣는다. '교체 후'는
-    // 실험이 실제로 돌아간 구간(교체~되돌림)으로 닫아 둔다.
-    if (at >= Q_SWAP_AT && at < Q_REVERT_AT) afterSids.add(sid);
+    if (at >= Q_REVERT_AT) revertedSids.add(sid);
+    else if (at >= Q_SWAP_AT) afterSids.add(sid);
     else beforeSids.add(sid);
   });
 
@@ -3205,12 +3212,14 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     };
   };
   const swap = {
-    // 되돌렸으므로 '교체 전'과 지금이 같은 순서다 — 라벨도 같은 것을 쓴다.
-    before: era('교체 전 / 되돌린 뒤(지금)', '그 시간을 어떻게 보내세요?',
+    before: era('교체 전 (~8/4 18:55)', '그 시간을 어떻게 보내세요?',
       beforeSids, NEEDS_STEP_LABELS, swapTotals.before),
     after: era('교체 후 (8/4 18:55 ~ 8/5 09:35, 종료)',
       '요즘 어떤 시기를 지나고 계세요?', afterSids,
       NEEDS_STEP_LABELS_SWAPPED, swapTotals.after),
+    reverted: era('되돌린 뒤 (8/5 09:35 ~ 지금)',
+      '그 시간을 어떻게 보내세요?', revertedSids,
+      NEEDS_STEP_LABELS, swapTotals.reverted),
   };
 
   // 캡에 걸렸을 때만 잘라낸다. 안 걸렸으면 가장 오래된 날이 곧 데이터의
