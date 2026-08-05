@@ -33,6 +33,14 @@ const CHANGE_LOG: { day: string; items: string[] }[] = [
       '광고 CTA 변경 (지금 신청하기 → 더 알아보기)',
     ],
   },
+  {
+    day: '2026-08-05',
+    items: [
+      '09:35 첫 질문 교체 되돌림 — 첫 질문 이탈 56.5% → 70.4%로 나빠졌다 '
+        + '(시간대 맞춰도 58.0% → 70.4%, z=2.77 p=0.0056). 완주율도 11.0% → 5.6%. '
+        + '시간대·광고 CTA 어느 쪽도 원인이 아니었다.',
+    ],
+  },
 ];
 const changesOn = (day: string) => CHANGE_LOG.find((c) => c.day === day)?.items;
 
@@ -181,10 +189,12 @@ function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
 
   return (
     <section>
-      <h2 className="mb-1 text-sm font-semibold text-gray-900">첫 질문 교체 효과</h2>
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">
+        첫 질문 교체 실험 <span className="text-gray-400">(종료 · 되돌림)</span>
+      </h2>
       <p className="mb-3 text-xs text-gray-400">
-        2026-08-04 18:55 교체. 세션은 시작 시각으로 한쪽에 붙습니다. 질문 순서가
-        달라 각 시기의 라벨은 그때 순서 그대로입니다 — <b>비교는 &apos;첫 질문&apos; 자리끼리만</b> 하세요.
+        2026-08-04 18:55 교체 → 08-05 09:35 되돌림. 세션은 시작 시각으로 한쪽에
+        붙습니다. 되돌린 뒤 트래픽은 다시 옛 순서라 왼쪽에 들어갑니다.
       </p>
       {/* 이 카드 이름이 '첫 질문 교체 효과'라, 여기 숫자를 질문 교체만의
           성적표로 읽기 가장 쉽다. 실제로는 같은 날 셋을 바꿨다. */}
@@ -212,7 +222,9 @@ function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
               ({diff < 0 ? '▼' : '▲'}
               {Math.abs(Math.round(diff))}%p)
             </b>
-            {diff < 0 ? ' — 교체가 먹혔습니다.' : ' — 교체 전이 더 나았습니다.'}
+            {diff < 0
+              ? ' — 교체가 먹혔습니다.'
+              : ' — 교체 전이 더 나았습니다. 그래서 8/5 09:35에 되돌렸습니다.'}
           </p>
         ) : (
           <p className="text-sm text-amber-900">
