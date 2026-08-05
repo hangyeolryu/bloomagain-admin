@@ -3105,6 +3105,28 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   // 여성 45+ 대상이라 그 트래픽은 사람일 수가 없었다.
   const nonHumanSids = new Set<string>();
 
+  // UA 기록이 붙기 전(2026-08-05 15시 배포) 구간을 위한 소급 판정.
+  //
+  // 오염 구간의 신호가 깨끗하게 갈렸다:
+  //     hyd 0~3초  25건 · 인앱 88% · Q1 답함 12%   ← 사람
+  //     hyd 10초+  44건 · 인앱  5% · Q1 답함  0%   ← 44명 전원이 아무것도
+  //                                                  안 눌렀다. 사람이면
+  //                                                  나올 수 없는 숫자다.
+  //
+  // hyd_ms는 로딩 속도가 아니라 '화면에 실제로 보이기까지'다. 10초 넘게
+  // 백그라운드에 있다가 보인 건 미리 열어두고 안 본 접속이다.
+  //
+  // 인앱은 빼지 않는다 — Meta 인앱 브라우저는 광고를 띄울 때 랜딩을 미리
+  // 로드하므로, 그걸 나중에 눌러 연 진짜 사람도 hyd가 크게 나온다.
+  //
+  // 되돌린 시각부터만 적용한다. 그 전 구간은 hyd가 700ms대라 어차피 안
+  // 걸리지만, 이미 읽으신 과거 숫자를 소급해서 바꾸지 않으려는 뜻이 더 크다.
+  const FALLBACK_SINCE = Date.parse('2026-08-05T00:35:00Z');
+  const FALLBACK_HYD_MS = 10000;
+  const hydBySid = new Map<string, number>();
+  const inAppBySid = new Map<string, boolean>();
+  const hasUaBySid = new Set<string>();
+
   // 첫 질문 교체(2026-08-04 18:55 KST) 전후를 가르는 선. 세션은 시작 시각으로
   // 한쪽에 붙인다 — 교체 순간에 걸친 세션을 이벤트마다 쪼개면 어느 쪽 숫자도
   // 안 맞는다.
@@ -3152,7 +3174,10 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       abandonStepBySid.set(sid, x.step);
     }
+    if (typeof x.ua === 'string' && x.ua) hasUaBySid.add(sid);
     if (x.uaBot === true || x.uaDesktop === true) nonHumanSids.add(sid);
+    if (phase === 'start' && typeof x.hydMs === 'number') hydBySid.set(sid, x.hydMs);
+    if (typeof x.inApp === 'boolean') inAppBySid.set(sid, x.inApp);
 
     if (at >= CLEAN_SINCE) {
       let cs = creativeBySid.get(sid);
@@ -3231,9 +3256,38 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   };
 
   // answer는 있는데 start가 유실(네트워크)된 세션도 기준선에 포함한다.
+  // start 없이 abandon만 있는 세션은 도착으로 세지 않는다.
+  //
+  // start는 화면에 **보일 때만** 쏘게 돼 있는데(프리로드 팬텀 차단), abandon은
+  // pagehide에서 무조건 쏜다. 그래서 한 번도 보이지 않은 페이지가 "도착해서
+  // 첫 질문에 이탈"로 잡혔다. 계측 자체의 구멍이다.
+  //
+  // 평소엔 3%라 티가 안 났는데(교체 전 1134건 중 35건), 광고 URL을 바꾼 뒤
+  // 검사 트래픽이 몰린 구간에선 30%까지 올라 지표를 통째로 왜곡했다.
+  //
+  // answer가 하나라도 있으면 남긴다 — 그건 start가 네트워크로 유실된 진짜
+  // 사람이다.
+  const abandonOnlySids = new Set<string>();
+  abandonStepBySid.forEach((_, sid) => {
+    if (eraStartSids.has(sid)) return;
+    if (maxStepBySid.has(sid)) return;
+    abandonOnlySids.add(sid);
+  });
+
+  // UA가 없는 세션에만 소급 판정을 적용한다. UA가 있으면 그게 진실이다.
+  swapFirstAtBySid.forEach((firstAt, sid) => {
+    if (hasUaBySid.has(sid) || nonHumanSids.has(sid)) return;
+    if (firstAt < FALLBACK_SINCE) return;
+    const hyd = hydBySid.get(sid);
+    if (hyd !== undefined && hyd >= FALLBACK_HYD_MS && inAppBySid.get(sid) !== true) {
+      nonHumanSids.add(sid);
+    }
+  });
+
   const allSids = new Set([...eraStartSids, ...maxStepBySid.keys(), ...abandonStepBySid.keys()]);
   // 사람 아닌 세션은 퍼널·비교에서 뺀다. 몇 건을 뺐는지는 화면에 남긴다 —
   // 조용히 빼면 "어제보다 왜 줄었지"가 된다.
+  abandonOnlySids.forEach((sid) => nonHumanSids.add(sid));
   const excludedNonHuman = [...allSids].filter((sid) => nonHumanSids.has(sid)).length;
   nonHumanSids.forEach((sid) => allSids.delete(sid));
   const beforeSids = new Set<string>();
