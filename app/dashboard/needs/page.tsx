@@ -494,37 +494,45 @@ export default function NeedsDashboardPage() {
         (상단 타일은 7/28 14:19 정확 집계 이후만 세서 숫자가 달라요).
       </p>
 
+      {/* 아래 6개는 설문 화면에 나오는 순서 그대로다(needs/page.tsx).
+          응답을 흐름대로 읽어야 어디서 마음이 바뀌는지 보인다. 설문 순서를
+          바꾸면 여기도 같이 바꿀 것. */}
       <Section
-        title="⭐ 지금 그 시간을 어떻게 보내나 (실태)"
+        title="① 지금 그 시간을 어떻게 보내나 (실태)"
         hint='사실상 경쟁자 조사 — TV·유튜브가 경쟁자인지, "그냥 흘러가요"(핵심 타겟)가 몇인지'
         data={stats.timeuse}
       />
       <Section
-        title="⭐ 삶의 변화 (왜 시간이 많아졌나)"
+        title="② '누가 있었으면' 싶은 순간"
+        hint="외로움이 어느 장면에서 오는지 — 광고 후킹 장면과 모임 시나리오의 재료"
+        data={stats.moment}
+      />
+      <Section
+        title="③ 삶의 변화 (왜 시간이 많아졌나)"
         hint='"비슷한 길을 걷는 사람끼리" 세그먼트 — 자녀독립·이혼·사별·은퇴별 모임/카피 근거'
         data={stats.situation}
       />
       <Section
-        title="⭐ 새 친구와 하고 싶은 것"
+        title="④ 새 친구와 하고 싶은 것"
         hint="모임 주제 수요 + 광고 크리에이티브 분기 근거"
         data={stats.activity}
       />
       <Section
-        title="⭐ 만남에서 걱정되는 것"
+        title="⑤ 어떤 사람이 편한가"
+        hint="8/4부터 결큐·앱과 같은 축(동성/상관없음/이성). 그 전 '조용한 분·활발한 분'은 폐지된 보기라 8/4 이전 응답입니다."
+        data={stats.person}
+      />
+      <Section
+        title="⑥ 만남에서 걱정되는 것"
         hint="1위가 광고 첫 줄이 된다 (사기 걱정 → 안전 먼저, 어색함 → 여럿이 함께 먼저)"
         data={stats.worry}
       />
 
+      {/* 응답자가 누구인가 — 문항이 아니라 배경 정보라 따로 묶는다. */}
       <div className="grid gap-8 md:grid-cols-2">
         <Section title="연령 분포" hint={`45 미만 ${pct(stats.underAgeShare)}`} data={stats.ageBand} redKey="under45" />
-        <Section
-          title="어떤 사람이 편한가"
-          hint="8/4부터 결큐·앱과 같은 축(동성/상관없음/이성). 그 전 '조용한 분·활발한 분'은 폐지된 보기라 8/4 이전 응답입니다."
-          data={stats.person}
-        />
         <Section title="성별" data={stats.gender} />
         <Section title="온라인 먼저 vs 만나서" data={stats.funnel} />
-        <Section title="'누가 있었으면' 순간" data={stats.moment} />
       </div>
 
       {/* "또는, 직접 쓸게요" 원문 — 보기 밖 수요의 원석. 다음 보기·모임 기획 재료 */}
