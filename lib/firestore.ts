@@ -3123,6 +3123,10 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     variant: string; label: string; arrivals: number; q1Abandoned: number;
     completed: number; downloaded: number;
   };
+  // 랜딩을 가리지 않고 모으는 집합. /needs 전용 집합(eraStartSids 등)은
+  // 조기 반환 아래에 있어 /enjoy 세션을 못 담는다.
+  const anyStartSids = new Set<string>();
+  const anyAnswerSids = new Set<string>();
   const varSess = new Map<string, {
     variant: string; completed: boolean; downloaded: boolean;
   }>();
@@ -3174,6 +3178,19 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     const at = toDate(x.createdAt)?.getTime() ?? 0;
     const variant = typeof x.variant === 'string' && x.variant ? x.variant : 'needs';
 
+    // 사람/봇 판정은 랜딩과 무관하게 모든 이벤트에서 모은다. 아래 /needs
+    // 조기 반환 밑에 두면 /enjoy 이벤트가 판정을 못 받아 봇이 그대로 샌다
+    // (실제로 그랬다 — /enjoy 첫 9건 중 6건이 데스크톱인데 안 걸러졌다).
+    if (typeof x.ua === 'string' && x.ua) hasUaBySid.add(sid);
+    if (x.uaBot === true || x.uaDesktop === true) nonHumanSids.add(sid);
+    if (phase === 'start' && typeof x.hydMs === 'number') hydBySid.set(sid, x.hydMs);
+    if (typeof x.inApp === 'boolean') inAppBySid.set(sid, x.inApp);
+    // 랜딩별로도 start/answer 유무를 알아야 '이탈만 찍힌 세션'을 뺄 수 있다.
+    if (at >= CLEAN_SINCE) {
+      if (phase === 'start') anyStartSids.add(sid);
+      if (phase === 'answer') anyAnswerSids.add(sid);
+    }
+
     if (at >= CLEAN_SINCE) {
       let vs = varSess.get(sid);
       if (!vs) {
@@ -3213,11 +3230,6 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       abandonStepBySid.set(sid, x.step);
     }
-    if (typeof x.ua === 'string' && x.ua) hasUaBySid.add(sid);
-    if (x.uaBot === true || x.uaDesktop === true) nonHumanSids.add(sid);
-    if (phase === 'start' && typeof x.hydMs === 'number') hydBySid.set(sid, x.hydMs);
-    if (typeof x.inApp === 'boolean') inAppBySid.set(sid, x.inApp);
-
     if (at >= CLEAN_SINCE) {
       let cs = creativeBySid.get(sid);
       if (!cs) {
@@ -3313,14 +3325,22 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     abandonOnlySids.add(sid);
   });
 
-  // UA가 없는 세션에만 소급 판정을 적용한다. UA가 있으면 그게 진실이다.
-  swapFirstAtBySid.forEach((firstAt, sid) => {
-    if (hasUaBySid.has(sid) || nonHumanSids.has(sid)) return;
-    if (firstAt < FALLBACK_SINCE) return;
+  // hyd(화면에 실제로 보이기까지)가 비정상적으로 크고 인앱도 아닌 세션은
+  // 사람이 아니다. 미리 열어두고 안 본 접속 — URL 검사기가 그렇게 움직인다.
+  //
+  // UA가 있어도 적용한다. 처음엔 "UA가 있으면 그게 진실"이라며 건너뛰었는데,
+  // 검사기가 iPhone/Android UA를 달고 오면 그대로 샜다. 실제로 /enjoy 첫
+  // 트래픽에서 hyd 23.7초·23.6초짜리 둘이 '사람'으로 남았다(정상 구간은 700ms대).
+  //
+  // 인앱은 뺀다 — Meta 인앱 브라우저는 광고를 띄울 때 랜딩을 미리 로드하므로,
+  // 그걸 나중에 눌러 연 진짜 사람도 hyd가 크게 나온다.
+  const allSeen = new Set([...hydBySid.keys(), ...anyStartSids]);
+  allSeen.forEach((sid) => {
+    if (nonHumanSids.has(sid)) return;
     const hyd = hydBySid.get(sid);
-    if (hyd !== undefined && hyd >= FALLBACK_HYD_MS && inAppBySid.get(sid) !== true) {
-      nonHumanSids.add(sid);
-    }
+    if (hyd === undefined || hyd < FALLBACK_HYD_MS) return;
+    if (inAppBySid.get(sid) === true) return;
+    nonHumanSids.add(sid);
   });
 
   const allSids = new Set([...eraStartSids, ...maxStepBySid.keys(), ...abandonStepBySid.keys()]);
@@ -3394,6 +3414,9 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const vmap = new Map<string, VarRow>();
   varSess.forEach((vs, sid) => {
     if (nonHumanSids.has(sid)) return;
+    // start도 answer도 없이 abandon만 찍힌 세션은 화면에 뜬 적이 없다.
+    // /needs와 같은 규칙을 여기에도 적용한다.
+    if (!anyStartSids.has(sid) && !anyAnswerSids.has(sid)) return;
     let row = vmap.get(vs.variant);
     if (!row) {
       row = {
