@@ -2919,6 +2919,17 @@ export interface NeedsStats {
   allTotals: { start: number; complete: number; download: number; share: number };
   underAgeShare: number;
   bySource: { source: string; count: number }[];
+  // 광고 소재별 성적 — 세션 단위. 2026-08-05에 utm_campaign/content/term
+  // 수집을 붙였다. 그 전 세션은 값이 없어 '(태그 이전)'으로 묶인다.
+  //
+  // 성별을 같이 보는 이유: 쓰레드 유입 완주자 9명이 전원 남성이었다. 채널이
+  // 좋아 보였던 게 아니라 남성이 이 퍼널을 잘 통과하는 것이었고, 여성 타겟
+  // 광고와 나란히 놓고 비교하면 안 되는 숫자였다(2026-08-05).
+  byCreative: {
+    source: string; campaign: string; content: string; term: string;
+    arrivals: number; q1Abandoned: number; completed: number; downloaded: number;
+    women: number; men: number;
+  }[];
   // "또는, 직접 쓸게요" 원문 — 보기 밖 수요 발굴의 재료 (최신순).
   customTexts: { dim: string; text: string; createdAt?: Date }[];
   // 설문 건너뛰고 앱만 받는 우회로(2026-08-01 도입). 첫 질문에서 78%가 떠나는데
@@ -3076,6 +3087,13 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const eraTotals = { start: 0, complete: 0, download: 0, share: 0 };
   // abandon: 세션별 "나갈 때 보던 질문" (답변으로 이어졌으면 무시)
   const abandonStepBySid = new Map<string, number>();
+  // 소재별 성적 — 세션 단위로 모은다(이벤트 단위로 세면 한 사람이 여러 번 세진다).
+  type CreativeSess = {
+    source: string; campaign: string; content: string; term: string;
+    gender: string | null; completed: boolean; downloaded: boolean;
+  };
+  const creativeBySid = new Map<string, CreativeSess>();
+
   // 첫 질문 교체(2026-08-04 18:55 KST) 전후를 가르는 선. 세션은 시작 시각으로
   // 한쪽에 붙인다 — 교체 순간에 걸친 세션을 이벤트마다 쪼개면 어느 쪽 숫자도
   // 안 맞는다.
@@ -3123,6 +3141,23 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (phase === 'abandon' && typeof x.step === 'number' && at >= CLEAN_SINCE) {
       abandonStepBySid.set(sid, x.step);
     }
+    if (at >= CLEAN_SINCE) {
+      let cs = creativeBySid.get(sid);
+      if (!cs) {
+        cs = { source: '(태그없음)', campaign: '', content: '', term: '',
+          gender: null, completed: false, downloaded: false };
+        creativeBySid.set(sid, cs);
+      }
+      const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+      if (str(x.source)) cs.source = str(x.source);
+      if (str(x.campaign)) cs.campaign = str(x.campaign);
+      if (str(x.content)) cs.content = str(x.content);
+      if (str(x.term)) cs.term = str(x.term);
+      if (str(x.gender)) cs.gender = str(x.gender);
+      if (phase === 'complete') cs.completed = true;
+      if (phase === 'download' || phase === 'skip_download') cs.downloaded = true;
+    }
+
     // 세션의 가장 이른 시각 — 교체 전/후를 가를 기준.
     if (at >= CLEAN_SINCE && (phase === 'start' || phase === 'answer' || phase === 'abandon')) {
       const prev = swapFirstAtBySid.get(sid);
@@ -3222,6 +3257,28 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       NEEDS_STEP_LABELS, swapTotals.reverted),
   };
 
+  // 소재별 집계. 태그를 붙이기 전 세션은 campaign/content가 비어 있어
+  // '(태그 이전)' 한 줄로 뭉친다 — 없는 값을 있는 척 쪼개지 않는다.
+  const cmap = new Map<string, NeedsStats['byCreative'][number]>();
+  creativeBySid.forEach((cs, sid) => {
+    const tagged = cs.campaign || cs.content || cs.term;
+    const key = [cs.source, tagged ? cs.campaign : '(태그 이전)', cs.content, cs.term].join('\u0000');
+    let row = cmap.get(key);
+    if (!row) {
+      row = { source: cs.source, campaign: tagged ? cs.campaign : '(태그 이전)',
+        content: cs.content, term: cs.term,
+        arrivals: 0, q1Abandoned: 0, completed: 0, downloaded: 0, women: 0, men: 0 };
+      cmap.set(key, row);
+    }
+    row.arrivals += 1;
+    if (abandonStepBySid.get(sid) === 0 && (maxStepBySid.get(sid) ?? -1) < 0) row.q1Abandoned += 1;
+    if (cs.completed) row.completed += 1;
+    if (cs.downloaded) row.downloaded += 1;
+    if (cs.gender === 'f') row.women += 1;
+    if (cs.gender === 'm') row.men += 1;
+  });
+  const byCreative = [...cmap.values()].sort((a, b) => b.arrivals - a.arrivals).slice(0, 40);
+
   // 캡에 걸렸을 때만 잘라낸다. 안 걸렸으면 가장 오래된 날이 곧 데이터의
   // 시작이라 그 하루는 온전하다.
   const dailyPartialFrom = snap.size >= CAP && Number.isFinite(oldestAt) ? kstDay(oldestAt) : null;
@@ -3248,6 +3305,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     ageBand: toArr(counts.ageBand),
     stepFunnel,
     underAgeShare: ageTotal ? (counts.ageBand.get('under45') ?? 0) / ageTotal : 0,
+    byCreative,
     bySource: [...sourceCount.entries()]
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count),

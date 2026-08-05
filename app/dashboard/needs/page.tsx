@@ -288,6 +288,67 @@ function SwapCompare({ swap }: { swap: NeedsStats['swap'] }) {
   );
 }
 
+// 광고 소재별 성적 — 어떤 소재가 '앱을 받는 사람'을 데려오는가.
+//
+// 도착·완주만 보면 안 된다. 쓰레드 유입 완주자 9명이 전원 남성이었는데,
+// 채널이 좋아 보였을 뿐 여성 타겟 광고와 나란히 볼 수 없는 숫자였다. 그래서
+// 성별 구성을 같은 줄에 놓는다(2026-08-05).
+function ByCreative({ rows }: { rows: NeedsStats['byCreative'] }) {
+  if (rows.length === 0) return null;
+  const pc = (n: number, d: number) => (d > 0 ? `${Math.round((n / d) * 100)}%` : '—');
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">광고 소재별 성적</h2>
+      <p className="mb-3 text-xs text-gray-400">
+        세션 단위. 광고 URL에 <code>utm_campaign / utm_content / utm_term</code>을
+        붙이면 캠페인·소재·지면으로 갈립니다. 붙이기 전 세션은{' '}
+        <b>(태그 이전)</b>으로 묶입니다. 성별은 완주자만 알 수 있습니다.
+      </p>
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="w-full min-w-[820px] text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 text-xs text-gray-500">
+              <th className="px-4 py-2.5 text-left font-medium">유입 / 캠페인</th>
+              <th className="px-3 py-2.5 text-left font-medium">소재 · 지면</th>
+              <th className="px-3 py-2.5 text-right font-medium">도착</th>
+              <th className="px-3 py-2.5 text-right font-medium">첫 질문 이탈</th>
+              <th className="px-3 py-2.5 text-right font-medium">완주</th>
+              <th className="px-3 py-2.5 text-right font-medium">앱 받기</th>
+              <th className="px-3 py-2.5 text-right font-medium">여 / 남</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td className="whitespace-nowrap px-4 py-2 text-gray-800">
+                  {r.source}
+                  <span className="ml-1.5 text-xs text-gray-400">{r.campaign}</span>
+                </td>
+                <td className="px-3 py-2 text-xs text-gray-500">
+                  {r.content || '—'}{r.term ? ` · ${r.term}` : ''}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-900">{r.arrivals}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                  {pc(r.q1Abandoned, r.arrivals)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                  {r.completed}<span className="ml-1 text-xs text-gray-400">{pc(r.completed, r.arrivals)}</span>
+                </td>
+                <td className={`px-3 py-2 text-right tabular-nums ${r.downloaded > 0 ? 'font-semibold text-emerald-700' : 'text-gray-300'}`}>
+                  {r.downloaded}<span className="ml-1 text-xs font-normal text-gray-400">{pc(r.downloaded, r.arrivals)}</span>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums text-gray-500">
+                  {r.women} / {r.men}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 // 나날의 현황 — 누적만 보면 소재를 바꾸거나 화면을 고친 날이 평균에 묻힌다.
 function DailyTable({ daily, partialFrom }: { daily: NeedsDay[]; partialFrom: string | null }) {
   const rows = daily.slice(-14).reverse(); // 최신이 위
@@ -500,6 +561,8 @@ export default function NeedsDashboardPage() {
       </div>
 
       <SwapCompare swap={stats.swap} />
+
+      <ByCreative rows={stats.byCreative} />
 
       <DailyTable daily={stats.daily} partialFrom={stats.dailyPartialFrom} />
 
