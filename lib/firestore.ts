@@ -3126,6 +3126,11 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     downloaded: boolean;
   };
   const enjoyBySid = new Map<string, EnjoySess>();
+  // 랜딩 비교 전용 step 맵. /needs가 쓰는 maxStepBySid·abandonStepBySid에
+  // 같이 담으면 안 된다 — 그 맵의 키가 allSids로 흘러들어 /needs 퍼널 분모가
+  // /enjoy 세션만큼 부풀어 오른다.
+  const vMaxStep = new Map<string, number>();
+  const vAbandonStep = new Map<string, number>();
   const sourceCount = new Map<string, number>();
   const customTexts: NeedsStats['customTexts'] = [];
   // 질문별 이탈: answer 이벤트의 세션별 최대 step. start만 있고 answer 없는
@@ -3161,8 +3166,9 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   //
   // variant가 없는(=기존) 이벤트는 /needs다.
   const VARIANT_LABELS: Record<string, string> = {
-    needs: '/needs · 9문항',
-    enjoy: '/enjoy · 3문항 (밝은판)',
+    needs: '/needs · 9문항 (닫힘)',
+    // 문항 수를 이름에 박지 않는다 — 8/6에 셋에서 넷으로 늘었고, 또 바뀐다.
+    enjoy: '/enjoy · 밝은판',
   };
   type VarRow = {
     variant: string; label: string; arrivals: number; q1Abandoned: number;
@@ -3245,6 +3251,17 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       if (variant !== 'needs') vs.variant = variant;
       if (phase === 'complete') vs.completed = true;
       if (phase === 'download' || phase === 'skip_download') vs.downloaded = true;
+    }
+
+    // 랜딩 비교용 step — 조기 반환 위에서 주워야 /enjoy도 들어온다. 전에는
+    // /needs 전용 블록 안에서만 채워서, /enjoy의 "첫 질문 이탈"이 언제나
+    // 0으로 떴다. 이탈이 없던 게 아니라 세지를 않은 것이었다(2026-08-06).
+    if (!nonHumanSids.has(sid) && typeof x.step === 'number') {
+      if (phase === 'answer') {
+        vMaxStep.set(sid, Math.max(vMaxStep.get(sid) ?? -1, x.step));
+      } else if (phase === 'abandon') {
+        vAbandonStep.set(sid, x.step);
+      }
     }
 
     // /enjoy 답 줍기 — 아래 조기 반환보다 위에 있어야 한다. 봇 필터를 여기
@@ -3484,7 +3501,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       vmap.set(vs.variant, row);
     }
     row.arrivals += 1;
-    if (abandonStepBySid.get(sid) === 0 && (maxStepBySid.get(sid) ?? -1) < 0) {
+    if (vAbandonStep.get(sid) === 0 && (vMaxStep.get(sid) ?? -1) < 0) {
       row.q1Abandoned += 1;
     }
     if (vs.completed) row.completed += 1;
