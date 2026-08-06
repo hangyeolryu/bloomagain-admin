@@ -2948,6 +2948,20 @@ export interface NeedsStats {
   swap: { before: NeedsSwapEra; after: NeedsSwapEra; reverted: NeedsSwapEra };
   // 사람 아닌 접속으로 걸러낸 세션 수(UA 기준, 2026-08-05~ 기록분만).
   excludedNonHuman: number;
+  // /enjoy(밝은판) 답. /needs 문항과 한 표에 못 섞는다 — 활동 보기가 다르고
+  // (연극·뮤지컬이 여기만 있다) 지역도 여기만 묻는다. 같은 이름 다른 보기를
+  // 합치면 어느 설문 숫자인지 아무도 모르게 된다.
+  enjoy: {
+    respondents: number;      // 한 문항이라도 답한 사람
+    downloaded: number;
+    activity: { key: string; count: number }[];
+    district: { key: string; count: number }[];
+    outing: { key: string; count: number }[];
+    ageBand: { key: string; count: number }[];
+    // 바깥 활동 문항은 2026-08-06 20:5x 배포분부터 들어온다. 그 전 응답자는
+    // 이 칸이 비어 있는 게 정상이라 분모를 따로 둔다.
+    outingRespondents: number;
+  };
   // 랜딩별 성적. 아래 다른 표들은 전부 /needs만 센다 — 여기서만 둘을 견준다.
   byVariant: {
     variant: string; label: string; arrivals: number; q1Abandoned: number;
@@ -3040,6 +3054,30 @@ export const NEEDS_LABELS: Record<string, string> = {
   other: '✏️ 직접 입력',
 };
 
+// /enjoy 전용 라벨. NEEDS_LABELS와 섞지 않는다 — solo_out이 두 설문에서 뜻이
+// 다르다(/needs는 "혼자 산책·운동"이라는 시간 사용, /enjoy는 "혼자서라도 나가는
+// 편"이라는 성향). 한 표를 쓰면 어느 한쪽이 반드시 틀린 이름으로 뜬다.
+export const ENJOY_LABELS: Record<string, string> = {
+  // 하고 싶은 것 — /needs에 없는 연극·뮤지컬이 여기만 있다.
+  culture: '전시·공연 나들이', theater: '연극·뮤지컬', travel: '같이 여행',
+  tea: '차 한잔·맛집', hobby: '취미·배움', exercise: '운동·등산',
+  walk: '동네 산책', chat: '편한 수다',
+  // 지역 — 경기·인천은 2026-08-06에 넷으로 쪼갰다. gyeonggi는 그 전 응답이라
+  // 남긴다(지우면 옛 데이터가 코드로 뜬다).
+  gangnam: '강남·서초·송파', jongno: '종로·중구·용산', mapo: '마포·서대문·은평',
+  yeongdeungpo: '영등포·구로·양천·강서', nowon: '노원·도봉·강북·성북',
+  gangdong: '광진·성동·동대문·중랑·강동',
+  incheon: '인천·부천·김포', gg_north: '고양·파주·의정부',
+  gg_south: '성남·용인·수원', gg_west: '안양·광명·안산',
+  gyeonggi: '경기·인천 (~8/6 통합 보기)', etc: '그 외 지역',
+  // 바깥 활동
+  solo_out: '혼자서라도 나가는 편', want_out: '나가고 싶은데 잘 안 됨',
+  home: '집이 편함', has_group: '이미 다니는 모임 있음',
+  // 연령
+  '45-49': '45–49세', '50-54': '50–54세', '55-59': '55–59세', '60-64': '60–64세',
+  '65plus': '65세 이상', under45: '만 45세 미만',
+};
+
 export const NEEDS_DIM_LABELS: Record<string, string> = {
   timeuse: '시간을 보내는 법',
   moment: "'누가 있었으면' 순간", situation: '삶의 변화', activity: '하고 싶은 것',
@@ -3081,6 +3119,13 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   const dims = ['timeuse', 'situation', 'activity', 'worry', 'person', 'gender', 'funnel', 'moment', 'ageBand'] as const;
   const counts: Record<string, Map<string, number>> = {};
   dims.forEach((d) => { counts[d] = new Map(); });
+  // /enjoy 답 — 세션 단위로 모은다. 이벤트마다 세면 answer와 complete에 같은
+  // 값이 두 번 실려 한 사람이 두 번 세진다.
+  type EnjoySess = {
+    activity?: string; district?: string; outing?: string; ageBand?: string;
+    downloaded: boolean;
+  };
+  const enjoyBySid = new Map<string, EnjoySess>();
   const sourceCount = new Map<string, number>();
   const customTexts: NeedsStats['customTexts'] = [];
   // 질문별 이탈: answer 이벤트의 세션별 최대 step. start만 있고 answer 없는
@@ -3200,6 +3245,18 @@ export async function getNeedsStats(): Promise<NeedsStats> {
       if (variant !== 'needs') vs.variant = variant;
       if (phase === 'complete') vs.completed = true;
       if (phase === 'download' || phase === 'skip_download') vs.downloaded = true;
+    }
+
+    // /enjoy 답 줍기 — 아래 조기 반환보다 위에 있어야 한다. 봇 필터를 여기
+    // 아래 뒀다가 /enjoy 봇이 하나도 안 걸러진 적이 있다(2026-08-05).
+    if (variant === 'enjoy' && !nonHumanSids.has(sid)) {
+      let es = enjoyBySid.get(sid);
+      if (!es) { es = { downloaded: false }; enjoyBySid.set(sid, es); }
+      if (typeof x.activity === 'string' && x.activity) es.activity = x.activity;
+      if (typeof x.district === 'string' && x.district) es.district = x.district;
+      if (typeof x.outing === 'string' && x.outing) es.outing = x.outing;
+      if (typeof x.ageBand === 'string' && x.ageBand) es.ageBand = x.ageBand;
+      if (phase === 'download' || phase === 'skip_download') es.downloaded = true;
     }
 
     // 아래 집계는 전부 /needs 전용이다. 다른 랜딩이 섞이면 어제까지의 숫자와
@@ -3433,6 +3490,27 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     if (vs.completed) row.completed += 1;
     if (vs.downloaded) row.downloaded += 1;
   });
+  const enjoySess = [...enjoyBySid.values()].filter(
+    (e) => e.activity || e.district || e.outing || e.ageBand,
+  );
+  const enjoyTally = (pick: (e: EnjoySess) => string | undefined) => {
+    const m = new Map<string, number>();
+    enjoySess.forEach((e) => {
+      const v = pick(e);
+      if (v) m.set(v, (m.get(v) ?? 0) + 1);
+    });
+    return toArr(m);
+  };
+  const enjoy: NeedsStats['enjoy'] = {
+    respondents: enjoySess.length,
+    downloaded: enjoySess.filter((e) => e.downloaded).length,
+    activity: enjoyTally((e) => e.activity),
+    district: enjoyTally((e) => e.district),
+    outing: enjoyTally((e) => e.outing),
+    ageBand: enjoyTally((e) => e.ageBand),
+    outingRespondents: enjoySess.filter((e) => e.outing).length,
+  };
+
   const byVariant = [...vmap.values()].sort((a, b) => b.arrivals - a.arrivals);
 
   // 캡에 걸렸을 때만 잘라낸다. 안 걸렸으면 가장 오래된 날이 곧 데이터의
@@ -3462,6 +3540,7 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     stepFunnel,
     underAgeShare: ageTotal ? (counts.ageBand.get('under45') ?? 0) / ageTotal : 0,
     byCreative,
+    enjoy,
     byVariant,
     excludedNonHuman,
     bySource: [...sourceCount.entries()]

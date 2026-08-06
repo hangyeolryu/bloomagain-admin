@@ -16,6 +16,7 @@ import {
   getAdAttribution,
   type AdAttribution as AdAttributionType,
   NEEDS_LABELS,
+  ENJOY_LABELS,
   NEEDS_DIM_LABELS,
   GYEOL_AGE_LABELS,
   type NeedsStats,
@@ -693,9 +694,79 @@ function Bar({ label, count, max, tone }: { label: string; count: number; max: n
   );
 }
 
-function Section({ title, hint, data, redKey }: {
+// /enjoy(밝은판) 답. 지금 광고가 전부 여기로 오므로 살아 있는 조사다.
+//
+// /needs와 한 표에 못 섞는다 — 활동 보기가 다르고(연극·뮤지컬이 여기만 있다)
+// 지역·바깥활동은 여기만 묻는다. 같은 이름 다른 보기를 합치면 어느 설문
+// 숫자인지 아무도 모르게 된다.
+function EnjoySections({ data }: { data: NeedsStats['enjoy'] }) {
+  if (data.respondents === 0) return null;
+  const dlPct = data.respondents > 0
+    ? Math.round((data.downloaded / data.respondents) * 100) : 0;
+  const thin = data.respondents < 150;
+
+  return (
+    <section className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-5">
+      <div className="mb-1 flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold text-gray-900">/enjoy — 지금 돌아가는 조사</h2>
+        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-medium text-white">
+          진행 중
+        </span>
+      </div>
+      <p className="mb-4 text-xs text-gray-500">
+        한 문항이라도 답한 <b className="tabular-nums">{data.respondents}</b>명 ·
+        앱 받기 <b className="tabular-nums">{data.downloaded}</b>명(
+        <span className="tabular-nums">{dlPct}%</span>).
+        아래 ①~⑥은 <b>닫힌 /needs</b> 숫자라 여기와 이어지지 않습니다.
+      </p>
+
+      {thin && (
+        // 46명일 때 "전시·공연 28%가 1위"를 결론처럼 읽던 일이 있었다.
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          아직 <b className="tabular-nums">{data.respondents}</b>명뿐입니다.
+          <b> 150명을 넘기기 전에는 항목별 비율로 결론 내지 마세요</b> — 한두 명
+          차이로 순위가 뒤집힙니다.
+        </p>
+      )}
+
+      <div className="grid gap-8 md:grid-cols-2">
+        <Section
+          title="① 뭐가 제일 하고 싶은가"
+          hint="/needs의 '하고 싶은 것'과 보기가 다릅니다 — 연극·뮤지컬이 여기만 있어 두 표를 더할 수 없습니다."
+          data={data.activity}
+          labels={ENJOY_LABELS}
+        />
+        <Section
+          title="② 어디서 만나기 편한가"
+          hint="8/6에 경기·인천을 넷으로 쪼갰습니다. '경기·인천 (~8/6 통합 보기)'는 그 전 응답이라 어느 도시인지 알 수 없습니다."
+          data={data.district}
+          labels={ENJOY_LABELS}
+        />
+        <Section
+          title="③ 요즘 바깥 활동"
+          hint={
+            `앱 받기를 예측한 유일한 행동 신호(/needs에서 34% 대 18%, p=0.013). `
+            + `8/6 저녁 배포분부터 들어옵니다 — 지금까지 ${data.outingRespondents}명.`
+          }
+          data={data.outing}
+          labels={ENJOY_LABELS}
+        />
+        <Section
+          title="④ 연령"
+          data={data.ageBand}
+          labels={ENJOY_LABELS}
+          redKey="under45"
+        />
+      </div>
+    </section>
+  );
+}
+
+function Section({ title, hint, data, redKey, labels }: {
   title: string; hint?: string;
   data: { key: string; count: number }[]; redKey?: string;
+  // /enjoy는 자기 표를 쓴다 — solo_out이 두 설문에서 뜻이 다르다.
+  labels?: Record<string, string>;
 }) {
   const max = data[0]?.count ?? 0;
   return (
@@ -709,7 +780,7 @@ function Section({ title, hint, data, redKey }: {
           {data.map((d) => (
             <Bar
               key={d.key}
-              label={NEEDS_LABELS[d.key] ?? GYEOL_AGE_LABELS[d.key] ?? d.key}
+              label={labels?.[d.key] ?? NEEDS_LABELS[d.key] ?? GYEOL_AGE_LABELS[d.key] ?? d.key}
               count={d.count}
               max={max}
               tone={d.key === redKey ? 'red' : 'green'}
@@ -820,9 +891,29 @@ export default function NeedsDashboardPage() {
         (상단 타일은 7/28 14:19 정확 집계 이후만 세서 숫자가 달라요).
       </p>
 
+      <EnjoySections data={stats.enjoy} />
+
       {/* 아래 6개는 설문 화면에 나오는 순서 그대로다(needs/page.tsx).
-          응답을 흐름대로 읽어야 어디서 마음이 바뀌는지 보인다. 설문 순서를
-          바꾸면 여기도 같이 바꿀 것. */}
+          응답을 흐름대로 읽어야 어디서 마음이 바뀌는지 보인다.
+
+          2026-08-06 광고를 전부 /enjoy로 옮기면서 이 조사는 사실상 닫혔다.
+          숫자가 안 늘어도 고장난 게 아니다 — 그걸 화면에 적어 두지 않으면
+          몇 주 뒤에 "요즘 사람들이 원하는 것"으로 잘못 읽게 된다. */}
+      <div className="rounded-xl border border-gray-300 bg-gray-50 p-4">
+        <div className="mb-1 flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold text-gray-700">/needs — 닫힌 조사 (9문항)</h2>
+          <span className="rounded-full bg-gray-500 px-2 py-0.5 text-[11px] font-medium text-white">
+            2026-08-06 종료
+          </span>
+        </div>
+        <p className="text-xs text-gray-500">
+          광고를 전부 /enjoy로 옮겨 새 응답이 들어오지 않습니다.
+          <b> 아래 숫자는 더 늘지 않는 게 정상입니다.</b> 지우지 않는 이유는 이
+          281명분이 수요 근거의 전부라서입니다 —
+          자세한 건 <code className="text-[11px]">docs/product/수요공급_정리_2026_08_06.md</code>.
+        </p>
+      </div>
+
       <Section
         title="① 지금 그 시간을 어떻게 보내나 (실태)"
         hint='사실상 경쟁자 조사 — TV·유튜브가 경쟁자인지, "그냥 흘러가요"(핵심 타겟)가 몇인지'
