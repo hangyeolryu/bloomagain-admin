@@ -13,6 +13,8 @@ import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   getNeedsStats,
+  getAdAttribution,
+  type AdAttribution as AdAttributionType,
   NEEDS_LABELS,
   NEEDS_DIM_LABELS,
   GYEOL_AGE_LABELS,
@@ -52,6 +54,14 @@ const CHANGE_LOG: { day: string; items: string[] }[] = [
       '리타게팅 픽셀 추가: NeedsAgeQualified(45+) / NeedsUnderage.',
       '/enjoy 3문항 밝은판 랜딩 신설. 이 페이지의 다른 표는 모두 /needs만 '
         + '세고, 두 랜딩은 맨 위 "랜딩 비교"에서만 견준다.',
+    ],
+  },
+  {
+    day: '2026-08-06',
+    items: [
+      '"광고 → 가입 연결" 추가. 스토어를 거치면 광고 정보가 끊겨서, 앱 받기 '
+        + '클릭과 가입 시각을 30분 안에서 이어 붙인다. 실측 간격이 대부분 '
+        + '0~1분이라 매칭이 잘 맞는다.',
     ],
   },
 ];
@@ -152,6 +162,102 @@ function Summary({ stats }: { stats: NeedsStats }) {
           </li>
         )}
       </ul>
+    </section>
+  );
+}
+
+
+// 광고 → 가입 연결. 스토어를 거치면 광고 정보가 끊기므로 시간으로 잇는다.
+//
+// 다운로드 클릭까지만 보면 "받으러 갔다"에서 끝난다. 실제로 가입까지 온
+// 사람을 소재별로 봐야 어디에 돈을 더 넣을지 정할 수 있다.
+//
+// 매칭 한계를 숨기지 않는다 — 스토어에서 바로 안 받고 나중에 받은 사람은
+// 못 잡는다. 그래서 매칭률이 100%가 아닌 게 정상이고, 그 사실을 적어 둔다.
+function AdAttribution({ data }: { data: AdAttributionType }) {
+  if (data.signupsTotal === 0) return null;
+  const pct = data.signupsTotal > 0
+    ? Math.round((data.matched / data.signupsTotal) * 100)
+    : 0;
+  const fmt = (d: Date) =>
+    new Date(d.getTime() + 9 * 3600_000).toISOString().slice(5, 16).replace('T', ' ');
+  const withSignup = data.byCreative.filter((c) => c.signups > 0 || c.downloads > 0);
+
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">광고 → 가입 연결</h2>
+      <p className="mb-3 text-xs text-gray-400">
+        최근 14일. 앱 받기 클릭과 가입 시각을 {data.windowMin}분 안에서 이어 붙입니다.
+        스토어에서 바로 안 받고 <b>나중에 받은 분은 못 잡습니다</b> — 매칭률이 100%가
+        아닌 게 정상입니다. 가입 {data.signupsTotal}명 중{' '}
+        <b className="tabular-nums">{data.matched}명({pct}%)</b> 연결됨.
+      </p>
+
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 text-xs text-gray-500">
+              <th className="px-4 py-2.5 text-left font-medium">유입 / 캠페인</th>
+              <th className="px-3 py-2.5 text-left font-medium">소재</th>
+              <th className="px-3 py-2.5 text-right font-medium">앱 받기 클릭</th>
+              <th className="px-3 py-2.5 text-right font-medium">가입</th>
+              <th className="px-3 py-2.5 text-right font-medium">클릭→가입</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {withSignup.map((c) => (
+              <tr key={c.key} className={c.signups > 0 ? 'bg-emerald-50/40' : undefined}>
+                <td className="whitespace-nowrap px-4 py-2 text-gray-800">
+                  {c.source}
+                  <span className="ml-1.5 text-xs text-gray-400">{c.campaign}</span>
+                </td>
+                <td className="px-3 py-2 text-xs text-gray-500">{c.content || '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-700">{c.downloads}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${c.signups > 0 ? 'font-semibold text-emerald-700' : 'text-gray-300'}`}>
+                  {c.signups}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                  {c.downloads > 0 ? `${Math.round((c.signups / c.downloads) * 100)}%` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {data.rows.length > 0 && (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-xs text-gray-500">
+                <th className="px-4 py-2.5 text-left font-medium">가입 시각</th>
+                <th className="px-3 py-2.5 text-left font-medium">기기</th>
+                <th className="px-3 py-2.5 text-left font-medium">랜딩</th>
+                <th className="px-3 py-2.5 text-left font-medium">고른 것</th>
+                <th className="px-3 py-2.5 text-right font-medium">클릭 후</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.rows.slice(0, 15).map((r, i) => (
+                <tr key={i}>
+                  <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-700">
+                    {fmt(r.signupAt)}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-500">{r.platform}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">/{r.variant}</td>
+                  <td className="px-3 py-2 text-xs text-gray-600">
+                    {[r.activity && (NEEDS_LABELS[r.activity] ?? r.activity), r.district]
+                      .filter(Boolean).join(' · ') || '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs tabular-nums text-gray-400">
+                    {r.gapMin}분
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -608,10 +714,14 @@ function Section({ title, hint, data, redKey }: {
 
 export default function NeedsDashboardPage() {
   const [stats, setStats] = useState<NeedsStats | null>(null);
+  const [attr, setAttr] = useState<AdAttributionType | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    getAdAttribution()
+      .then(setAttr)
+      .catch(() => setAttr(null));
     getNeedsStats()
       .then(setStats)
       .catch((e) => setErr(e?.message ?? '불러오기 실패'))
@@ -633,6 +743,8 @@ export default function NeedsDashboardPage() {
       />
 
       <VariantCompare rows={stats.byVariant} />
+
+      {attr && <AdAttribution data={attr} />}
 
       <Summary stats={stats} />
 

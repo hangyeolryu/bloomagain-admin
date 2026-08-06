@@ -4313,3 +4313,151 @@ export async function getMoimRooms(max = 30): Promise<AdminMoimRoom[]> {
     }),
   );
 }
+
+// ─── 광고 → 가입 연결 (시간 대조) ────────────────────────────────────────────
+//
+// 스토어를 거치면 광고 정보가 끊긴다. 앱은 "이 사람이 어느 소재를 보고 왔는지"를
+// 모른 채 가입만 받는다. 제대로 이으려면 설치 어트리뷰션 SDK가 필요한데,
+// 하루 가입이 한 자릿수인 지금 규모엔 과하다.
+//
+// 대신 시간으로 잇는다. '앱 받기' 클릭에는 캠페인·소재·활동·지역이 다 실려
+// 있고, 그 직후 몇 분 안에 가입이 찍힌다. 하루 가입이 6명 수준이라 겹칠 일이
+// 거의 없어 이 방식이 실제로 잘 맞는다.
+//
+// 한계는 화면에 적는다 — 스토어에서 바로 안 받고 나중에 받은 사람은 못 잡고,
+// 같은 플랫폼에서 클릭이 몰리면 엉뚱하게 붙을 수 있다.
+export interface AdAttributionRow {
+  signupAt: Date;
+  platform: string;
+  campaign: string;
+  content: string;
+  source: string;
+  variant: string;
+  activity: string | null;
+  district: string | null;
+  gapMin: number;
+}
+
+export interface AdAttribution {
+  windowMin: number;
+  rows: AdAttributionRow[];
+  /** 소재별 가입 수 — 다운로드가 아니라 '실제 가입'까지 본다. */
+  byCreative: {
+    key: string; campaign: string; content: string; source: string;
+    downloads: number; signups: number;
+  }[];
+  signupsTotal: number;
+  matched: number;
+}
+
+/** 가입 시각과 '앱 받기' 클릭을 시간으로 잇는다. */
+export async function getAdAttribution(days = 14): Promise<AdAttribution> {
+  const WINDOW_MIN = 30;
+  const since = new Date(Date.now() - days * 24 * 3600_000);
+
+  const evCol = collection(db, 'needs_survey_events');
+  const [dl1, dl2] = await Promise.all([
+    getDocs(query(evCol, where('phase', '==', 'download'))),
+    getDocs(query(evCol, where('phase', '==', 'skip_download'))),
+  ]);
+  type Click = {
+    at: number; store: string; campaign: string; content: string;
+    source: string; variant: string; activity: string | null;
+    district: string | null; taken: boolean;
+  };
+  const clicks: Click[] = [];
+  [...dl1.docs, ...dl2.docs].forEach((d) => {
+    const x = d.data() as DocumentData;
+    const at = toDate(x.createdAt)?.getTime();
+    if (!at || at < since.getTime()) return;
+    const str = (v: unknown, fb = '') =>
+      (typeof v === 'string' && v.trim() ? v.trim() : fb);
+    clicks.push({
+      at,
+      store: str(x.store, '?'),
+      campaign: str(x.campaign, '(태그 이전)'),
+      content: str(x.content),
+      source: str(x.source, '(없음)'),
+      variant: str(x.variant, 'needs'),
+      activity: str(x.activity) || null,
+      district: str(x.district) || null,
+      taken: false,
+    });
+  });
+  clicks.sort((a, b) => a.at - b.at);
+
+  const users = await getDocs(
+    query(collection(db, 'users'), where('createdAt', '>=', since)),
+  );
+  type Signup = { at: number; platform: string };
+  const signups: Signup[] = [];
+  users.forEach((d) => {
+    const x = d.data() as DocumentData;
+    const at = toDate(x.createdAt)?.getTime();
+    if (!at) return;
+    const s = JSON.stringify(x.device ?? x.appAgent ?? '').toLowerCase();
+    const platform = /ios|iphone|ipad/.test(s)
+      ? 'ios'
+      : /android/.test(s)
+        ? 'android'
+        : '?';
+    signups.push({ at, platform });
+  });
+  signups.sort((a, b) => a.at - b.at);
+
+  // 가입마다 '바로 앞의 아직 안 쓰인 클릭' 하나를 가져간다. 같은 클릭을 두
+  // 가입이 나눠 갖지 않게 taken으로 막는다.
+  const rows: AdAttributionRow[] = [];
+  signups.forEach((s) => {
+    let best: Click | null = null;
+    for (const c of clicks) {
+      if (c.taken) continue;
+      if (c.at > s.at) break;
+      if (s.at - c.at > WINDOW_MIN * 60_000) continue;
+      // 플랫폼이 어긋나면 다른 사람이다. 앱이 기기 정보를 못 남긴 경우(?)만
+      // 예외로 둔다 — 그때는 시간만 보고 잇는다.
+      if (s.platform !== '?' && c.store !== '?' && c.store !== s.platform) continue;
+      best = c; // 더 가까운 클릭이 뒤에 있을 수 있으니 계속 본다
+    }
+    if (!best) return;
+    best.taken = true;
+    rows.push({
+      signupAt: new Date(s.at),
+      platform: s.platform,
+      campaign: best.campaign,
+      content: best.content,
+      source: best.source,
+      variant: best.variant,
+      activity: best.activity,
+      district: best.district,
+      gapMin: Math.round((s.at - best.at) / 60_000),
+    });
+  });
+  rows.sort((a, b) => b.signupAt.getTime() - a.signupAt.getTime());
+
+  const cmap = new Map<string, AdAttribution['byCreative'][number]>();
+  const keyOf = (c: { source: string; campaign: string; content: string }) =>
+    [c.source, c.campaign, c.content].join(' ');
+  clicks.forEach((c) => {
+    const k = keyOf(c);
+    let r = cmap.get(k);
+    if (!r) {
+      r = { key: k, campaign: c.campaign, content: c.content, source: c.source,
+        downloads: 0, signups: 0 };
+      cmap.set(k, r);
+    }
+    r.downloads += 1;
+  });
+  rows.forEach((r) => {
+    const rec = cmap.get(keyOf(r));
+    if (rec) rec.signups += 1;
+  });
+
+  return {
+    windowMin: WINDOW_MIN,
+    rows: rows.slice(0, 40),
+    byCreative: [...cmap.values()].sort((a, b) => b.signups - a.signups || b.downloads - a.downloads),
+    signupsTotal: signups.length,
+    matched: rows.length,
+  };
+}
