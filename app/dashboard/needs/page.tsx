@@ -81,6 +81,34 @@ const CHANGE_LOG: { day: string; items: string[] }[] = [
 ];
 const changesOn = (day: string) => CHANGE_LOG.find((c) => c.day === day)?.items;
 
+/// utm_campaign은 **첫 게시 순간에 굳는다.**
+///
+/// Meta 문서 그대로: "이름 기반 URL 매개변수는 처음 게시될 때 설정되며,
+/// 수정하더라도 가리키는 대상은 변경되지 않습니다." 캠페인 이름을 바꿔도
+/// 우리 데이터에는 영원히 옛 이름이 온다.
+///
+/// 데이터가 쪼개지지 않는다는 점은 좋다 — 이름을 고칠 때마다 성과 이력이
+/// 두 줄로 갈라지지 않는다. 문제는 이름이 **거짓말을 하게 된다**는 것이다.
+/// 아래 캠페인은 이름에 /needs가 박혀 있지만 8/6 21:13부터 /enjoy로 간다.
+/// 실제로 그 이름을 보고 "아직 안 옮겼네"로 잘못 읽은 일이 있었다.
+///
+/// 이름으로 표시를 남기려면 새 광고를 만드는 수밖에 없다. 그래서 변경 이력은
+/// 위 CHANGE_LOG가 유일한 진실이다.
+const CAMPAIGN_NOTES: { match: string; note: string }[] = [
+  { match: '/needs 홍보', note: '→ 8/6 21:13부터 /enjoy' },
+];
+function CampaignName({ name }: { name: string }) {
+  const hit = CAMPAIGN_NOTES.find((c) => name.includes(c.match));
+  return (
+    <span className="ml-1.5 text-xs text-gray-400">
+      {name}
+      {hit && (
+        <b className="ml-1 font-medium text-emerald-600">{hit.note}</b>
+      )}
+    </span>
+  );
+}
+
 const sumOf = (rows: NeedsDay[], k: keyof NeedsDay) =>
   rows.reduce((a, r) => a + (typeof r[k] === 'number' ? (r[k] as number) : 0), 0);
 // 다운로드는 두 갈래로 들어온다 — 설문을 끝내고 받는 길, 첫 질문에서 건너뛰고
@@ -223,7 +251,7 @@ function AdAttribution({ data }: { data: AdAttributionType }) {
               <tr key={c.key} className={c.signups > 0 ? 'bg-emerald-50/40' : undefined}>
                 <td className="whitespace-nowrap px-4 py-2 text-gray-800">
                   {c.source}
-                  <span className="ml-1.5 text-xs text-gray-400">{c.campaign}</span>
+                  <CampaignName name={c.campaign} />
                 </td>
                 <td className="px-3 py-2 text-xs text-gray-500">{c.content || '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-700">{c.downloads}</td>
@@ -540,7 +568,7 @@ function ByCreative({ rows }: { rows: NeedsStats['byCreative'] }) {
               <tr key={i}>
                 <td className="whitespace-nowrap px-4 py-2 text-gray-800">
                   {r.source}
-                  <span className="ml-1.5 text-xs text-gray-400">{r.campaign}</span>
+                  <CampaignName name={r.campaign} />
                 </td>
                 <td className="px-3 py-2 text-xs text-gray-500">
                   {r.content || '—'}{r.term ? ` · ${r.term}` : ''}
