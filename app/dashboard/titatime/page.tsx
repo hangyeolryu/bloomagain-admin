@@ -11,6 +11,7 @@
 // view 30-50은 쌓여야 방향이 보인다 — 그 전엔 참고만.
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MeetupSessionsCard from './MeetupSessionsCard';
@@ -53,6 +54,16 @@ export default function TitatimeDashboardPage() {
 
       {/* 모집 세션 관리 — 웹/앱이 읽는 단일 출처 */}
       <MeetupSessionsCard />
+
+      {/* 여기서 자리를 열고, 누가 신청했는지는 옆 화면에서 본다. 경로가
+          titatime / teatime으로 한 글자만 달라 서로를 못 찾는다. */}
+      <p className="-mt-4 text-xs text-gray-500">
+        이 자리에 <b>누가 신청했는지</b>는{' '}
+        <Link href="/dashboard/teatime" className="font-medium text-emerald-700 underline">
+          티타임 신청 명단
+        </Link>
+        에서 봅니다.
+      </p>
 
       {loading ? (
         <div className="p-6"><LoadingSpinner /></div>

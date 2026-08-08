@@ -105,13 +105,13 @@ export default function MoimDashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <Header title="결모임 자리표" subtitle="자리표 수요와 자동 조립 성사 현황" />
       <main className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
-        {/* 직접 편성 진입 — 자동 조립을 기다리지 않고 파운더가 손으로 찻자리를 연다 */}
+        {/* 직접 편성 진입 — 자동 조립을 기다리지 않고 파운더가 손으로 티타임를 연다 */}
         <Link
           href="/dashboard/moim-builder"
           className="flex items-center justify-between rounded-xl border border-green-200 bg-green-50 p-4 transition hover:bg-green-100"
         >
           <div>
-            <div className="text-sm font-bold text-green-900">🍵 찻자리 직접 편성하기</div>
+            <div className="text-sm font-bold text-green-900">🍵 티타임 직접 편성하기</div>
             <div className="mt-0.5 text-xs text-green-700">
               자동 조립을 기다리지 말고, 결 통할 3~4명을 직접 골라 그룹 대화방을 여세요 (Wizard of Oz).
             </div>
@@ -119,11 +119,11 @@ export default function MoimDashboardPage() {
           <span className="text-green-700">→</span>
         </Link>
 
-        {/* 그룹 찻자리 방 — 활동 메타데이터만(내용 안 읽음 → 열람 로그 없음).
+        {/* 그룹 티타임 방 — 활동 메타데이터만(내용 안 읽음 → 열람 로그 없음).
             수동 생성한 방도 여기 다 뜬다. '대화 보기'로 들어가야 내용+로그 기록. */}
         <section className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="mb-1 flex items-baseline justify-between">
-            <h2 className="text-sm font-bold text-gray-900">그룹 찻자리 방</h2>
+            <h2 className="text-sm font-bold text-gray-900">그룹 티타임 방</h2>
             <span className="text-xs text-gray-400">{rooms?.length ?? 0}개 · 열람 기록 안 남김</span>
           </div>
           <p className="mb-3 text-xs text-gray-500">
@@ -132,7 +132,7 @@ export default function MoimDashboardPage() {
           {rooms === null ? (
             <p className="text-sm text-gray-400">불러오는 중…</p>
           ) : rooms.length === 0 ? (
-            <p className="text-sm text-gray-400">아직 그룹 찻자리 방이 없어요.</p>
+            <p className="text-sm text-gray-400">아직 그룹 티타임 방이 없어요.</p>
           ) : (
             <div className="space-y-2.5">
               {rooms.map((r) => (

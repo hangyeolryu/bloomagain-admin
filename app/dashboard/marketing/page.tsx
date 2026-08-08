@@ -54,7 +54,7 @@ const DAILY: CheckItem[] = [
   {
     id: 'moim',
     label: '결모임 자리표 확인 — 대기 3장 이상이면 편성 검토',
-    tip: '자동 조립이 못 묶은 조합은 찻자리 편성(QA)에서 수동으로',
+    tip: '자동 조립이 못 묶은 조합은 티타임 편성(QA)에서 수동으로',
     link: { href: '/dashboard/moim', label: '자리표 현황' },
   },
 ];

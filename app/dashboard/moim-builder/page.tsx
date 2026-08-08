@@ -1,8 +1,8 @@
 'use client';
 
-// 찻자리 수동 편성 (결모임 Wizard of Oz)
+// 티타임 수동 편성 (결모임 Wizard of Oz)
 // ──────────────────────────────────────────────────────────────────────────
-// 메인 컨셉("결이 맞는 3~4명의 찻자리를 자동으로 열어주는 앱")의 초기 운영 도구.
+// 메인 컨셉("결이 맞는 3~4명의 티타임을 자동으로 열어주는 앱")의 초기 운영 도구.
 // 자동 감지 배치가 만들어지기 전까지, 파운더가 결이 통할 만한 3~4명을 직접
 // 골라 그룹 대화방을 연다 — 유저에겐 자동과 구분되지 않는다 (Wizard of Oz).
 //
@@ -64,7 +64,7 @@ export default function MoimBuilderPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [groupName, setGroupName] = useState('결이 통하는 찻자리');
+  const [groupName, setGroupName] = useState('결이 통하는 티타임');
   const [welcome, setWelcome] = useState(DEFAULT_WELCOME);
   const [icebreaker, setIcebreaker] = useState(ICEBREAKERS[0]);
   const [creating, setCreating] = useState(false);
@@ -214,7 +214,7 @@ export default function MoimBuilderPage() {
   return (
     <div className="max-w-5xl space-y-6 p-6">
       <Header
-        title="찻자리 편성"
+        title="티타임 편성"
         subtitle="결이 통할 3~4명을 골라 그룹 대화방을 엽니다 (자동 결모임의 수동 운영 — 유저에겐 동일하게 보여요)"
       />
 
@@ -226,7 +226,7 @@ export default function MoimBuilderPage() {
       {err && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">에러: {err}</div>}
       {createdId && (
         <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">
-          찻자리가 열렸어요. 대화 ID: <code>{createdId}</code> —{' '}
+          티타임가 열렸어요. 대화 ID: <code>{createdId}</code> —{' '}
           <a className="underline" href={`/dashboard/conversations/view?id=${createdId}`}>대화 보기</a>
         </div>
       )}
@@ -322,7 +322,7 @@ export default function MoimBuilderPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">찻자리 이름</label>
+            <label className="mb-1 block text-xs font-medium text-gray-500">티타임 이름</label>
             <input
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
@@ -358,7 +358,7 @@ export default function MoimBuilderPage() {
             disabled={creating || selectedUsers.length < 2 || !!genderViolation}
             className="w-full rounded-xl bg-green-700 px-4 py-3 text-sm font-bold text-white disabled:bg-gray-300"
           >
-            {creating ? '여는 중…' : `찻자리 열기 (${selectedUsers.length + 1}명 · 티타지기 포함)`}
+            {creating ? '여는 중…' : `티타임 열기 (${selectedUsers.length + 1}명 · 티타지기 포함)`}
           </button>
           <p className="text-xs text-gray-400">
             생성 즉시 멤버 전원의 채팅 목록에 방이 나타나고, 티타지기 인사 + 첫 질문이 게시돼요.

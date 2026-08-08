@@ -48,6 +48,16 @@ export default function TeatimePage() {
         subtitle="날짜가 확정된 티타임에 실제로 신청한 분들. 장소 확정·문자 안내에 쓰세요."
       />
 
+      {/* 자리를 만드는 곳과 신청을 보는 곳이 갈려 있고, 경로도 titatime /
+          teatime으로 한 글자만 달라 서로를 못 찾는다. 양쪽에 길을 낸다. */}
+      <p className="-mt-4 text-xs text-gray-500">
+        자리를 새로 열거나 고치려면{' '}
+        <Link href="/dashboard/titatime" className="font-medium text-emerald-700 underline">
+          티타임 자리 관리
+        </Link>
+        로 가세요.
+      </p>
+
       {error ? (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
           불러오기 실패: {error}
