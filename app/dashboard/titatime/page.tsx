@@ -1,207 +1,189 @@
 'use client';
 
-// 티타임 가격 실험 — 암별 지불의사 대시보드
+// 티타임 자리 관리 — 열린 자리와 신청 현황을 한 화면에서 본다.
 // ──────────────────────────────────────────────────────────────────────────
-// 질문: "45+가 유료 티타임에 신청 의사가 있는가" — 인터뷰로는 답이 안 나와서
-// (예의상 '네') 행동으로 읽는다. /titatime 방문자를 가격 암(무료/9,900/19,000)에
-// 랜덤 배정 → '이 자리 신청하기' 클릭률을 암별 비교. fake-door라 실제 결제 없음.
+// 가격 실험(fake-door)은 걷어냈다. titatime_events가 총 2건이라 화면이 스스로
+// 요구한 "암당 view 30+"에 영원히 못 닿았다 — 시작조차 안 된 실험을 대시보드에
+// 띄워두면 매번 눈이 가고 매번 판단이 안 된다. 다시 하려면 그때 되살린다.
 //
-// 읽는 법: 유료 암 신청률이 무료 암의 30% 밑이면 B2C 유료 티타임 보류
-// (kill 게이트), 이상이면 소규모 유료 파일럿 2-3회로 진행. 표본이 암당
-// view 30-50은 쌓여야 방향이 보인다 — 그 전엔 참고만.
+// 대신 실제로 필요한 걸 올린다: 지금 열린 자리에 **몇 명이 신청했나**.
+// 자리를 만드는 곳과 신청을 보는 곳이 갈려 있어서(titatime / teatime) 8/8에
+// 전시 자리를 열고도 결과를 못 찾았다.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MeetupSessionsCard from './MeetupSessionsCard';
-import {
-  getTitatimeStats,
-  TITATIME_ARM_LABELS,
-  type TitatimeStats,
-} from '@/lib/firestore';
+import { getTeatimeSignups, type TeatimeSignup } from '@/lib/firestore';
 
-function Tile({ label, value, hint, strong }: { label: string; value: string | number; hint?: string; strong?: boolean }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`mt-1 tabular-nums ${strong ? 'text-3xl font-bold text-gray-900' : 'text-2xl font-semibold text-gray-900'}`}>{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-gray-400">{hint}</div>}
-    </div>
-  );
+type Session = {
+  id: string;
+  district?: string;
+  dateLabel?: string;
+  spotsLabel?: string;
+  status?: string;
+  published?: boolean;
+};
+
+const STATUS_KO: Record<string, string> = {
+  open: '모집 중',
+  almost: '마감 임박',
+  closed: '마감',
+  planning: '편성 예정',
+};
+
+// spotsLabel은 자유 문자열("정원 4명 · 선착순 모집")이라 정원을 여기서 캐낸다.
+// 못 찾으면 목표선 없이 인원만 보여준다 — 없는 숫자를 지어내지 않는다.
+function capacityOf(s: Session): number | null {
+  const m = (s.spotsLabel ?? '').match(/(\d+)\s*명/);
+  return m ? Number(m[1]) : null;
 }
 
-export default function TitatimeDashboardPage() {
-  const [stats, setStats] = useState<TitatimeStats | null>(null);
-  const [loading, setLoading] = useState(true);
+function genderKo(g?: string): string {
+  const v = (g ?? '').toLowerCase().trim();
+  if (['female', 'f', '여', '여성', 'woman'].includes(v)) return '여성';
+  if (['male', 'm', '남', '남성', 'man'].includes(v)) return '남성';
+  return '미상';
+}
+
+const fmt = (d?: Date) =>
+  d ? new Date(d.getTime() + 9 * 3600_000).toISOString().slice(5, 16).replace('T', ' ') : '—';
+
+export default function TitatimePage() {
+  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [signups, setSignups] = useState<TeatimeSignup[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    getTitatimeStats()
-      .then(setStats)
-      .catch((e) => setErr(e?.message ?? '불러오기 실패'))
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    try {
+      const [res, s] = await Promise.all([
+        fetch('/api/backend/titatime-sessions', { cache: 'no-store' }),
+        getTeatimeSignups(),
+      ]);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? '세션 불러오기 실패');
+      setSessions(json.items ?? []);
+      setSignups(s);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '불러오기 실패');
+    }
   }, []);
 
-  const pct = (n: number) => `${Math.round(Math.min(1, Math.max(0, n)) * 100)}%`;
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div className="max-w-5xl space-y-8 p-6">
       <Header
-        title="티타임"
-        subtitle="이번 주 모집 세션 관리 · 유료 신청 의사 실험 (fake-door · 익명)"
+        title="티타임 자리 관리"
+        subtitle="날짜·장소가 정해진 자리를 열고, 몇 명이 신청했는지 봅니다."
       />
 
-      {/* 모집 세션 관리 — 웹/앱이 읽는 단일 출처 */}
+      {err ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {err}
+        </div>
+      ) : !sessions || !signups ? (
+        <div className="p-6"><LoadingSpinner /></div>
+      ) : (
+        <SignupSummary sessions={sessions} signups={signups} />
+      )}
+
       <MeetupSessionsCard />
 
-      {/* 여기서 자리를 열고, 누가 신청했는지는 옆 화면에서 본다. 경로가
-          titatime / teatime으로 한 글자만 달라 서로를 못 찾는다. */}
-      <p className="-mt-4 text-xs text-gray-500">
-        이 자리에 <b>누가 신청했는지</b>는{' '}
+      <p className="text-xs text-gray-500">
+        전체 신청 이력은{' '}
         <Link href="/dashboard/teatime" className="font-medium text-emerald-700 underline">
           티타임 신청 명단
         </Link>
         에서 봅니다.
       </p>
-
-      {loading ? (
-        <div className="p-6"><LoadingSpinner /></div>
-      ) : err ? (
-        <div className="p-6 text-sm text-red-600">에러: {err}</div>
-      ) : !stats ? null : (
-        <PriceExperiment stats={stats} pct={pct} />
-      )}
     </div>
   );
 }
 
-function PriceExperiment({
-  stats,
-  pct,
+function SignupSummary({
+  sessions,
+  signups,
 }: {
-  stats: TitatimeStats;
-  pct: (n: number) => string;
+  sessions: Session[];
+  signups: TeatimeSignup[];
 }) {
-  const t = stats.totals;
-  const freeRate = stats.byArm.find((a) => a.arm === 'free')?.applyRate ?? 0;
+  const live = sessions.filter((s) => s.published !== false && s.status !== 'closed');
+
+  if (live.length === 0) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+        <p className="text-sm text-gray-600">
+          지금 열린 자리가 없습니다. 아래에서 새 자리를 만드세요.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <Header
-        title="티타임 가격 실험"
-        subtitle="유료 신청 의사를 행동으로 측정 (fake-door · 방문자별 가격 랜덤 배정 · 익명)"
-      />
+    <section className="space-y-4">
+      {live.map((s) => {
+        const rows = signups.filter((g) => g.eventId === s.id);
+        const cap = capacityOf(s);
+        const pct = cap ? Math.min(100, Math.round((rows.length / cap) * 100)) : 0;
+        const full = cap !== null && rows.length >= cap;
 
-      {/* 전체 */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">전체</h2>
-        <div className="grid grid-cols-3 gap-3">
-          <Tile label="페이지 조회 (view)" value={t.view} strong />
-          <Tile label="신청 클릭 (apply)" value={t.apply} strong />
-          <Tile label="다운로드 클릭" value={t.download} hint="신청 후 스토어 이동" />
-        </div>
-      </section>
+        return (
+          <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <div className="text-base font-bold text-gray-900">{s.dateLabel || '(날짜 미정)'}</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  {s.district || '(지역 미정)'} · {STATUS_KO[s.status ?? ''] ?? s.status}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className={`text-3xl font-bold tabular-nums ${full ? 'text-emerald-600' : 'text-gray-900'}`}>
+                  {rows.length}
+                  {cap !== null && <span className="text-lg font-semibold text-gray-400">/{cap}</span>}
+                </div>
+                <div className="text-xs text-gray-400">신청</div>
+              </div>
+            </div>
 
-      {/* ⭐ 암별 전환 — 이 실험의 본론 */}
-      <section>
-        <h2 className="mb-1 text-sm font-semibold text-gray-900">가격별 신청률 (본론)</h2>
-        <p className="mb-3 text-xs text-gray-400">
-          유료 신청률이 무료의 30% 밑이면 B2C 유료 보류 · 암당 view 30+ 쌓인 뒤 판단
-        </p>
-        {stats.byArm.length === 0 ? (
-          <p className="text-sm text-gray-400">아직 데이터가 없어요. 웹 배포 후 쌓이기 시작해요.</p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full text-sm tabular-nums">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">참가비</th>
-                  <th className="px-3 py-2 text-right font-medium">노출</th>
-                  <th className="px-3 py-2 text-right font-medium">신청 클릭</th>
-                  <th className="px-3 py-2 text-right font-medium">신청률</th>
-                  <th className="px-3 py-2 text-right font-medium">무료 대비</th>
-                  <th className="px-3 py-2 text-right font-medium">다운 클릭</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.byArm.map((a) => {
-                  const vsFree = a.arm === 'free' || freeRate === 0
-                    ? null
-                    : a.applyRate / freeRate;
-                  return (
-                    <tr key={a.arm} className="border-t border-gray-100">
-                      <td className="px-3 py-2 font-medium text-gray-900">
-                        {TITATIME_ARM_LABELS[a.arm] ?? a.arm}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">{a.views}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{a.applies}</td>
-                      <td className="px-3 py-2 text-right font-semibold text-gray-900">{pct(a.applyRate)}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${
-                        vsFree === null ? 'text-gray-400'
-                        : vsFree >= 0.3 ? 'text-green-700' : 'text-red-600'
-                      }`}>
-                        {vsFree === null ? '기준' : `${Math.round(vsFree * 100)}%`}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-500">{a.downloads}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {cap !== null && (
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className={`h-full rounded-full ${full ? 'bg-emerald-500' : 'bg-emerald-300'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
+
+            {full && (
+              <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                자리가 찼습니다. 신청하신 분들께 만나는 곳을 알려주세요.
+              </p>
+            )}
+
+            {rows.length === 0 ? (
+              <p className="mt-3 text-sm text-gray-400">아직 신청이 없어요.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
+                {rows.map((g) => (
+                  <li key={g.id} className="flex items-center justify-between py-2 text-sm">
+                    <span className="text-gray-800">
+                      {g.name || '이름없음'}
+                      <span className="ml-2 text-xs text-gray-400">
+                        {genderKo(g.gender)} · {g.region || '지역미상'}
+                      </span>
+                    </span>
+                    <span className="text-xs tabular-nums text-gray-400">{fmt(g.createdAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        )}
-      </section>
-
-      {/* 지역별 신청 */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">지역별 신청 클릭</h2>
-        {stats.byDistrict.length === 0 ? (
-          <p className="text-sm text-gray-400">아직 신청이 없어요.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {stats.byDistrict.map((d) => (
-              <span key={d.district} className="rounded-full bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800">
-                {d.district} <b className="tabular-nums">{d.applies}</b>
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* 최근 이벤트 */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">최근 이벤트</h2>
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">시각</th>
-                <th className="px-3 py-2 text-left font-medium">단계</th>
-                <th className="px-3 py-2 text-left font-medium">참가비</th>
-                <th className="px-3 py-2 text-left font-medium">지역</th>
-                <th className="px-3 py-2 text-left font-medium">유입</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.recent.map((r, i) => (
-                <tr key={i} className="border-t border-gray-100">
-                  <td className="whitespace-nowrap px-3 py-2 text-gray-500">{r.createdAt ? r.createdAt.toLocaleString('ko-KR') : '—'}</td>
-                  <td className="px-3 py-2">{{ view: '조회', apply: '신청 클릭', download: '다운클릭' }[r.phase] ?? r.phase}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.arm ? (TITATIME_ARM_LABELS[r.arm] ?? r.arm) : '—'}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.district ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-500">{r.source ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <p className="text-xs text-gray-400">
-        {stats.capped && '최근 2,000건 기준 집계. '}
-        fake-door 실험 — 실제 결제는 없고, 신청 클릭 후 &ldquo;신청은 앱에서&rdquo; 안내로 다운로드 퍼널에 연결돼요.
-      </p>
-    </>
+        );
+      })}
+    </section>
   );
 }

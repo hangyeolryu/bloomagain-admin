@@ -13,50 +13,70 @@ interface NavItem {
   label: string;
   icon: string;
   permission?: Permission;
-  section?: string; // 있으면 그 앞에 섹션 헤더를 렌더(연속 항목 묶음)
-  sub?: boolean; // 섹션의 하위 항목 — 기본 접힘(안전 센터 아래 세부 4개)
+  /** 묶음 이름. 없으면 맨 위 고정(대시보드·통계). */
+  section?: string;
 }
 
+// 메뉴가 38개까지 늘면서 한 줄로 세워두면 찾을 수가 없었다. 하는 일로 묶고,
+// 지금 보고 있는 묶음만 펼친다 — 나머지는 헤더만 남아 사이드바가 짧아진다.
+//
+// 묶는 기준은 화면 이름이 아니라 **언제 쓰는가**다. 자리를 열 때, 사람을
+// 볼 때, 사고가 났을 때가 각각 다른 묶음이어야 손이 덜 간다.
+
 const navItems: NavItem[] = [
+  // 맨 위 고정 — 매일 여는 두 개.
   { href: '/dashboard', label: '대시보드', icon: '📊' },
   { href: '/dashboard/stats', label: '통계 오버뷰', icon: '📈' },
-  { href: '/dashboard/docs', label: '문서', icon: '📚' },
-  { href: '/dashboard/gyeol', label: '결 유형 테스트', icon: '🍵' },
-  { href: '/dashboard/needs', label: '니즈 설문 (5060)', icon: '🧭' },
-  { href: '/dashboard/titatime', label: '티타임 가격 실험', icon: '🫖' },
-  { href: '/dashboard/teatime', label: '티타임 신청 명단', icon: '🍵' },
-  { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️' },
-  { href: '/dashboard/moim-builder', label: '티타임 편성 (QA)', icon: '🪑' },
-  { href: '/dashboard/marketing', label: '마케팅 운영', icon: '📣' },
-  { href: '/dashboard/briefing', label: '사업계획·IP 브리핑', icon: '📑' },
-  { href: '/dashboard/data-collection', label: '결큐 인사이트', icon: '🌱' },
-  { href: '/dashboard/gyeolq-bank', label: '결큐 질문 관리', icon: '📝' },
-  { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞' },
-  { href: '/dashboard/onboarding', label: '온보딩 드롭오프', icon: '🪜' },
-  { href: '/dashboard/users', label: '사용자 관리', icon: '👥', permission: 'viewUsers' },
-  { href: '/dashboard/circles', label: '모임 관리', icon: '🌿' },
-  { href: '/dashboard/posts', label: '전체 게시물', icon: '📸' },
-  { href: '/dashboard/stories', label: '사연 투고', icon: '✍️' },
-  // ── 신뢰·안전 (한 그룹으로 묶음) ──
+
+  // 사람을 데려오는 일.
+  { href: '/dashboard/needs', label: '니즈 설문 (5060)', icon: '🧭', section: '모으기' },
+  { href: '/dashboard/marketing', label: '마케팅 운영', icon: '📣', section: '모으기' },
+  { href: '/dashboard/gyeol', label: '결 유형 테스트', icon: '🍵', section: '모으기' },
+  { href: '/dashboard/onboarding', label: '온보딩 드롭오프', icon: '🪜', section: '모으기' },
+  { href: '/dashboard/identity', label: 'NICE 본인확인', icon: '🪪', section: '모으기' },
+
+  // 실제로 만나게 하는 일 — 이 앱의 본론.
+  { href: '/dashboard/titatime', label: '티타임 자리 관리', icon: '🫖', section: '만나기' },
+  { href: '/dashboard/teatime', label: '티타임 신청 명단', icon: '📋', section: '만나기' },
+  { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️', section: '만나기' },
+  { href: '/dashboard/moim-builder', label: '티타임 편성 (QA)', icon: '🪑', section: '만나기' },
+  { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞', section: '만나기' },
+  { href: '/dashboard/district-density', label: '지역 밀집도', icon: '🗺️', section: '만나기' },
+
+  // 누가 있고 무엇을 올렸나.
+  { href: '/dashboard/users', label: '사용자 관리', icon: '👥', section: '사람·콘텐츠', permission: 'viewUsers' },
+  { href: '/dashboard/circles', label: '모임 관리', icon: '🌿', section: '사람·콘텐츠' },
+  { href: '/dashboard/posts', label: '전체 게시물', icon: '📸', section: '사람·콘텐츠' },
+  { href: '/dashboard/stories', label: '사연 투고', icon: '✍️', section: '사람·콘텐츠' },
+  { href: '/dashboard/waves', label: '웨이브', icon: '👋', section: '사람·콘텐츠' },
+  { href: '/dashboard/conversations', label: '대화', icon: '💬', section: '사람·콘텐츠' },
+
+  // 사고가 났을 때 여는 곳. 안전 센터가 첫 줄이어야 한다.
   { href: '/dashboard/safety', label: '안전 센터', icon: '🛟', section: '신뢰·안전' },
-  { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전', sub: true },
-  { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔', section: '신뢰·안전', sub: true },
-  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫', section: '신뢰·안전', sub: true },
-  { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️', section: '신뢰·안전', sub: true },
-  { href: '/dashboard/waves', label: '웨이브', icon: '👋' },
-  { href: '/dashboard/conversations', label: '대화', icon: '💬' },
-  { href: '/dashboard/admin-dms', label: '어드민 DM 관리', icon: '✉️' },
-  { href: '/dashboard/identity', label: 'NICE 본인확인', icon: '🪪' },
-  { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️' },
-  { href: '/dashboard/churn-surveys', label: '탈퇴 사유', icon: '🚪' },
-  { href: '/dashboard/support', label: '고객 문의', icon: '🎧' },
-  { href: '/dashboard/ai-review', label: 'AI 검수', icon: '🧠' },
-  { href: '/dashboard/announcements', label: '공지사항', icon: '📢', permission: 'manageCircles' },
-  { href: '/dashboard/health', label: '백엔드 상태', icon: '💚' },
-  { href: '/dashboard/sync-failures', label: '싱크 실패', icon: '🔁' },
-  { href: '/dashboard/data-maintenance', label: '데이터 유지보수', icon: '🧹', permission: 'manageUsers' },
-  { href: '/dashboard/district-density', label: '지역 밀집도', icon: '🗺️' },
-  { href: '/dashboard/admins', label: '관리자 계정', icon: '🔑', permission: 'manageAdmins' },
+  { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전' },
+  { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫', section: '신뢰·안전' },
+  { href: '/dashboard/ai-review', label: 'AI 검수', icon: '🧠', section: '신뢰·안전' },
+  { href: '/dashboard/alerts', label: '관리자 알림', icon: '🔔', section: '신뢰·안전' },
+  { href: '/dashboard/security', label: '보안 이벤트', icon: '🛡️', section: '신뢰·안전' },
+
+  // 사용자에게 답하는 일.
+  { href: '/dashboard/support', label: '고객 문의', icon: '🎧', section: '응대' },
+  { href: '/dashboard/admin-dms', label: '어드민 DM 관리', icon: '✉️', section: '응대' },
+  { href: '/dashboard/announcements', label: '공지사항', icon: '📢', section: '응대', permission: 'manageCircles' },
+  { href: '/dashboard/delete-requests', label: '계정 삭제 요청', icon: '🗑️', section: '응대' },
+  { href: '/dashboard/churn-surveys', label: '탈퇴 사유', icon: '🚪', section: '응대' },
+
+  // 결큐(일일 질문) 운영.
+  { href: '/dashboard/data-collection', label: '결큐 인사이트', icon: '🌱', section: '결큐' },
+  { href: '/dashboard/gyeolq-bank', label: '결큐 질문 관리', icon: '📝', section: '결큐' },
+
+  // 평소엔 볼 일 없는 것들.
+  { href: '/dashboard/health', label: '백엔드 상태', icon: '💚', section: '시스템' },
+  { href: '/dashboard/sync-failures', label: '싱크 실패', icon: '🔁', section: '시스템' },
+  { href: '/dashboard/data-maintenance', label: '데이터 유지보수', icon: '🧹', section: '시스템', permission: 'manageUsers' },
+  { href: '/dashboard/admins', label: '관리자 계정', icon: '🔑', section: '시스템', permission: 'manageAdmins' },
+  { href: '/dashboard/docs', label: '문서', icon: '📚', section: '시스템' },
+  { href: '/dashboard/briefing', label: '사업계획·IP 브리핑', icon: '📑', section: '시스템' },
 ];
 
 interface SidebarProps {
@@ -79,11 +99,17 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   );
 
   // 신뢰·안전 세부 4개는 평소 접혀 있고, 그 페이지에 있으면 자동으로 펼친다.
-  const anySubActive = visibleItems.some(
-    (x) => x.sub && pathname.startsWith(x.href)
-  );
-  const [safetyExpanded, setSafetyExpanded] = useState(false);
-  const safetyOpen = safetyExpanded || anySubActive;
+  // 지금 보고 있는 묶음은 저절로 펼친다. 나머지는 접혀 있고, 눌러서 편 건
+  // 기억한다 — 매번 같은 곳을 다시 펴게 하면 접는 의미가 없다.
+  const activeSection = visibleItems.find((x) =>
+    x.href === '/dashboard'
+      ? pathname === '/dashboard'
+      : pathname.startsWith(x.href)
+  )?.section;
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const secOpen = (sec: string) => opened[sec] ?? sec === activeSection;
+  const toggle = (sec: string) =>
+    setOpened((o) => ({ ...o, [sec]: !(o[sec] ?? sec === activeSection) }));
 
   const content = (
     <aside className="w-64 bg-white flex flex-col h-full border-r border-gray-200">
@@ -117,21 +143,28 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             item.href === '/dashboard'
               ? pathname === '/dashboard'
               : pathname.startsWith(item.href);
-          // 접힌 세부 항목은 숨김(단, 지금 그 페이지면 보여준다).
-          if (item.sub && !safetyOpen && !isActive) return null;
-          const showHeader =
-            !!item.section && item.section !== visibleItems[i - 1]?.section;
-          // 섹션 대표(안전 센터)이고 하위가 있으면 그 아래에 펼치기 토글.
-          const isSectionPrimary = !!item.section && !item.sub;
-          const hasSubs =
-            isSectionPrimary &&
-            visibleItems.some((x) => x.section === item.section && x.sub);
+          const sec = item.section;
+          // 접힌 묶음은 숨긴다. 단 지금 그 페이지면 언제나 보여준다 —
+          // 내가 어디 있는지 사라지면 길을 잃는다.
+          if (sec && !secOpen(sec) && !isActive) return null;
+          const showHeader = !!sec && sec !== visibleItems[i - 1]?.section;
+          const count = sec
+            ? visibleItems.filter((x) => x.section === sec).length
+            : 0;
           return (
             <div key={item.href}>
-              {showHeader && (
-                <p className="px-3 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                  {item.section}
-                </p>
+              {showHeader && sec && (
+                <button
+                  type="button"
+                  onClick={() => toggle(sec)}
+                  className="mt-3 flex w-full items-center justify-between px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600"
+                >
+                  <span>{sec}</span>
+                  <span className="flex items-center gap-1 font-medium normal-case tracking-normal">
+                    {!secOpen(sec) && <span className="tabular-nums">{count}</span>}
+                    <span>{secOpen(sec) ? '▴' : '▾'}</span>
+                  </span>
+                </button>
               )}
               <Link
                 href={item.href}
@@ -146,15 +179,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <span className="text-base leading-none">{item.icon}</span>
                 {item.label}
               </Link>
-              {hasSubs && (
-                <button
-                  type="button"
-                  onClick={() => setSafetyExpanded((o) => !o)}
-                  className="flex w-full items-center gap-1 px-3 py-1 text-[11px] font-medium text-gray-400 hover:text-gray-600"
-                >
-                  {safetyOpen ? '▴ 세부 접기' : '▾ 세부 관리 (신고·알림·메시지·보안)'}
-                </button>
-              )}
             </div>
           );
         })}
