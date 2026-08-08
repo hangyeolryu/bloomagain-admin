@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -99,17 +98,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   );
 
   // 신뢰·안전 세부 4개는 평소 접혀 있고, 그 페이지에 있으면 자동으로 펼친다.
-  // 지금 보고 있는 묶음은 저절로 펼친다. 나머지는 접혀 있고, 눌러서 편 건
-  // 기억한다 — 매번 같은 곳을 다시 펴게 하면 접는 의미가 없다.
-  const activeSection = visibleItems.find((x) =>
-    x.href === '/dashboard'
-      ? pathname === '/dashboard'
-      : pathname.startsWith(x.href)
-  )?.section;
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
-  const secOpen = (sec: string) => opened[sec] ?? sec === activeSection;
-  const toggle = (sec: string) =>
-    setOpened((o) => ({ ...o, [sec]: !(o[sec] ?? sec === activeSection) }));
 
   const content = (
     <aside className="w-64 bg-white flex flex-col h-full border-r border-gray-200">
@@ -144,27 +132,16 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               ? pathname === '/dashboard'
               : pathname.startsWith(item.href);
           const sec = item.section;
-          // 접힌 묶음은 숨긴다. 단 지금 그 페이지면 언제나 보여준다 —
-          // 내가 어디 있는지 사라지면 길을 잃는다.
-          if (sec && !secOpen(sec) && !isActive) return null;
+          // 접지 않는다. 38개를 다 펼쳐 두면 스크롤은 길어지지만, 접어 두면
+          // 원하는 메뉴가 어디 있는지 매번 열어봐야 해서 더 느리다
+          // (2026-08-08에 접었다가 되돌림). 묶음 헤더만으로 충분하다.
           const showHeader = !!sec && sec !== visibleItems[i - 1]?.section;
-          const count = sec
-            ? visibleItems.filter((x) => x.section === sec).length
-            : 0;
           return (
             <div key={item.href}>
               {showHeader && sec && (
-                <button
-                  type="button"
-                  onClick={() => toggle(sec)}
-                  className="mt-3 flex w-full items-center justify-between px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600"
-                >
-                  <span>{sec}</span>
-                  <span className="flex items-center gap-1 font-medium normal-case tracking-normal">
-                    {!secOpen(sec) && <span className="tabular-nums">{count}</span>}
-                    <span>{secOpen(sec) ? '▴' : '▾'}</span>
-                  </span>
-                </button>
+                <p className="mt-4 px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                  {sec}
+                </p>
               )}
               <Link
                 href={item.href}
