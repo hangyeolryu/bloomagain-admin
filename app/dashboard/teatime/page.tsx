@@ -97,7 +97,7 @@ export default function TeatimePage() {
                   {list.map((r) => (
                     <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                       <td className="px-5 py-2.5">
-                        <Link href={`/dashboard/users/${r.uid}`} className="text-blue-600 hover:underline font-medium">
+                        <Link href={`/dashboard/users/view?id=${r.uid}`} className="text-blue-600 hover:underline font-medium">
                           {r.name || '(이름 없음)'}
                         </Link>
                         <div className="text-xs text-gray-400 font-mono mt-0.5">{r.uid.slice(0, 10)}…</div>

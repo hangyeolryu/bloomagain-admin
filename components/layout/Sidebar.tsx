@@ -52,6 +52,7 @@ const navItems: NavItem[] = [
 
   // 사고가 났을 때 여는 곳. 안전 센터가 첫 줄이어야 한다.
   { href: '/dashboard/safety', label: '안전 센터', icon: '🛟', section: '신뢰·안전' },
+  { href: '/dashboard/wellbeing', label: '웰빙 확인', icon: '🌱', section: '신뢰·안전' },
   { href: '/dashboard/reports', label: '신고 관리', icon: '🚨', section: '신뢰·안전' },
   { href: '/dashboard/messages', label: '의심 메시지', icon: '🚫', section: '신뢰·안전' },
   { href: '/dashboard/ai-review', label: 'AI 검수', icon: '🧠', section: '신뢰·안전' },

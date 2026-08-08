@@ -602,6 +602,75 @@ export async function getAdminAlerts(
   };
 }
 
+// ─── 웰빙 알림(안부 체크 신호) ──────────────────────────────────────────────
+// admin_alerts에서 type=wellbeing_alert만 뽑아 대상 회원 정보를 붙인다.
+//
+// 알림 본문에는 일부러 이름을 안 담는다(민감정보 최소화). 그래서 푸시만으로는
+// 누구인지 알 수 없고, 이 화면이 유일한 확인 경로다.
+export type WellbeingAlert = {
+  id: string;
+  targetId: string;
+  signal: string;
+  createdAt: Date | null;
+  resolved: boolean;
+  resolvedNote?: string;
+  backfilled: boolean;
+  // 대상 회원 — 없으면 탈퇴했거나 문서가 사라진 것.
+  name: string;
+  region: string;
+  lastActiveAt: Date | null;
+  verified: boolean;
+};
+
+export async function getWellbeingAlerts(max = 50): Promise<WellbeingAlert[]> {
+  // type + orderBy 복합 인덱스를 피한다. 웰빙 알림은 드물어서 최근 알림에서
+  // 걸러도 충분하고, 인덱스를 하나 더 만들 이유가 없다.
+  const snap = await getDocs(
+    query(collection(db, 'admin_alerts'), orderBy('createdAt', 'desc'), limit(400)),
+  );
+  const rows = snap.docs
+    .filter((d) => d.data().type === 'wellbeing_alert')
+    .slice(0, max);
+
+  const out: WellbeingAlert[] = [];
+  for (const d of rows) {
+    const x = d.data();
+    const targetId = String(x.targetId ?? '');
+    let name = '(알 수 없음)';
+    let region = '';
+    let lastActiveAt: Date | null = null;
+    let verified = false;
+    if (targetId) {
+      try {
+        const u = await getDoc(doc(db, 'users', targetId));
+        if (u.exists()) {
+          const y = u.data();
+          name = String(y.displayName ?? y.name ?? '이름없음');
+          region = String(y.region ?? y.city ?? '');
+          lastActiveAt = toDate(y.lastActiveAt) ?? null;
+          verified = y.identityVerified === true || y.isVerified === true;
+        }
+      } catch {
+        /* 못 읽어도 알림 자체는 보여준다 */
+      }
+    }
+    out.push({
+      id: d.id,
+      targetId,
+      signal: String(x.signal ?? '알 수 없음'),
+      createdAt: toDate(x.createdAt) ?? null,
+      resolved: x.resolved === true,
+      resolvedNote: x.resolvedNote ? String(x.resolvedNote) : undefined,
+      backfilled: x.backfilled === true,
+      name,
+      region,
+      lastActiveAt,
+      verified,
+    });
+  }
+  return out;
+}
+
 export async function resolveAlert(alertId: string, note?: string, adminUid?: string) {
   await updateDoc(doc(db, 'admin_alerts', alertId), {
     resolved: true,

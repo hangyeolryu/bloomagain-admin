@@ -535,7 +535,7 @@ function DropoffTable({
                 <tr key={u.uid} className="border-t border-gray-100 hover:bg-gray-50 align-top">
                   <td className="px-4 py-3">
                     <Link
-                      href={`/dashboard/users/${u.uid}`}
+                      href={`/dashboard/users/view?id=${u.uid}`}
                       className="text-blue-600 hover:underline font-medium"
                     >
                       {u.displayName || '(이름 없음)'}
