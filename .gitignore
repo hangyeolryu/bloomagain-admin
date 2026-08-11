@@ -30,8 +30,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — never commit. Server-side secrets (BACKEND_API_KEY, etc.)
+# live on Cloud Run env vars; public NEXT_PUBLIC_* vars get baked into the
+# client bundle at build time from the local .env.production. See
+# .env.example for the full list and where each value belongs.
+.env
+.env.local
+.env*.local
+.env.production
+.env.development
 
 # firebase
 .firebase/
@@ -48,3 +55,4 @@ firebase-debug.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.claude/
