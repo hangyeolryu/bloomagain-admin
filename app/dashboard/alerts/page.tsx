@@ -311,11 +311,25 @@ export default function AlertsPage() {
                       )}
 
                       {/* app_error meta */}
-                      {alert.type === 'app_error' && (alert.errorContext || alert.platform) && (
+                      {alert.type === 'app_error' && (alert.errorContext || alert.platform || alert.appVersion) && (
                         <div className="flex flex-wrap gap-2 mb-1.5 text-xs text-gray-400 font-mono">
                           {alert.errorContext && <span>ctx: {alert.errorContext}</span>}
                           {alert.platform    && <span>· {alert.platform}</span>}
+                          {alert.appVersion  && <span>· v{alert.appVersion}</span>}
                         </div>
+                      )}
+
+                      {/* 스택 — 접어둔다. 목록은 훑어보는 자리고, 스택은 한 건을
+                          파고들 때만 필요하다. 펼치면 상위 프레임이 그대로 나온다. */}
+                      {alert.type === 'app_error' && alert.stack && (
+                        <details className="mb-1.5 group">
+                          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none w-fit">
+                            스택 보기
+                          </summary>
+                          <pre className="mt-1.5 p-2.5 bg-gray-50 border border-gray-200 rounded text-[11px] leading-relaxed text-gray-700 font-mono overflow-x-auto whitespace-pre">
+                            {alert.stack}
+                          </pre>
+                        </details>
                       )}
 
                       {/* Detected issues chips */}

@@ -176,6 +176,12 @@ export interface AdminAlert {
   // app_error fields
   errorContext?: string;
   platform?: string;
+  /** 스택 상위 12프레임. 릴리스 빌드에서는 errorContext가 뭉개져(Riverpod은
+   *  Consumer 계열이 전부 ConsumerStatefulElement를 쓴다) 이게 유일한 단서다. */
+  stack?: string;
+  /** 오류가 난 앱 버전(예: 3.1.6+1). 하루에도 몇 번씩 올리므로, 이게 없으면
+   *  이미 고친 버그인지 방금 나간 빌드가 낸 건지 구분이 안 된다. */
+  appVersion?: string;
 }
 
 export interface SuspiciousMessage {
