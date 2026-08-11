@@ -310,7 +310,7 @@ export default function StatsPage() {
           <Chip
             label="고착도 WAU/MAU"
             value={`${stickinessWauMau}%`}
-            sub={stickinessWauMau >= 40 ? '✅ 양호' : stickinessWauMau >= 20 ? '⚠️ 보통' : '❌ 낮음'}
+            sub={stickinessWauMau >= 60 ? '🏆 우수' : stickinessWauMau >= 40 ? '✅ 양호' : stickinessWauMau >= 20 ? '⚠️ 보통' : '❌ 낮음'}
             info="WAU/MAU × 100. 40%↑ 양호, 60%↑ 우수. 주간 습관 형성 여부를 나타냅니다."
           />
         </div>
