@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { formatNiceUpstreamError, niceBackendBase } from '@/lib/nice-upstream';
 
-/**
- * POST /api/nice/init
- *
- * Thin proxy → FastAPI NICE backend POST /nice/init
- * The backend owns NICE credentials and all crypto logic.
- */
 export async function POST(request: NextRequest) {
-  const backendUrl = process.env.NICE_BACKEND_URL;
+  const backendUrl = niceBackendBase();
   if (!backendUrl) {
     return NextResponse.json(
       { error: 'NICE_BACKEND_URL 환경 변수가 설정되지 않았습니다.' },
@@ -16,7 +11,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Forward the request origin so the backend can build the correct return_url
     const body = await request.text();
     const origin = request.headers.get('origin') ?? '';
 
@@ -27,7 +21,6 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         ...(origin && { Origin: origin }),
       },
-      // Pass through any body the client sent; default to empty init request
       body: body || JSON.stringify({}),
     });
 
@@ -35,9 +28,8 @@ export async function POST(request: NextRequest) {
     console.log(`[/api/nice/init proxy] upstream ${upstream.status} from ${targetUrl}:`, raw.slice(0, 200));
 
     if (!upstream.ok) {
-      let detail = '백엔드 오류';
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* raw is not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
+      const error = formatNiceUpstreamError(upstream.status, raw, '/nice/init');
+      return NextResponse.json({ error }, { status: upstream.status });
     }
 
     try {

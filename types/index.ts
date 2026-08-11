@@ -6,7 +6,7 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: '최고 관리자',
   admin: '관리자',
   moderator: '모더레이터',
-  viewer: '뷰어',
+  viewer: '빰어',
 };
 
 export const ROLE_PERMISSIONS = {
@@ -28,6 +28,7 @@ export function can(role: AdminRole | null, permission: Permission): boolean {
 export interface UserProfile {
   id: string;
   displayName: string;
+  email?: string;
   yearOfBirth?: number;
   city?: string;
   district?: string;
@@ -50,12 +51,36 @@ export interface UserProfile {
   fcmToken?: string;
   notificationEnabled?: boolean;
   appVersion?: string;
-  // NICE identity verification
+  buildNumber?: string;
+  appAgent?: string;
+  device?: {
+    platform?: string;
+    model?: string;
+    osVersion?: string;
+    appVersion?: string;
+    buildNumber?: string;
+    firstSeen?: string;
+    lastSeen?: string;
+  };
   identityVerified?: boolean;
   identityVerificationStatus?: 'verified' | 'pending' | 'failed' | string;
   identityVerifiedAt?: Date;
   legalName?: string;
   legalBirthYear?: number;
+  founding_member_number?: number;
+  subscription_tier?: 'FREE' | 'PREMIUM';
+  gender?: string;
+  riskScore?: number;
+  romanceScamCount?: number;
+  sexualSolicitationCount?: number;
+  vBehScore?: number;
+  accessibility?: {
+    fontSize?: string;
+    largeTextMode?: boolean;
+    voiceGuidanceEnabled?: boolean;
+    highContrastMode?: boolean;
+    tremorModeEnabled?: boolean;
+  };
 }
 
 export interface Circle {
@@ -72,7 +97,6 @@ export interface Circle {
   createdAt?: Date;
   updatedAt?: Date;
   imageUrl?: string;
-  // Admin-managed fields
   status?: 'active' | 'blocked' | 'archived';
   isBlocked?: boolean;
   blockedAt?: Date;
@@ -106,6 +130,16 @@ export interface Report {
   resolvedAt?: Date;
   resolvedBy?: string;
   resolution?: string;
+  aiDraft?: {
+    status: 'ready' | 'failed' | 'skipped';
+    violation?: 'yes' | 'no' | 'unclear';
+    severity?: 'low' | 'medium' | 'high';
+    summary?: string;
+    evidence?: string[];
+    recommendation?: 'dismiss' | 'warn' | 'suspend' | 'monitor';
+    recommendationReason?: string;
+    note?: string;
+  };
 }
 
 export interface AdminAlert {
@@ -127,6 +161,10 @@ export interface AdminAlert {
   imageUrl?: string;
   adultScore?: number;
   violenceScore?: number;
+  errorContext?: string;
+  platform?: string;
+  stack?: string;
+  appVersion?: string;
 }
 
 export interface SuspiciousMessage {
@@ -181,6 +219,7 @@ export interface Conversation {
   conversationType?: string;
   isActive?: boolean;
   blockedParticipants?: string[];
+  suspiciousMessageCount?: number;
 }
 
 export interface DashboardStats {
@@ -190,13 +229,13 @@ export interface DashboardStats {
   pendingReports: number;
   unresolvedAlerts: number;
   totalCircles: number;
-  // Growth & engagement
   newUsersThisWeek: number;
   newUsersThisMonth: number;
   activeUsersThisWeek: number;
   totalWaves: number;
   totalConversations: number;
   pendingDeleteRequests: number;
+  warnings: Array<{ label: string; message: string }>;
 }
 
 export type DeleteRequestStatus = 'pending' | 'completed' | 'cancelled';
@@ -204,13 +243,44 @@ export type DeleteRequestStatus = 'pending' | 'completed' | 'cancelled';
 export interface DeleteRequest {
   id: string;
   name: string;
-  contactInfo: string; // email or phone
+  contactInfo: string;
   reason?: string;
   status: DeleteRequestStatus;
   requestedAt?: Date;
   processedAt?: Date;
   processedBy?: string;
   note?: string;
+}
+
+export type SupportInquiryStatus = 'pending' | 'in_progress' | 'resolved';
+
+export type SupportInquiryCategory =
+  | 'account'
+  | 'technical'
+  | 'billing'
+  | 'report'
+  | 'other';
+
+export const SUPPORT_CATEGORY_LABELS: Record<SupportInquiryCategory, string> = {
+  account: '계정',
+  technical: '기술 문제',
+  billing: '결제',
+  report: '신고',
+  other: '기타',
+};
+
+export interface SupportInquiry {
+  id: string;
+  name: string;
+  contact: string;
+  category?: SupportInquiryCategory;
+  message: string;
+  status: SupportInquiryStatus;
+  submittedAt?: Date;
+  resolvedAt?: Date;
+  resolvedBy?: string;
+  note?: string;
+  userId?: string;
 }
 
 export interface UserActivity {
