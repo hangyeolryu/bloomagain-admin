@@ -285,7 +285,7 @@ export default function StatsPage() {
 
       {/* ── 2. 활성 지표 ───────────────────────────────────────────────────── */}
       <section>
-        <SectionTitle hint="lastActiveAt(세션 시작)을 기준으로, 앱을 열어본 유저까지 포함합니다. 저장·매칭 없이 열어만 붐도 카운트됩니다.">
+        <SectionTitle hint="lastActiveAt(세션 시작)을 기준으로, 앱을 열어본 유저까지 포함합니다. 저장·매칭 없이 열어만 봐도 카운트됩니다.">
           🔥 활성 지표 (세션 기준)
         </SectionTitle>
         <div className="flex gap-3 overflow-x-auto pb-1 mb-3">
@@ -338,7 +338,7 @@ export default function StatsPage() {
           <Chip
             label="취향 완료"
             value={hasInterests}
-            sub={`전체 대빔 ${pct(hasInterests, total)}`}
+            sub={`전체 대비 ${pct(hasInterests, total)}`}
             info="interests 배열에 값이 있는 유저. 온보딩 완료율 지표."
           />
         </div>
