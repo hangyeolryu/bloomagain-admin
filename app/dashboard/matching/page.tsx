@@ -140,9 +140,6 @@ export default function MatchingPage() {
   );
   if (!stats) return null;
 
-  // Funnel: matched_seen ≥ wave_sent ≥ responded ≥ accepted ≥ conversation
-  // We don't have "matches seen" Firestore-side, so totalWaves is the
-  // funnel head. acceptanceRate / responseRate already computed in stats.
   const sentToRespondedPct =
     stats.totalWaves > 0
       ? Math.round(
