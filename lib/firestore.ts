@@ -103,24 +103,93 @@ export interface TeatimeSignup {
   gender?: string;
   status?: string;
   createdAt?: Date;
+  /** 신청 후 탈퇴한 사람. 정원·성비에서 빼야 한다. */
+  withdrawn?: boolean;
+
+  /**
+   * 참석 상태. 신청과 참석은 다르다 — 무료에 보증금도 없어서 신청이 곧
+   * 참석이 아니다. 8/19 자리도 신청 6명 중 1명은 탈퇴, 1명은 확인 문자에
+   * 무응답이었다. 실제로 몇 분이 오시는지를 남겨야 다음 자리 정원을
+   * 추측이 아니라 숫자로 정할 수 있다.
+   *
+   *   pending  아직 안 물어봄
+   *   coming   오신다고 답함
+   *   cant     못 오신다고 답함
+   *   attended 실제로 오심
+   *   noshow   온다고 했는데 안 오심
+   */
+  attendance?: 'pending' | 'coming' | 'cant' | 'attended' | 'noshow';
+  attendanceAt?: Date;
+  /** 확인 문자를 보낸 시각. 두 번 보내지 않으려고 남긴다. */
+  confirmSentAt?: Date;
 }
 
+export type AttendanceStatus = NonNullable<TeatimeSignup['attendance']>;
+
+/** 참석 상태를 기록한다. 누가 언제 눌렀는지도 남긴다. */
+export async function setSignupAttendance(
+  signupId: string,
+  attendance: AttendanceStatus,
+  adminUid?: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'teatime_signups', signupId), {
+    attendance,
+    attendanceAt: serverTimestamp(),
+    ...(adminUid ? { attendanceBy: adminUid } : {}),
+  });
+}
+
+/** 확인 문자를 보냈다고 표시한다. 발송 자체는 sendOfficialDm이 한다. */
+export async function markConfirmSent(signupId: string): Promise<void> {
+  await updateDoc(doc(db, 'teatime_signups', signupId), {
+    confirmSentAt: serverTimestamp(),
+  });
+}
+
+/**
+ * 신청 문서에는 **신청 당시** 이름·지역·성별이 박제돼 있다. 그래서 그 사람이
+ * 탈퇴해도 명단에는 멀쩡히 남고, 정원이 찬 것처럼 보인다(8/10에 전시 자리에서
+ * 실제로 이 일이 있었다). 탈퇴 여부는 users/{uid}.isDeleted에만 있으므로
+ * 여기서 한 번 합쳐준다. 문서 자체가 사라진 uid도 탈퇴로 본다.
+ *
+ * uid 수만큼 읽지 않고 30개씩 documentId() in 으로 묶어 받는다.
+ */
 export async function getTeatimeSignups(): Promise<TeatimeSignup[]> {
   const snap = await getDocs(collection(db, 'teatime_signups'));
-  return snap.docs
-    .map((d) => {
-      const x = d.data();
-      return {
-        id: d.id,
-        eventId: (x.eventId as string) ?? '',
-        uid: (x.uid as string) ?? '',
-        name: x.name as string | undefined,
-        region: x.region as string | undefined,
-        gender: x.gender as string | undefined,
-        status: (x.status as string) ?? 'requested',
-        createdAt: toDate(x.createdAt),
-      };
-    })
+  const rows: TeatimeSignup[] = snap.docs.map((d) => {
+    const x = d.data();
+    return {
+      id: d.id,
+      eventId: (x.eventId as string) ?? '',
+      uid: (x.uid as string) ?? '',
+      name: x.name as string | undefined,
+      region: x.region as string | undefined,
+      gender: x.gender as string | undefined,
+      status: (x.status as string) ?? 'requested',
+      createdAt: toDate(x.createdAt),
+      attendance: (x.attendance as TeatimeSignup['attendance']) ?? 'pending',
+      attendanceAt: toDate(x.attendanceAt),
+      confirmSentAt: toDate(x.confirmSentAt),
+    };
+  });
+
+  const uids = [...new Set(rows.map((r) => r.uid).filter(Boolean))];
+  const gone = new Set<string>();
+  for (let i = 0; i < uids.length; i += 30) {
+    const chunk = uids.slice(i, i + 30);
+    const us = await getDocs(
+      query(collection(db, 'users'), where(documentId(), 'in', chunk)),
+    );
+    const seen = new Set<string>();
+    us.forEach((d) => {
+      seen.add(d.id);
+      if (d.data().isDeleted === true) gone.add(d.id);
+    });
+    chunk.forEach((u) => { if (!seen.has(u)) gone.add(u); });
+  }
+
+  return rows
+    .map((r) => ({ ...r, withdrawn: gone.has(r.uid) }))
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
