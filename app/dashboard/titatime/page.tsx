@@ -16,6 +16,7 @@ import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MeetupSessionsCard from './MeetupSessionsCard';
 import SeatRoster from './SeatRoster';
+import ProposalsCard from './ProposalsCard';
 import { getTeatimeSignups, type TeatimeSignup } from '@/lib/firestore';
 
 type Session = {
@@ -67,6 +68,9 @@ export default function TitatimePage() {
       ) : (
         <SignupSummary sessions={sessions} signups={signups} onChanged={load} />
       )}
+
+      {/* 회원 제안 → 승인 → 초안. 자리 목록보다 위 — 새로 온 것부터. */}
+      <ProposalsCard onSessionCreated={load} />
 
       <MeetupSessionsCard />
 

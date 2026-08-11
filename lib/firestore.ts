@@ -146,6 +146,93 @@ export async function markConfirmSent(signupId: string): Promise<void> {
   });
 }
 
+// ─── 자리 제안 ───────────────────────────────────────────────────────────────
+// 회원이 앱에서 낸 "이런 자리 열어주세요". 승인해서 정식 자리로 열기 전까지는
+// 회원끼리 서로 못 본다(유인·스캠 방지). 여기가 유일한 열람 창구다.
+
+export interface SeatProposal {
+  id: string;
+  uid: string;
+  nickname?: string;
+  activity?: string;
+  region?: string;
+  timeSlots: string[];
+  note?: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt?: Date;
+  sessionId?: string;
+}
+
+export async function getSeatProposals(): Promise<SeatProposal[]> {
+  // status 단일 필드 쿼리 + 클라 정렬 — 복합 인덱스 없이 간다(문서 수가 적다).
+  const snap = await getDocs(collection(db, 'seat_proposals'));
+  return snap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        uid: (x.uid as string) ?? '',
+        nickname: x.nickname as string | undefined,
+        activity: x.activity as string | undefined,
+        region: x.region as string | undefined,
+        timeSlots: (x.timeSlots as string[]) ?? [],
+        note: x.note as string | undefined,
+        status: (x.status as SeatProposal['status']) ?? 'pending',
+        createdAt: toDate(x.createdAt),
+        sessionId: x.sessionId as string | undefined,
+      };
+    })
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+/** 승인/거절을 기록한다. 자리 생성 자체는 화면 쪽이 백엔드 API로 한다. */
+export async function decideSeatProposal(
+  proposalId: string,
+  status: 'accepted' | 'declined',
+  sessionId?: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'seat_proposals', proposalId), {
+    status,
+    decidedAt: serverTimestamp(),
+    ...(sessionId ? { sessionId } : {}),
+  });
+}
+
+/**
+ * 제안자를 그 자리의 첫 신청자로 올린다. 문서 id는 앱과 같은 규칙
+ * (`${eventId}__${uid}`) — 본인이 앱에서 또 신청해도 중복이 안 생긴다.
+ */
+export async function addProposerSignup(
+  eventId: string,
+  uid: string,
+): Promise<void> {
+  let name: string | undefined;
+  let region: string | undefined;
+  let gender: string | undefined;
+  try {
+    const u = await getDoc(doc(db, 'users', uid));
+    const d = u.data() ?? {};
+    name = (d.displayName ?? d.legalName) as string | undefined;
+    region = (d.region ?? d.city) as string | undefined;
+    gender = d.gender as string | undefined;
+  } catch {
+    /* 프로필을 못 읽어도 신청은 올린다 */
+  }
+  await setDoc(
+    doc(db, 'teatime_signups', `${eventId}__${uid}`),
+    {
+      eventId,
+      uid,
+      status: 'requested',
+      ...(name ? { name } : {}),
+      ...(region ? { region } : {}),
+      ...(gender ? { gender } : {}),
+      createdAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 /**
  * 신청 문서에는 **신청 당시** 이름·지역·성별이 박제돼 있다. 그래서 그 사람이
  * 탈퇴해도 명단에는 멀쩡히 남고, 정원이 찬 것처럼 보인다(8/10에 전시 자리에서
