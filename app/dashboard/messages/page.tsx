@@ -10,6 +10,8 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
 
 const PAGE_SIZE = 30;
+// 서버 분석 결과 + 앱에서 전송 전에 막힌 것. 후자가 오탐 관찰의 핵심이다.
+const SOURCES = ['message', 'client_filter'];
 
 function formatDate(date?: Date) {
   if (!date) return '-';
@@ -31,7 +33,7 @@ export default function MessagesPage() {
     if (!hasMore || loadingMore || !lastDocRef.current) return;
     setLoadingMore(true);
     try {
-      const { items, lastDoc } = await getSuspiciousMessages(PAGE_SIZE, 'message', lastDocRef.current);
+      const { items, lastDoc } = await getSuspiciousMessages(PAGE_SIZE, SOURCES, lastDocRef.current);
       lastDocRef.current = lastDoc;
       setMessages((prev) => [...prev, ...items]);
       setHasMore(items.length === PAGE_SIZE);
@@ -46,9 +48,11 @@ export default function MessagesPage() {
 
   // Initial load
   useEffect(() => {
-    // source='message' applied at query level (needs composite index: source ASC + timestamp DESC)
+    // source in SOURCES applied at query level (복합 인덱스: source ASC + timestamp DESC)
+    // 'client_filter' = 앱에서 전송 전에 막힌 것. 오탐(정상 대화 차단)은 거의
+    // 전부 여기서 나오므로 반드시 같이 봐야 한다.
     // If the index isn't deployed yet, Firestore will log a link to create it in the console
-    getSuspiciousMessages(PAGE_SIZE, 'message')
+    getSuspiciousMessages(PAGE_SIZE, SOURCES)
       .then(({ items, lastDoc }) => {
         setMessages(items);
         lastDocRef.current = lastDoc;
@@ -144,7 +148,7 @@ export default function MessagesPage() {
                       <span>사유: {msg.reason}</span>
                       <span>·</span>
                       <Link
-                        href={`/dashboard/users/${msg.userId}`}
+                        href={`/dashboard/users/view?id=${msg.userId}`}
                         className="font-mono text-blue-600 hover:underline"
                       >
                         👤 {msg.userId.slice(0, 12)}...
