@@ -47,14 +47,8 @@ function Chip({
   info?: string;
 }) {
   return (
-    <div
-      className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex flex-col gap-0.5 min-w-[130px]"
-      title={info}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-gray-400 font-medium">{label}</span>
-        {info && <span className="text-gray-300 text-xs cursor-help" title={info}>ⓘ</span>}
-      </div>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex flex-col gap-0.5 min-w-[130px]">
+      <span className="text-xs text-gray-400 font-medium">{label}</span>
       <div className="flex items-baseline gap-2">
         <span className="text-xl font-bold text-gray-900 tabular-nums">{value}</span>
         {badge && (
@@ -64,6 +58,7 @@ function Chip({
         )}
       </div>
       {sub && <span className="text-xs text-gray-400">{sub}</span>}
+      {info && <span className="text-xs text-gray-400 mt-1 leading-relaxed">{info}</span>}
     </div>
   );
 }
@@ -136,9 +131,8 @@ function RetentionCard({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-      <div className="flex items-center justify-between mb-1">
+      <div className="mb-1">
         <span className="text-sm font-semibold text-gray-700">{label}</span>
-        <span className="text-xs text-gray-400" title={hint}>ⓘ</span>
       </div>
       <div className={`text-3xl font-bold tabular-nums ${color}`}>
         {p != null ? `${p}%` : '-'}
