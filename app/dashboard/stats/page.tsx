@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getStatsPageData } from '@/lib/firestore';
-import type { StatsPageData, TrendPoint, RetentionStat, CohortRow } from '@/lib/firestore';
+import { getStatsPageData } from '@/lib/stats';
+import type { StatsPageData, TrendPoint, RetentionStat, CohortRow } from '@/lib/stats';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
 
@@ -285,7 +285,7 @@ export default function StatsPage() {
 
       {/* ── 2. 활성 지표 ───────────────────────────────────────────────────── */}
       <section>
-        <SectionTitle hint="lastActiveAt(세션 시작)을 기준으로, 앱을 열어본 유저까지 포함합니다. 저장·매칭 없이 열어만 봐도 카운트됩니다.">
+        <SectionTitle hint="lastActiveAt(세션 시작)을 기준으로, 앱을 열어본 유저까지 포함합니다. 저장·매칭 없이 열어만 붐도 카운트됩니다.">
           🔥 활성 지표 (세션 기준)
         </SectionTitle>
         <div className="flex gap-3 overflow-x-auto pb-1 mb-3">
