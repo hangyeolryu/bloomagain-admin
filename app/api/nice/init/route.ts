@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formatNiceUpstreamError, niceBackendBase } from '@/lib/nice-upstream';
 
+/**
+ * POST /api/nice/init
+ *
+ * Thin proxy → NICE backend POST /nice/init
+ * The backend owns NICE credentials and all crypto logic.
+ */
 export async function POST(request: NextRequest) {
   const backendUrl = niceBackendBase();
   if (!backendUrl) {
@@ -11,6 +17,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Forward the request origin so the backend can build the correct return_url
     const body = await request.text();
     const origin = request.headers.get('origin') ?? '';
 
@@ -21,6 +28,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         ...(origin && { Origin: origin }),
       },
+      // Pass through any body the client sent; default to empty init request
       body: body || JSON.stringify({}),
     });
 

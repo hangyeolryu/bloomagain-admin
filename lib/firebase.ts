@@ -12,6 +12,8 @@ const firebaseConfig = {
   measurementId:     process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
+// Initialise only once; safe to call on both server and client because
+// NEXT_PUBLIC_ vars are inlined at build time from .env.production.
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);

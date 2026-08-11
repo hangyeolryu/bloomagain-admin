@@ -1,5 +1,8 @@
 import Badge from './Badge';
 
+// 신뢰·안전 전 표면의 처리 상태를 한 어휘로 통일한다.
+// 미처리(노랑) → 처리완료(초록) / 기각(회색). 각 페이지의 제각각이던
+// pending/unresolved/open, resolved, dismissed를 이 셋에 매핑.
 type Variant = 'green' | 'red' | 'yellow' | 'blue' | 'gray' | 'orange';
 
 const STATUS: Record<string, { label: string; variant: Variant }> = {

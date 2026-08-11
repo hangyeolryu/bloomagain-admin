@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * POST /api/backend/delete-user
+ *
+ * Proxies to FastAPI POST /api/v1/governance/admin-delete-user which removes
+ * the user from Firebase Auth, Firestore, and PostgreSQL in one call.
+ *
+ * Body: { userId: string }
+ */
 export async function POST(request: NextRequest) {
   const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
   const appId      = process.env.BACKEND_APP_ID;
@@ -31,7 +39,9 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    if (upstream.status === 204) return NextResponse.json({ success: true });
+    if (upstream.status === 204) {
+      return NextResponse.json({ success: true });
+    }
 
     const raw = await upstream.text();
     let detail = `Backend error (${upstream.status})`;

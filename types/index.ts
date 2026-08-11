@@ -313,3 +313,4 @@ export interface UserActivity {
   conversationsCount: number;
   blockedConversations: number;
 }
+

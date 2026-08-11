@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * GET /api/backend/conversations?limit=30&cursor=<millis>
+ *
+ * Proxies to FastAPI GET /api/v1/admin/conversations. The admin dashboard can't
+ * read the `conversations` collection with the client SDK (participant-only
+ * rules) and firebase-admin is disabled here, so reads go through the backend's
+ * Firebase Admin SDK. Tenant creds stay server-side.
+ */
 export async function GET(request: NextRequest) {
   const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
   const appId = process.env.BACKEND_APP_ID;

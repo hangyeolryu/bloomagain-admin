@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * POST /api/backend/batch-admin-backfill
+ *
+ * Proxies to FastAPI POST /api/v1/user/batch-admin-backfill.
+ * Upserts up to 100 users with all available Firestore fields.
+ *
+ * Body: { users: Array<{ userId, username, email?, accountStatus?,
+ *                        verified?, verifiedName?, yearOfBirth?,
+ *                        verifiedAt?, aiTrainingOptIn? }> }
+ *
+ * Returns { registered: string[], already_existed: string[], failed: Array<{userId, error}> }
+ */
 export async function POST(request: NextRequest) {
   const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
   const appId      = process.env.BACKEND_APP_ID;
