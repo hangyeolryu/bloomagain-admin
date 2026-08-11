@@ -47,6 +47,7 @@ export function versionStatus(
   if (!version || !version.trim()) return 'unknown';
   const c = compareVersions(version, latest);
   if (c === 0) return 'latest';
+  // 내부 테스트 빌드가 스토어보다 앞설 수 있어 ahead를 따로 둔다(경고 아님).
   return c < 0 ? 'behind' : 'ahead';
 }
 

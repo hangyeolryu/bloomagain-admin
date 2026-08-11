@@ -5,6 +5,10 @@ import { AuthProvider } from '@/lib/auth-context';
 export const metadata: Metadata = {
   title: '티타 관리자',
   description: 'Tita Admin CRM',
+  // Defense-in-depth alongside app/robots.ts: emits
+  // `<meta name="robots" content="noindex,nofollow,noarchive,...">` on every
+  // page. Crawlers that ignore robots.txt (ad-tech, archive bots, some AI
+  // scrapers) still honor this directive on the response itself.
   robots: {
     index: false,
     follow: false,

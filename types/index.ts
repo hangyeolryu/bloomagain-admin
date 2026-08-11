@@ -6,7 +6,7 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: '최고 관리자',
   admin: '관리자',
   moderator: '모더레이터',
-  viewer: '빰어',
+  viewer: '뷰어',
 };
 
 export const ROLE_PERMISSIONS = {
@@ -52,7 +52,9 @@ export interface UserProfile {
   notificationEnabled?: boolean;
   appVersion?: string;
   buildNumber?: string;
+  /** "Tita/3.0.15+138 (iOS; iPhone 15 Pro; 17.4)" — 로그인 시점에 기록 */
   appAgent?: string;
+  /** 앱이 users.device에 쓰는 기기 정보. lastSeen은 접속 하트비트로 갱신 */
   device?: {
     platform?: string;
     model?: string;
@@ -62,13 +64,20 @@ export interface UserProfile {
     firstSeen?: string;
     lastSeen?: string;
   };
+  // NICE identity verification
   identityVerified?: boolean;
   identityVerificationStatus?: 'verified' | 'pending' | 'failed' | string;
   identityVerifiedAt?: Date;
   legalName?: string;
   legalBirthYear?: number;
+  // Launch-cohort badge + subscription (mirrored from Cloud SQL via the
+  // FastAPI backend; snake_case to match the backend's Firestore writer).
+  // founding_member_number is permanent once assigned (1..500); subscription_tier
+  // reflects PREMIUM trial / paid / patron state, expiring automatically when
+  // the backend's expires_at passes (no client-side cleanup needed).
   founding_member_number?: number;
   subscription_tier?: 'FREE' | 'PREMIUM';
+  // Additional profile / safety fields present on the root user doc.
   gender?: string;
   riskScore?: number;
   romanceScamCount?: number;
@@ -97,6 +106,7 @@ export interface Circle {
   createdAt?: Date;
   updatedAt?: Date;
   imageUrl?: string;
+  // Admin-managed fields
   status?: 'active' | 'blocked' | 'archived';
   isBlocked?: boolean;
   blockedAt?: Date;
@@ -130,6 +140,8 @@ export interface Report {
   resolvedAt?: Date;
   resolvedBy?: string;
   resolution?: string;
+  /** LLM 처리 초안 — functions onReportCreated가 신고된 대화를 분석해 작성.
+   *  참고용: 최종 조치는 어드민이 실행한다. */
   aiDraft?: {
     status: 'ready' | 'failed' | 'skipped';
     violation?: 'yes' | 'no' | 'unclear';
@@ -161,9 +173,14 @@ export interface AdminAlert {
   imageUrl?: string;
   adultScore?: number;
   violenceScore?: number;
+  // app_error fields
   errorContext?: string;
   platform?: string;
+  /** 스택 상위 12프레임. 릴리스 빌드에서는 errorContext가 뭉개져(Riverpod은
+   *  Consumer 계열이 전부 ConsumerStatefulElement를 쓴다) 이게 유일한 단서다. */
   stack?: string;
+  /** 오류가 난 앱 버전(예: 3.1.6+1). 하루에도 몇 번씩 올리므로, 이게 없으면
+   *  이미 고친 버그인지 방금 나간 빌드가 낸 건지 구분이 안 된다. */
   appVersion?: string;
 }
 
@@ -229,12 +246,15 @@ export interface DashboardStats {
   pendingReports: number;
   unresolvedAlerts: number;
   totalCircles: number;
+  // Growth & engagement
   newUsersThisWeek: number;
   newUsersThisMonth: number;
   activeUsersThisWeek: number;
   totalWaves: number;
   totalConversations: number;
   pendingDeleteRequests: number;
+  // 실패한 집계 — 조용히 0을 보여주지 않기 위해(StatWarnings 배너로 노출).
+  // 권한/인덱스 문제와 "정말 0건"이 화면에서 구분되어야 한다.
   warnings: Array<{ label: string; message: string }>;
 }
 
@@ -243,7 +263,7 @@ export type DeleteRequestStatus = 'pending' | 'completed' | 'cancelled';
 export interface DeleteRequest {
   id: string;
   name: string;
-  contactInfo: string;
+  contactInfo: string; // email or phone
   reason?: string;
   status: DeleteRequestStatus;
   requestedAt?: Date;
@@ -272,7 +292,7 @@ export const SUPPORT_CATEGORY_LABELS: Record<SupportInquiryCategory, string> = {
 export interface SupportInquiry {
   id: string;
   name: string;
-  contact: string;
+  contact: string; // email or phone
   category?: SupportInquiryCategory;
   message: string;
   status: SupportInquiryStatus;
