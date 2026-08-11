@@ -302,7 +302,7 @@ export default function MatchingPage() {
       <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 shadow-sm p-6 mb-6">
         <h3 className="font-semibold text-gray-900 mb-1">매칭 후보 커버리지</h3>
         <p className="text-xs text-gray-600 mb-4">
-          embedding을 가진 사용자만 다른 사람의 매칭 결과에 등장. 커버리지가 낮으면
+          embedding을 가진 사용자만 다른 사람의 매칭 결과에 등장. 커버리지가 낙으면
           매칭 풀이 작아져 빈 추천 화면이 나옴.
         </p>
         <div className="flex items-center gap-6">
