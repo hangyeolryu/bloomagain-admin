@@ -6,6 +6,7 @@ import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { Report } from '@/types';
 import Badge from '@/components/ui/Badge';
+import SafetyStatusBadge from '@/components/ui/SafetyStatusBadge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
@@ -17,15 +18,51 @@ function formatDate(date?: Date) {
   return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function getStatusBadge(status: string) {
-  const map: Record<string, { variant: 'gray' | 'green' | 'orange' | 'red' | 'yellow' | 'blue'; label: string }> = {
-    pending:   { variant: 'orange', label: '대기중' },
-    reviewed:  { variant: 'blue',   label: '검토중' },
-    resolved:  { variant: 'green',  label: '처리완료' },
-    dismissed: { variant: 'gray',   label: '기각' },
-  };
-  const item = map[status] || { variant: 'gray', label: status };
-  return <Badge variant={item.variant}>{item.label}</Badge>;
+const DRAFT_VIOLATION_BADGE: Record<string, { cls: string; label: string }> = {
+  yes:     { cls: 'bg-red-100 text-red-800',    label: '🤖 위반 판단' },
+  no:      { cls: 'bg-green-100 text-green-800', label: '🤖 위반 아님' },
+  unclear: { cls: 'bg-amber-100 text-amber-800', label: '🤖 판단 유보' },
+};
+
+const DRAFT_REC_LABEL: Record<string, string> = {
+  dismiss: '기각 권고',
+  warn: '경고 권고',
+  suspend: '정지 권고',
+  monitor: '관찰 권고',
+};
+
+/** LLM 처리 초안 블록 — 참고용, 최종 조치는 운영자가 버튼으로 실행. */
+function AiDraftBlock({ draft }: { draft: NonNullable<Report['aiDraft']> }) {
+  if (draft.status !== 'ready') {
+    return (
+      <p className="mt-1.5 text-xs text-gray-400">
+        🤖 AI 초안 {draft.status === 'failed' ? '실패' : '생략'}: {draft.note}
+      </p>
+    );
+  }
+  const badge = DRAFT_VIOLATION_BADGE[draft.violation ?? 'unclear'];
+  return (
+    <div className="mt-2 p-2.5 bg-violet-50 rounded-lg text-xs space-y-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={`px-1.5 py-0.5 rounded ${badge.cls} font-medium`}>{badge.label}</span>
+        <span className="px-1.5 py-0.5 rounded bg-white text-violet-700 font-medium">
+          {DRAFT_REC_LABEL[draft.recommendation ?? 'monitor']}
+        </span>
+        <span className="text-gray-400">심각도 {draft.severity}</span>
+      </div>
+      <p className="text-gray-800">{draft.summary}</p>
+      {(draft.evidence?.length ?? 0) > 0 && (
+        <ul className="text-gray-600">
+          {draft.evidence!.map((e, i) => (
+            <li key={i} className="truncate">· “{e}”</li>
+          ))}
+        </ul>
+      )}
+      {draft.recommendationReason && (
+        <p className="text-gray-500">→ {draft.recommendationReason}</p>
+      )}
+    </div>
+  );
 }
 
 export default function ReportsPage() {
@@ -120,7 +157,7 @@ export default function ReportsPage() {
                 : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
           >
-            {s === 'pending' ? '대기중' : s === 'reviewed' ? '검토중' : s === 'resolved' ? '처리완료' : s === 'dismissed' ? '기각' : '전체'}
+            {s === 'pending' ? '미처리' : s === 'reviewed' ? '검토중' : s === 'resolved' ? '처리완료' : s === 'dismissed' ? '기각' : '전체'}
           </button>
         ))}
       </div>
@@ -139,7 +176,7 @@ export default function ReportsPage() {
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                        {getStatusBadge(r.status)}
+                        <SafetyStatusBadge status={r.status} />
                         <Badge variant={r.type === 'user' ? 'blue' : 'green'}>
                           {r.type === 'user' ? '사용자' : '모임'}
                         </Badge>
@@ -151,11 +188,23 @@ export default function ReportsPage() {
                         <p>신고자: <span className="font-mono">{r.reportedBy.slice(0, 12)}…</span></p>
                         {r.resolution && <p>처리 결과: {r.resolution}</p>}
                       </div>
+                      {r.aiDraft && <AiDraftBlock draft={r.aiDraft} />}
                     </div>
                     {r.status === 'pending' && can('resolveReports') && (
                       <div className="flex flex-col sm:flex-row gap-1.5 flex-shrink-0">
                         <button
-                          onClick={() => setModal({ report: r, type: 'resolve' })}
+                          onClick={() => {
+                            // LLM 초안이 있으면 처리 메모를 pre-fill — 운영자는
+                            // 검토·수정 후 확인만 하면 된다.
+                            if (r.aiDraft?.status === 'ready') {
+                              const rec = DRAFT_REC_LABEL[r.aiDraft.recommendation ?? 'monitor'];
+                              setResolution(
+                                `[AI 초안] ${rec} — ${r.aiDraft.summary ?? ''}` +
+                                (r.aiDraft.recommendationReason ? ` (${r.aiDraft.recommendationReason})` : ''),
+                              );
+                            }
+                            setModal({ report: r, type: 'resolve' });
+                          }}
                           className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
                         >
                           처리
