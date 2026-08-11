@@ -93,7 +93,7 @@ function BarChart({ data }: { data: TrendPoint[] }) {
           return (
             <div
               key={i}
-              className="flex-1 flex flex-col justify-end items-center relative"
+              className="flex-1 h-full flex flex-col justify-end items-center relative"
               onMouseEnter={() => setHovered(i)}
               onMouseLeave={() => setHovered(null)}
               onTouchStart={() => setHovered(i)}
