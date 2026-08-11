@@ -6,6 +6,7 @@ import { getAdminAlerts, resolveAlert, deleteAlert, blockUser, blockCircle } fro
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { AdminAlert } from '@/types';
+import Toast, { type ToastState } from '@/components/ui/Toast';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
@@ -33,6 +34,7 @@ const TYPE_META: Record<string, { label: string; icon: string }> = {
   suspicious_circle:   { label: '의심 모임',       icon: '👀'  },
   blocked_image:       { label: '차단된 이미지',   icon: '🖼️' },
   suspicious_image:    { label: '의심 이미지',     icon: '🖼️' },
+  app_error:           { label: '앱 오류',         icon: '🐛'  },
 };
 
 function getTypeMeta(type: string) {
@@ -72,6 +74,7 @@ export default function AlertsPage() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [note, setNote]               = useState('');
   const [processing, setProcessing]   = useState<string | null>(null);
+  const [toast, setToast]             = useState<ToastState | null>(null);
 
   // image preview modal
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
@@ -147,7 +150,12 @@ export default function AlertsPage() {
   async function handleBlockUser(alert: AdminAlert) {
     if (!alert.userId || !adminUser) return;
     setProcessing(alert.id);
-    await blockUser(alert.userId, note || '관리자 알림에 의한 차단', adminUser.uid);
+    const { warnings } = await blockUser(alert.userId, note || '관리자 알림에 의한 차단', adminUser.uid);
+    // 차단은 성공했어도 후처리가 실패할 수 있다 — 조용히 넘기면 남은 웨이브를 모른다.
+    setToast(warnings.length
+      ? { kind: 'warning', title: '차단은 됐지만 후처리가 일부 실패했어요',
+          details: warnings.map((w) => `${w.label}: ${w.message}`) }
+      : { kind: 'success', title: '차단하고 정리까지 마쳤어요' });
     await resolveAlert(alert.id, `사용자 차단 처리: ${note}`, adminUser.uid);
     setAlerts((prev) => prev.map((a) =>
       a.id === alert.id ? { ...a, resolved: true } : a
@@ -183,6 +191,7 @@ export default function AlertsPage() {
 
   return (
     <div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <Header
         title="관리자 알림"
         subtitle={`미해결 ${unresolved}건 · 로드된 ${alerts.length}건`}
@@ -270,7 +279,7 @@ export default function AlertsPage() {
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className="text-xs text-gray-500">사용자:</span>
                           <Link
-                            href={`/dashboard/users/${alert.userId}`}
+                            href={`/dashboard/users/view?id=${alert.userId}`}
                             className="text-sm font-medium text-blue-600 hover:underline"
                           >
                             {alert.userDisplayName || alert.userId.slice(0, 10)}
@@ -299,6 +308,28 @@ export default function AlertsPage() {
                       {/* Reason */}
                       {alert.reason && (
                         <p className="text-sm text-gray-600 mb-1">{alert.reason}</p>
+                      )}
+
+                      {/* app_error meta */}
+                      {alert.type === 'app_error' && (alert.errorContext || alert.platform || alert.appVersion) && (
+                        <div className="flex flex-wrap gap-2 mb-1.5 text-xs text-gray-400 font-mono">
+                          {alert.errorContext && <span>ctx: {alert.errorContext}</span>}
+                          {alert.platform    && <span>· {alert.platform}</span>}
+                          {alert.appVersion  && <span>· v{alert.appVersion}</span>}
+                        </div>
+                      )}
+
+                      {/* 스택 — 접어둔다. 목록은 훑어보는 자리고, 스택은 한 건을
+                          파고들 때만 필요하다. 펼치면 상위 프레임이 그대로 나온다. */}
+                      {alert.type === 'app_error' && alert.stack && (
+                        <details className="mb-1.5 group">
+                          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none w-fit">
+                            스택 보기
+                          </summary>
+                          <pre className="mt-1.5 p-2.5 bg-gray-50 border border-gray-200 rounded text-[11px] leading-relaxed text-gray-700 font-mono overflow-x-auto whitespace-pre">
+                            {alert.stack}
+                          </pre>
+                        </details>
                       )}
 
                       {/* Detected issues chips */}
@@ -347,7 +378,7 @@ export default function AlertsPage() {
                       {!alert.resolved && can('resolveAlerts') && (
                         <div className="flex flex-wrap gap-1.5 mt-3 sm:hidden">
                           {alert.userId && (
-                            <Link href={`/dashboard/users/${alert.userId}`} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium">
+                            <Link href={`/dashboard/users/view?id=${alert.userId}`} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium">
                               👤 사용자 보기
                             </Link>
                           )}
@@ -381,7 +412,7 @@ export default function AlertsPage() {
                       <div className="hidden sm:flex flex-col gap-1.5 flex-shrink-0">
                         {alert.userId && (
                           <Link
-                            href={`/dashboard/users/${alert.userId}`}
+                            href={`/dashboard/users/view?id=${alert.userId}`}
                             className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium text-center"
                           >
                             👤 사용자 보기
