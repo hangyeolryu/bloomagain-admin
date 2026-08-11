@@ -13,6 +13,23 @@ import type { TeatimeSignup } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
+// 참석은 여기서 못 고친다 — 고치는 곳은 '티타임 자리 관리' 한 곳뿐이다.
+// 같은 걸 두 화면에서 고칠 수 있으면 어느 쪽이 맞는지 모르게 된다.
+const ATT_KO: Record<string, string> = {
+  pending: '—',
+  coming: '온다고 함',
+  cant: '못 온다고 함',
+  attended: '왔음',
+  noshow: '안 왔음',
+};
+
+const ATT_TONE: Record<string, string> = {
+  coming: 'text-emerald-700',
+  cant: 'text-gray-400',
+  attended: 'font-semibold text-blue-700',
+  noshow: 'text-red-600',
+};
+
 function genderKo(g?: string): string {
   const v = (g ?? '').toLowerCase().trim();
   if (['female', 'f', '여', '여성', 'woman'].includes(v)) return '여성';
@@ -51,11 +68,11 @@ export default function TeatimePage() {
       {/* 자리를 만드는 곳과 신청을 보는 곳이 갈려 있고, 경로도 titatime /
           teatime으로 한 글자만 달라 서로를 못 찾는다. 양쪽에 길을 낸다. */}
       <p className="-mt-4 text-xs text-gray-500">
-        자리를 새로 열거나 고치려면{' '}
+        <b>참석 체크</b>와 확인 문자, 자리를 새로 열거나 고치는 일은{' '}
         <Link href="/dashboard/titatime" className="font-medium text-emerald-700 underline">
           티타임 자리 관리
         </Link>
-        로 가세요.
+        에서 합니다. 이 화면은 신청 이력만 보여줍니다.
       </p>
 
       {error ? (
@@ -69,7 +86,12 @@ export default function TeatimePage() {
           아직 신청자가 없습니다.
         </div>
       ) : (
-        byEvent.map(([eventId, list]) => {
+        byEvent.map(([eventId, all]) => {
+          // 신청 후 탈퇴한 사람은 명단에서 뺀다 — 정원과 성비가 그대로면
+          // 안 올 사람을 세면서 자리를 닫게 된다. 대신 몇 명이 빠졌는지는
+          // 아래 한 줄로 남긴다.
+          const list = all.filter((r) => !r.withdrawn);
+          const left = all.filter((r) => r.withdrawn);
           const f = list.filter((r) => genderKo(r.gender) === '여성').length;
           const m = list.filter((r) => genderKo(r.gender) === '남성').length;
           const na = list.length - f - m;
@@ -90,6 +112,7 @@ export default function TeatimePage() {
                     <th className="text-left px-5 py-2.5">지역</th>
                     <th className="text-left px-5 py-2.5">성별</th>
                     <th className="text-left px-5 py-2.5">상태</th>
+                    <th className="text-left px-5 py-2.5">참석</th>
                     <th className="text-right px-5 py-2.5">신청 시각</th>
                   </tr>
                 </thead>
@@ -105,6 +128,9 @@ export default function TeatimePage() {
                       <td className="px-5 py-2.5 text-gray-700">{r.region || '—'}</td>
                       <td className="px-5 py-2.5 text-gray-700">{genderKo(r.gender)}</td>
                       <td className="px-5 py-2.5 text-gray-600">{r.status}</td>
+                      <td className={`px-5 py-2.5 ${ATT_TONE[r.attendance ?? 'pending'] ?? 'text-gray-400'}`}>
+                        {ATT_KO[r.attendance ?? 'pending'] ?? '—'}
+                      </td>
                       <td className="px-5 py-2.5 text-right tabular-nums text-gray-500 whitespace-nowrap">
                         {r.createdAt ? r.createdAt.toLocaleString('ko-KR') : '—'}
                       </td>
@@ -112,6 +138,14 @@ export default function TeatimePage() {
                   ))}
                 </tbody>
               </table>
+              {left.length > 0 && (
+                <p className="border-t border-gray-100 bg-gray-50 px-5 py-2.5 text-xs text-gray-500">
+                  탈퇴해서 뺀 신청 {left.length}건
+                  <span className="ml-1 text-gray-400">
+                    ({left.map((r) => r.name || '이름없음').join(', ')})
+                  </span>
+                </p>
+              )}
             </section>
           );
         })
