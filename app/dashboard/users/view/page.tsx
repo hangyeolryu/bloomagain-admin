@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import UserDetailClient from '../UserDetailClient';
 
-export default function UserViewPage() {
+function UserViewContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const id = searchParams.get('id');
@@ -20,4 +21,12 @@ export default function UserViewPage() {
   }
 
   return <UserDetailClient id={id} />;
+}
+
+export default function UserViewPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">불러오는 중…</div>}>
+      <UserViewContent />
+    </Suspense>
+  );
 }

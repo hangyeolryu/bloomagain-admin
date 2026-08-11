@@ -3,9 +3,10 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getUsers, blockUser, unblockUser, updateUserStatus } from '@/lib/firestore';
+import { getUsers, blockUser, unblockUser, updateUserStatus, type UserSortKey } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
+import Toast, { type ToastState } from '@/components/ui/Toast';
 import type { UserProfile, AccountStatus } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -23,6 +24,41 @@ interface PgStatus {
 
 type PgStatusMap = Record<string, PgStatus>;
 
+interface BackfillPayload {
+  userId: string;
+  username: string;
+  email?: string;
+  accountStatus?: string;
+  verified?: boolean;
+  verifiedName?: string;
+  yearOfBirth?: number;
+  verifiedAt?: string;   // ISO string
+  aiTrainingOptIn?: boolean;
+}
+
+/** True if Firestore reflects a completed NICE / identity check (fields may be written partially). */
+function isIdentityVerified(u: UserProfile): boolean {
+  if (u.identityVerified) return true;
+  if (u.identityVerificationStatus === 'verified') return true;
+  if (u.identityVerifiedAt) return true;
+  return false;
+}
+
+function buildBackfillPayload(u: UserProfile): BackfillPayload {
+  const payload: BackfillPayload = {
+    userId: u.id,
+    // Prefer verified legal name, fall back to displayName, then uid
+    username: u.legalName || u.displayName || u.id,
+    ...(u.email ? { email: u.email } : {}),
+    accountStatus: u.accountStatus ?? 'active',
+    verified: isIdentityVerified(u),
+    ...(u.legalName         ? { verifiedName:    u.legalName }                       : {}),
+    ...(u.legalBirthYear    ? { yearOfBirth:      u.legalBirthYear }                 : {}),
+    ...(u.identityVerifiedAt ? { verifiedAt:      u.identityVerifiedAt.toISOString() } : {}),
+  };
+  return payload;
+}
+
 async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
   if (!userIds.length) return {};
   const res = await fetch('/api/backend/check-users', {
@@ -34,11 +70,11 @@ async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
   return res.json();
 }
 
-async function registerUserInBackend(userId: string, username: string, email?: string): Promise<boolean> {
-  const res = await fetch('/api/backend/register-user', {
+async function backfillUserInBackend(payload: BackfillPayload): Promise<boolean> {
+  const res = await fetch('/api/backend/admin-backfill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, username, ...(email ? { email } : {}) }),
+    body: JSON.stringify(payload),
   });
   return res.ok;
 }
@@ -49,16 +85,46 @@ interface BatchRegisterResult {
   failed: Array<{ userId: string; error: string }>;
 }
 
-async function batchRegisterUsersInBackend(
-  users: Array<{ userId: string; username: string; email?: string }>
+async function batchBackfillUsersInBackend(
+  users: BackfillPayload[]
 ): Promise<BatchRegisterResult> {
-  const res = await fetch('/api/backend/batch-register', {
+  const res = await fetch('/api/backend/batch-admin-backfill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ users }),
   });
   if (!res.ok) return { registered: [], already_existed: [], failed: [] };
   return res.json();
+}
+
+interface SetSubscriptionResponse {
+  user_id: string;
+  tier: string;
+  expires_at: string | null;
+  founding_member_number: number | null;
+  error?: string;
+}
+
+/**
+ * Admin override — flip a user between FREE and PREMIUM for QA testing.
+ * The backend does NOT touch founding_member_number, so this never consumes
+ * a launch-cohort slot.
+ */
+async function setSubscriptionInBackend(
+  userId: string,
+  tier: 'PREMIUM' | 'FREE',
+  expiresAt?: string,
+): Promise<SetSubscriptionResponse> {
+  const res = await fetch('/api/backend/set-subscription', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, tier, expiresAt }),
+  });
+  const data = (await res.json()) as SetSubscriptionResponse;
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to set subscription');
+  }
+  return data;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -70,22 +136,49 @@ function getStatusBadge(user: UserProfile) {
   return <Badge variant="green">활성</Badge>;
 }
 
-function PgBadge({ status, onRegister }: { status: PgStatus | undefined; onRegister: () => void }) {
+function PgBadge({
+  status,
+  onRegister,
+  onTogglePlus,
+  togglingPlus,
+}: {
+  status: PgStatus | undefined;
+  onRegister: () => void;
+  onTogglePlus: () => void;
+  togglingPlus: boolean;
+}) {
   if (!status) {
     return <span className="text-xs text-gray-300 animate-pulse">확인 중…</span>;
   }
   if (status.exists) {
-    const tier = status.subscription_tier;
+    const tier = (status.subscription_tier || 'FREE').toUpperCase();
+    const isPlus = tier === 'PREMIUM';
     return (
       <div className="flex flex-col gap-0.5">
         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit">
           <span>DB ✓</span>
         </span>
-        {tier && tier !== 'FREE' && (
+        {isPlus && (
           <span className="inline-flex text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full w-fit">
-            {tier}
+            PREMIUM
           </span>
         )}
+        <button
+          onClick={onTogglePlus}
+          disabled={togglingPlus}
+          title={
+            isPlus
+              ? '테스트용 Plus 권한 해제 (Founding number 변경 없음)'
+              : '테스트용 Plus 권한 부여 (Founding number 변경 없음)'
+          }
+          className={`text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors w-fit disabled:opacity-50 ${
+            isPlus
+              ? 'text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100'
+              : 'text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100'
+          }`}
+        >
+          {togglingPlus ? '처리 중…' : isPlus ? 'Plus 해제' : 'Plus 부여'}
+        </button>
       </div>
     );
   }
@@ -114,6 +207,22 @@ function formatDate(date?: Date) {
   return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** Compact relative-time formatter for the "마지막 접속" column. Falls back to
+ *  absolute date for anything over ~30 days so the admin can spot truly
+ *  dormant users at a glance without doing mental math. */
+function formatRelativeTime(date?: Date) {
+  if (!date) return '-';
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return '방금';
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}일 전`;
+  return formatDate(date);
+}
+
 export default function UsersPage() {
   const { user: adminUser } = useAuth();
   const router = useRouter();
@@ -123,9 +232,14 @@ export default function UsersPage() {
   const [hasMore, setHasMore]           = useState(false);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  // Server-side sort. Changing this resets the cursor and reloads page 1 —
+  // mixing rows fetched under different orderings would scramble the
+  // infinite-scroll order.
+  const [sortBy, setSortBy]             = useState<UserSortKey>('createdAt');
   const [actionModal, setActionModal]   = useState<{ user: UserProfile; type: 'block' | 'unblock' | 'suspend' } | null>(null);
   const [reason, setReason]             = useState('');
   const [acting, setActing]             = useState(false);
+  const [toast, setToast]               = useState<ToastState | null>(null);
 
   // ── PostgreSQL status ──────────────────────────────────────────────────────
   // null  = not yet fetched for this uid
@@ -135,6 +249,10 @@ export default function UsersPage() {
   const [bulkRegistering, setBulkRegistering] = useState(false);
   // Track which UIDs we've already sent to batch-check so we don't re-fetch on render.
   const checkedUidsRef = useRef<Set<string>>(new Set());
+
+  // Per-user Plus toggle in-flight state, keyed by uid. Keeps the button busy
+  // for that one row while letting other rows act independently.
+  const [togglingPlusUids, setTogglingPlusUids] = useState<Set<string>>(new Set());
 
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -166,7 +284,7 @@ export default function UsersPage() {
     if (!hasMore || loadingMore || !lastDocRef.current) return;
     setLoadingMore(true);
     try {
-      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current);
+      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current, sortBy);
       lastDocRef.current = lastDoc;
       setAllUsers((prev) => [...prev, ...items]);
       setHasMore(items.length === PAGE_SIZE);
@@ -174,22 +292,31 @@ export default function UsersPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, checkNewUsers]);
+  }, [hasMore, loadingMore, checkNewUsers, sortBy]);
   loadMoreRef.current = loadMore;
 
-  // ── Initial load ──────────────────────────────────────────────────────────
+  // ── Initial load + sort change ────────────────────────────────────────────
+  // Re-runs whenever sortBy flips. Resets the cursor + list so we don't
+  // interleave rows from a previous ordering with the new one (would scramble
+  // the infinite-scroll order and double-show some users).
   useEffect(() => {
-    getUsers(PAGE_SIZE).then(async ({ items, lastDoc }) => {
+    setLoading(true);
+    lastDocRef.current = null;
+    setAllUsers([]);
+    getUsers(PAGE_SIZE, undefined, sortBy).then(async ({ items, lastDoc }) => {
       setAllUsers(items);
       lastDocRef.current = lastDoc;
       setHasMore(items.length === PAGE_SIZE);
       setLoading(false);
       await checkNewUsers(items);
     });
-  }, [checkNewUsers]);
+  }, [checkNewUsers, sortBy]);
 
   // ── IntersectionObserver ──────────────────────────────────────────────────
+  // Must run after initial load: while `loading` is true we only render a spinner,
+  // so the sentinel is not mounted on the first effect pass ([] deps would never attach).
   useEffect(() => {
+    if (loading) return;
     const el = sentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
@@ -198,19 +325,19 @@ export default function UsersPage() {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [loading]);
 
   // ── Register single user in backend ──────────────────────────────────────
   const handleRegisterUser = async (u: UserProfile) => {
-    const ok = await registerUserInBackend(
-      u.id,
-      u.displayName || 'User',
-      undefined,
-    );
+    const ok = await backfillUserInBackend(buildBackfillPayload(u));
     if (ok) {
       setPgStatus((prev) => ({
         ...prev,
-        [u.id]: { exists: true, account_status: 'active', subscription_tier: 'FREE' },
+        [u.id]: {
+          exists: true,
+          account_status: u.accountStatus ?? 'active',
+          subscription_tier: 'FREE',
+        },
       }));
     }
   };
@@ -222,17 +349,19 @@ export default function UsersPage() {
     if (!missingUsers.length) return;
     setBulkRegistering(true);
     try {
-      const payload = missingUsers.map((u) => ({
-        userId: u.id,
-        username: u.displayName || 'User',
-      }));
-      const result = await batchRegisterUsersInBackend(payload);
+      const payload = missingUsers.map(buildBackfillPayload);
+      const result = await batchBackfillUsersInBackend(payload);
       // Mark all successfully registered or already-existed users as present.
       const nowPresent = new Set([...result.registered, ...result.already_existed]);
       setPgStatus((prev) => {
         const next = { ...prev };
         for (const uid of nowPresent) {
-          next[uid] = { exists: true, account_status: 'active', subscription_tier: 'FREE' };
+          const u = missingUsers.find((x) => x.id === uid);
+          next[uid] = {
+            exists: true,
+            account_status: u?.accountStatus ?? 'active',
+            subscription_tier: 'FREE',
+          };
         }
         return next;
       });
@@ -248,13 +377,58 @@ export default function UsersPage() {
     await checkNewUsers(allUsers);
   };
 
+  // ── Toggle Plus subscription for QA testing (no founding-member impact) ──
+  const handleTogglePlus = async (u: UserProfile) => {
+    const current = (pgStatus[u.id]?.subscription_tier || 'FREE').toUpperCase();
+    const next: 'PREMIUM' | 'FREE' = current === 'PREMIUM' ? 'FREE' : 'PREMIUM';
+
+    // Confirm — Plus 부여는 가벼운 토글이지만 prod 데이터 위에서 작동하므로
+    // 이름 한 번 더 보여주는 게 안전.
+    const confirmed = window.confirm(
+      next === 'PREMIUM'
+        ? `${u.displayName ?? u.id}님께 Plus 권한을 부여하시겠어요?\n(Founding member number는 변경되지 않습니다.)`
+        : `${u.displayName ?? u.id}님의 Plus 권한을 해제하시겠어요?`,
+    );
+    if (!confirmed) return;
+
+    setTogglingPlusUids((prev) => {
+      const set = new Set(prev);
+      set.add(u.id);
+      return set;
+    });
+    try {
+      const result = await setSubscriptionInBackend(u.id, next);
+      setPgStatus((prev) => ({
+        ...prev,
+        [u.id]: {
+          ...(prev[u.id] || { exists: true }),
+          exists: true,
+          subscription_tier: result.tier,
+        },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(`Plus 권한 변경 실패: ${msg}`);
+    } finally {
+      setTogglingPlusUids((prev) => {
+        const set = new Set(prev);
+        set.delete(u.id);
+        return set;
+      });
+    }
+  };
+
   // ── Moderation actions ────────────────────────────────────────────────────
   const handleAction = async () => {
     if (!actionModal || !adminUser) return;
     setActing(true);
     try {
       if (actionModal.type === 'block') {
-        await blockUser(actionModal.user.id, reason, adminUser.uid);
+        const { warnings } = await blockUser(actionModal.user.id, reason, adminUser.uid);
+        setToast(warnings.length
+          ? { kind: 'warning', title: '차단은 됐지만 후처리가 일부 실패했어요',
+              details: warnings.map((w) => `${w.label}: ${w.message}`) }
+          : { kind: 'success', title: '차단하고 정리까지 마쳤어요' });
       } else if (actionModal.type === 'unblock') {
         await unblockUser(actionModal.user.id);
       } else if (actionModal.type === 'suspend') {
@@ -286,14 +460,15 @@ export default function UsersPage() {
         !u.displayName?.toLowerCase().includes(q) &&
         !u.legalName?.toLowerCase().includes(q) &&
         !u.city?.toLowerCase().includes(q) &&
+        !u.district?.toLowerCase().includes(q) &&
         !u.id.toLowerCase().includes(q)
       ) return false;
     }
     if (statusFilter !== 'all') {
       if (statusFilter === 'verified') {
-        if (!u.identityVerified) return false;
+        if (!isIdentityVerified(u)) return false;
       } else if (statusFilter === 'unverified') {
-        if (u.identityVerified) return false;
+        if (isIdentityVerified(u)) return false;
       } else if (statusFilter === 'blocked') {
         if (!u.isBlacklisted && u.accountStatus !== 'blocked') return false;
       } else if (statusFilter === 'pg_missing') {
@@ -312,6 +487,7 @@ export default function UsersPage() {
 
   return (
     <div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <Header
         title="사용자 관리"
         subtitle={`로드된 ${allUsers.length}명 중 ${filtered.length}명 표시`}
@@ -378,6 +554,15 @@ export default function UsersPage() {
           <option value="unverified">본인인증 미완료</option>
           <option value="pg_missing">⚠ PostgreSQL 미등록</option>
         </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as UserSortKey)}
+          title="정렬 기준 — 변경하면 목록이 처음부터 다시 로드됩니다"
+          className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+        >
+          <option value="createdAt">가입일 (최신순)</option>
+          <option value="lastActiveAt">마지막 접속 (최근순)</option>
+        </select>
         <button
           onClick={handleRecheck}
           disabled={pgChecking}
@@ -397,17 +582,40 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
-                <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">관심사</th>
+                <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">자기소개</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">DB</th>
-                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">가입일</th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <button
+                    type="button"
+                    onClick={() => setSortBy('createdAt')}
+                    className={
+                      'hover:text-gray-900 transition-colors ' +
+                      (sortBy === 'createdAt' ? 'text-green-700 font-bold' : '')
+                    }
+                  >
+                    가입일{sortBy === 'createdAt' ? ' ↓' : ''}
+                  </button>
+                </th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <button
+                    type="button"
+                    onClick={() => setSortBy('lastActiveAt')}
+                    className={
+                      'hover:text-gray-900 transition-colors ' +
+                      (sortBy === 'lastActiveAt' ? 'text-green-700 font-bold' : '')
+                    }
+                  >
+                    마지막 접속{sortBy === 'lastActiveAt' ? ' ↓' : ''}
+                  </button>
+                </th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">작업</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -430,7 +638,7 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5">
-                      {u.identityVerified ? (
+                      {isIdentityVerified(u) ? (
                         <div>
                           <div className="flex items-center gap-1">
                             <span className="text-sm text-gray-900">{u.legalName ?? '-'}</span>
@@ -447,24 +655,29 @@ export default function UsersPage() {
                     <td className="hidden sm:table-cell px-4 py-2.5 text-xs text-gray-600">
                       {formatAge(u.yearOfBirth)} / {u.city || '-'}
                     </td>
-                    <td className="hidden lg:table-cell px-4 py-2.5">
-                      <div className="flex flex-wrap gap-1">
-                        {(u.interests || []).slice(0, 2).map((i) => (
-                          <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{i}</span>
-                        ))}
-                        {(u.interests || []).length > 2 && (
-                          <span className="text-xs text-gray-400">+{u.interests!.length - 2}</span>
-                        )}
-                      </div>
+                    <td className="hidden lg:table-cell px-4 py-2.5 max-w-xs">
+                      {u.about ? (
+                        <p className="text-xs text-gray-600 line-clamp-2" title={u.about}>{u.about}</p>
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">{getStatusBadge(u)}</td>
                     <td className="hidden sm:table-cell px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <PgBadge
                         status={pgStatus[u.id]}
                         onRegister={() => handleRegisterUser(u)}
+                        onTogglePlus={() => handleTogglePlus(u)}
+                        togglingPlus={togglingPlusUids.has(u.id)}
                       />
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
+                    <td
+                      className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500"
+                      title={u.lastActiveAt ? u.lastActiveAt.toLocaleString('ko-KR') : undefined}
+                    >
+                      {formatRelativeTime(u.lastActiveAt)}
+                    </td>
                     <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <Link
