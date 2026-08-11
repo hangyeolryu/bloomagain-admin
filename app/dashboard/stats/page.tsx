@@ -1,554 +1,434 @@
 'use client';
 
-// 통계 오버뷰 — 티타 한눈에 보기
-// ──────────────────────────────────────────────────────────────────────────
-// 한 화면에서 "지금 티타가 어떻게 굴러가고 있나"를 파악할 수 있게 만든
-// 관리자 대시보드. 각 섹션은 상세 페이지가 있으면 링크로 넘어감.
-//
-// 데이터 소스는 전부 Firestore 클라이언트 SDK. 스티키니스 (DAU/MAU) 처럼
-// 상세 트렌드가 없는 지표는 상세 시계열이 필요할 때 GA4 export로 보완.
-//
-// 새 지표를 추가할 때는 lib/firestore.ts에 helper 추가한 뒤 여기 카드 하나 붙이면 끝.
-//
-// Created 2026-07-05.
-
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import Header from '@/components/layout/Header';
+import { getStatsPageData } from '@/lib/stats';
+import type { StatsPageData, TrendPoint, RetentionStat, CohortRow } from '@/lib/stats';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import {
-  getActivityPatterns,
-  getDataCollectionStats,
-  getDeviceMix,
-  getEngagementRollup,
-  getMatchingStats,
-  getOnboardingFunnel,
-  getSignupTrend,
-  type ActivityPatterns,
-  type DataCollectionStats,
-  type DeviceMix,
-  type EngagementRollup,
-  type MatchingStats,
-  type OnboardingFunnel,
-  type SignupTrendPoint,
-} from '@/lib/firestore';
+import Header from '@/components/layout/Header';
 
-// ── Reusable primitives ──────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-function SectionHeading({
-  title,
-  href,
-  hint,
-}: {
-  title: string;
-  href?: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between mb-3">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        {hint && <p className="text-xs text-gray-400 mt-0.5">{hint}</p>}
-      </div>
-      {href && (
-        <Link href={href} className="text-xs text-green-600 hover:underline font-medium">
-          자세히 →
-        </Link>
-      )}
-    </div>
-  );
+function pct(a: number, b: number) {
+  if (!b) return '-';
+  return `${Math.round((a / b) * 100)}%`;
 }
 
-function Metric({
-  label,
-  value,
-  suffix,
-  hint,
-  emphasis = 'normal',
+function delta(curr: number, prev: number): { text: string; up: boolean } | null {
+  if (prev === 0) return curr ? { text: `신규 +${curr}`, up: true } : null;
+  const p = Math.round(((curr - prev) / prev) * 100);
+  if (p === 0) return null;
+  return { text: `${p > 0 ? '▲' : '▼'}${Math.abs(p)}%`, up: p > 0 };
+}
+
+function healthColor(value: number, ok: number, good: number) {
+  if (value >= good) return 'text-green-600';
+  if (value >= ok)   return 'text-yellow-600';
+  return 'text-red-500';
+}
+
+function heatmapClass(pct: number) {
+  if (pct >= 50) return 'bg-green-600 text-white';
+  if (pct >= 35) return 'bg-green-400 text-white';
+  if (pct >= 20) return 'bg-green-200 text-gray-800';
+  if (pct >= 10) return 'bg-green-100 text-gray-700';
+  if (pct > 0)   return 'bg-gray-100 text-gray-500';
+  return 'bg-gray-50 text-gray-300';
+}
+
+// ── sub-components ────────────────────────────────────────────────────────────
+
+function Chip({
+  label, value, sub, badge, info,
 }: {
   label: string;
-  value: number | string;
-  suffix?: string;
-  hint?: string;
-  emphasis?: 'normal' | 'strong' | 'muted';
+  value: string | number;
+  sub?: string;
+  badge?: { text: string; up: boolean } | null;
+  info?: string;
 }) {
-  const valueClass =
-    emphasis === 'strong'
-      ? 'text-3xl font-bold text-gray-900'
-      : emphasis === 'muted'
-      ? 'text-xl font-semibold text-gray-500'
-      : 'text-2xl font-bold text-gray-900';
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4">
-      <p className="text-xs text-gray-500 font-medium">{label}</p>
-      <p className={`${valueClass} mt-1 tabular-nums`}>
-        {typeof value === 'number' ? value.toLocaleString() : value}
-        {suffix && <span className="text-base font-semibold text-gray-400 ml-0.5">{suffix}</span>}
-      </p>
-      {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
+    <div
+      className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex flex-col gap-0.5 min-w-[130px]"
+      title={info}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-gray-400 font-medium">{label}</span>
+        {info && <span className="text-gray-300 text-xs cursor-help" title={info}>ⓘ</span>}
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-xl font-bold text-gray-900 tabular-nums">{value}</span>
+        {badge && (
+          <span className={`text-xs font-semibold ${badge.up ? 'text-green-600' : 'text-red-500'}`}>
+            {badge.text}
+          </span>
+        )}
+      </div>
+      {sub && <span className="text-xs text-gray-400">{sub}</span>}
     </div>
   );
 }
 
-function Bar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="mb-3">
+      <h2 className="text-sm font-semibold text-gray-700">{children}</h2>
+      {hint && <p className="text-xs text-gray-400 mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+// ── Bar Chart ─────────────────────────────────────────────────────────────────
+
+function BarChart({ data }: { data: TrendPoint[] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const max = Math.max(...data.map((d) => d.count), 1);
+  const showEvery = Math.ceil(data.length / 10);
+
   return (
     <div>
-      <div className="flex items-baseline justify-between text-sm mb-1">
-        <span className="text-gray-700 truncate">{label}</span>
-        <span className="tabular-nums text-gray-500 text-xs">
-          {value.toLocaleString()} <span className="text-gray-400">({pct}%)</span>
-        </span>
-      </div>
-      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
-      </div>
-    </div>
-  );
-}
-
-function PeakHourChart({ data }: { data: { hour: number; count: number }[] }) {
-  const max = Math.max(1, ...data.map((d) => d.count));
-  return (
-    <div className="flex items-end gap-[3px] h-32 pt-2">
-      {data.map((d) => {
-        const h = Math.max(2, (d.count / max) * 100);
-        // 6/12/18 시 눈금만 표시 — 24개 다 라벨링하면 답답함.
-        const showTick = d.hour === 0 || d.hour === 6 || d.hour === 12 || d.hour === 18;
-        return (
-          <div
-            key={d.hour}
-            className="flex-1 min-w-0 h-full flex flex-col justify-end items-center"
-            title={`${d.hour}시: ${d.count}명 활동`}
-          >
+      <div className="flex items-end gap-px h-36 bg-gray-50 rounded-xl px-2 pt-2 pb-0">
+        {data.map((d, i) => {
+          const barPct = (d.count / max) * 100;
+          const isH = hovered === i;
+          return (
             <div
-              className="w-full bg-purple-400 hover:bg-purple-500 transition-colors rounded-t"
-              style={{ height: `${h}%` }}
-            />
-            {showTick && (
-              <span className="text-[9px] text-gray-400 mt-1 whitespace-nowrap">
-                {d.hour}시
-              </span>
+              key={i}
+              className="flex-1 flex flex-col justify-end items-center relative"
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
+              onTouchStart={() => setHovered(i)}
+            >
+              {isH && (
+                <div className="absolute bottom-full mb-1 bg-gray-900 text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap z-10 pointer-events-none">
+                  {d.label}: <strong>{d.count}명</strong>
+                </div>
+              )}
+              <div
+                className={`w-full rounded-t-sm transition-colors ${isH ? 'bg-green-500' : 'bg-green-300'}`}
+                style={{ height: `${barPct}%`, minHeight: d.count > 0 ? '2px' : '0' }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-px px-2 mt-1">
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 overflow-hidden text-center">
+            {i % showEvery === 0 && (
+              <span className="text-xs text-gray-400 block truncate">{d.label}</span>
             )}
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
 
-function SignupChart({ data }: { data: SignupTrendPoint[] }) {
-  const max = Math.max(1, ...data.map((d) => d.count));
+// ── Retention Card ────────────────────────────────────────────────────────────
+
+function RetentionCard({
+  label, stat, okPct, goodPct, hint,
+}: {
+  label: string; stat: RetentionStat; okPct: number; goodPct: number; hint: string;
+}) {
+  const p = stat.eligible ? Math.round((stat.kept / stat.eligible) * 100) : null;
+  const color = p != null ? healthColor(p, okPct, goodPct) : 'text-gray-400';
+
   return (
-    <div className="flex items-end gap-[3px] h-32 pt-2">
-      {data.map((d) => {
-        const h = Math.max(2, (d.count / max) * 100);
-        // First-of-month labels help scan without cluttering.
-        const day = Number(d.date.slice(-2));
-        const showTick = day === 1 || day === 15;
-        return (
-          <div key={d.date} className="flex-1 min-w-0 h-full flex flex-col justify-end items-center" title={`${d.date}: ${d.count}명`}>
-            <div className="w-full bg-green-400 hover:bg-green-500 transition-colors rounded-t" style={{ height: `${h}%` }} />
-            {showTick && <span className="text-[9px] text-gray-400 mt-1 whitespace-nowrap">{d.date.slice(5)}</span>}
-          </div>
-        );
-      })}
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold text-gray-700">{label}</span>
+        <span className="text-xs text-gray-400" title={hint}>ⓘ</span>
+      </div>
+      <div className={`text-3xl font-bold tabular-nums ${color}`}>
+        {p != null ? `${p}%` : '-'}
+      </div>
+      <div className="text-xs text-gray-400 mt-1">
+        {stat.eligible > 0
+          ? `${stat.kept} / ${stat.eligible}명`
+          : '대상 없음'}
+      </div>
+      <div className="mt-2 pt-2 border-t border-gray-50 text-xs text-gray-400">
+        양호 {okPct}%↑ · 우수 {goodPct}%↑
+      </div>
+      <div className="mt-1 text-xs text-gray-400 leading-relaxed">{hint}</div>
     </div>
   );
 }
 
-// 쿼리 실패(예: collectionGroup 인덱스 없음) 메시지를 그대로 보여주고,
-// 메시지 안의 Firebase 콘솔 링크를 뽑아 클릭 가능하게 만든다 → 직접 인덱스 생성.
-function IndexErrorNotice({ error }: { error: string }) {
-  const url = error.match(/https:\/\/console\.firebase\.google\.com\/\S+/)?.[0];
+// ── Cohort Table ──────────────────────────────────────────────────────────────
+
+function CohortTable({ cohorts }: { cohorts: CohortRow[] }) {
+  if (!cohorts.length) return <p className="text-sm text-gray-400 py-4">데이터 없음</p>;
+
   return (
-    <div className="py-5 px-3 text-xs leading-relaxed">
-      <div className="font-semibold text-red-600 mb-1">⚠️ 이 쿼리엔 인덱스가 필요해요</div>
-      <div className="text-gray-500 mb-3 break-all">{error}</div>
-      {url && (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block px-3 py-1.5 rounded-md bg-blue-600 text-white font-semibold hover:bg-blue-700"
-        >
-          → Firebase 콘솔에서 인덱스 만들기
-        </a>
-      )}
+    <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-100">
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">가입 월</th>
+            <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">가입자</th>
+            {['M0', 'M1', 'M2', 'M3', 'M4', 'M5'].map((m) => (
+              <th key={m} className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">{m}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {cohorts.map((row) => (
+            <tr key={row.cohortLabel} className="hover:bg-gray-50 transition-colors">
+              <td className="px-4 py-2.5 text-xs font-medium text-gray-700 whitespace-nowrap">{row.cohortLabel}</td>
+              <td className="px-3 py-2.5 text-center text-xs text-gray-500">{row.total}</td>
+              {row.months.map((cell, mi) => {
+                if (!cell) {
+                  return (
+                    <td key={mi} className="px-3 py-2.5 text-center">
+                      <span className="text-xs text-gray-300">-</span>
+                    </td>
+                  );
+                }
+                return (
+                  <td key={mi} className="px-1 py-1">
+                    <div
+                      className={`rounded-lg px-2 py-1.5 text-center text-xs font-semibold tabular-nums ${heatmapClass(cell.pct)}`}
+                      title={`${cell.count}명`}
+                    >
+                      {cell.pct}%{cell.isPartial ? '*' : ''}
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="px-4 py-2 border-t border-gray-50 text-xs text-gray-400">
+        * 아직 구간이 끝나지 않은 셀 — 실제 수치는 올라갈 수 있음 &nbsp;·&nbsp;
+        활성 기준: <code>lastActiveAt</code> (앱 열기) &nbsp;·&nbsp;
+        M0 = 가입 후 0~30일, M1 = 31~60일…
+      </div>
     </div>
   );
 }
 
-// ── Page ────────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function StatsOverviewPage() {
+type Period = '30d' | '12w' | '12m';
+
+export default function StatsPage() {
+  const [data, setData] = useState<StatsPageData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  const [engagement, setEngagement] = useState<EngagementRollup | null>(null);
-  const [device, setDevice] = useState<DeviceMix | null>(null);
-  const [trend, setTrend] = useState<SignupTrendPoint[]>([]);
-  const [funnel, setFunnel] = useState<OnboardingFunnel | null>(null);
-  const [matching, setMatching] = useState<MatchingStats | null>(null);
-  const [dataCol, setDataCol] = useState<DataCollectionStats | null>(null);
-  const [activity, setActivity] = useState<ActivityPatterns | null>(null);
+  const [period, setPeriod] = useState<Period>('30d');
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // Parallel — most helpers read `users` collection, but Firestore SDK
-        // pipelines these fine over one connection.
-        const [e, d, t, f, m, dc, ap] = await Promise.all([
-          getEngagementRollup(),
-          getDeviceMix(),
-          getSignupTrend(30),
-          getOnboardingFunnel(),
-          getMatchingStats(),
-          getDataCollectionStats(),
-          getActivityPatterns(7),
-        ]);
-        if (cancelled) return;
-        setEngagement(e);
-        setDevice(d);
-        setTrend(t);
-        setFunnel(f);
-        setMatching(m);
-        setDataCol(dc);
-        setActivity(ap);
-      } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    getStatsPageData()
+      .then(setData)
+      .catch((e) => console.error('[Stats]', e))
+      .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-20">
-        <LoadingSpinner />
-      </div>
-    );
-  }
+  if (loading) return <LoadingSpinner />;
+  if (!data) return <p className="text-sm text-gray-400 p-8">데이터를 불러오지 못했습니다.</p>;
 
-  if (err) {
-    return (
-      <div className="p-6 max-w-3xl">
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
-          데이터 로딩 실패: {err}
-        </div>
-      </div>
-    );
-  }
+  const { total, today, d7, d7prev, d30, d30prev, dailyAvg30,
+    dau, wau, mau, activeCount, notifEnabled, hasInterests,
+    trend30d, trend12w, trend12m, usersWithoutCreatedAt,
+    retention, cohorts } = data;
 
-  const deviceTotal = device ? device.ios + device.android + device.web + device.unknown : 0;
-  const answerRate = dataCol && dataCol.totalUsers > 0
-    ? Math.round((dataCol.usersWithTags / dataCol.totalUsers) * 100)
-    : 0;
-  const genderTotal = engagement
-    ? engagement.gender.female + engagement.gender.male + engagement.gender.unknown
-    : 0;
-  const ageTotal = engagement
-    ? engagement.ageBuckets.reduce((s, b) => s + b.count, 0)
-    : 0;
+  const stickinessDauMau = mau ? Math.round((dau / mau) * 100) : 0;
+  const stickinessWauMau = mau ? Math.round((wau / mau) * 100) : 0;
+  const trendData: TrendPoint[] = period === '30d' ? trend30d : period === '12w' ? trend12w : trend12m;
+  const periodLabel = period === '30d' ? '최근 30일 (일별)' : period === '12w' ? '최근 12주 (주별)' : '최근 12개월 (월별)';
 
   return (
-    <div className="p-6 space-y-8 max-w-6xl">
+    <div className="space-y-8">
       <Header
-        title="통계 오버뷰"
-        subtitle="티타 지금 어떻게 굴러가고 있나 한눈에. 상세는 각 섹션 링크로."
+        title="성장 통계"
+        subtitle="본인인증 완료 유저 기준"
       />
 
-      {/* ── 활성 사용자 ─────────────────────────────────── */}
+      {/* ── 1. 성장 지표 ───────────────────────────────────────────────────── */}
       <section>
-        <SectionHeading
-          title="활성 사용자"
-          hint="가입 완료(본인인증) 회원 기준 · lastActiveAt 하트비트 (앱 포그라운드 30분당 1회)"
-        />
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Metric
-            label="총 가입자"
-            value={engagement?.totalUsers ?? 0}
-            emphasis="strong"
-            hint={`본인인증 완료 기준 · 로그인만 ${engagement ? engagement.totalSignups - engagement.totalUsers : 0}명 제외`}
+        <SectionTitle hint="가입 완료 기준. 본인인증(NICE) 마친 유저만 집계합니다.">
+          📈 성장 지표
+        </SectionTitle>
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          <Chip
+            label="전체 유저"
+            value={total.toLocaleString()}
+            info="본인인증 완료 유저 총합"
           />
-          <Metric
-            label="DAU (24시간)"
-            value={engagement?.dau ?? 0}
-            hint={`오늘 새 가입 ${engagement?.newLast24h ?? 0}명`}
+          <Chip
+            label="오늘 가입"
+            value={today}
+            info="오늘 자정 이후 가입"
           />
-          <Metric
-            label="WAU (7일)"
-            value={engagement?.wau ?? 0}
-            hint={`주간 새 가입 ${engagement?.newLast7d ?? 0}명`}
+          <Chip
+            label="7일 가입"
+            value={d7}
+            badge={delta(d7, d7prev)}
+            info="직전 7일 대비 증감. 직전 기간이 0이면 '신규 +N' 표시"
           />
-          <Metric
-            label="MAU (30일)"
-            value={engagement?.mau ?? 0}
-            hint={`월간 새 가입 ${engagement?.newLast30d ?? 0}명`}
+          <Chip
+            label="30일 가입"
+            value={d30}
+            badge={delta(d30, d30prev)}
+            info="직전 30일 대비 증감"
           />
-          <Metric
-            label="Stickiness"
-            value={engagement?.stickiness ?? 0}
-            suffix="%"
-            hint="DAU/MAU · 시니어 커뮤 20%+가 건강"
+          <Chip
+            label="일평균 가입"
+            value={dailyAvg30}
+            sub="(최근 30일)"
+            info="최근 30일 가입 수 ÷ 30일"
           />
         </div>
       </section>
 
-      {/* ── 회원 구성 (성별 · 나이) ───────────────────── */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
-          <SectionHeading title="남녀 비율" hint="본인인증 완료 회원 기준" />
-          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
-            {engagement && genderTotal > 0 ? (
-              <>
-                <Bar label="여성" value={engagement.gender.female} total={genderTotal} color="#EC4899" />
-                <Bar label="남성" value={engagement.gender.male} total={genderTotal} color="#3B82F6" />
-                {engagement.gender.unknown > 0 && (
-                  <Bar label="미상" value={engagement.gender.unknown} total={genderTotal} color="#9CA3AF" />
-                )}
-              </>
-            ) : (
-              <div className="text-sm text-gray-400 py-6 text-center">데이터 없음</div>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <SectionHeading title="나이 분포" hint="본인인증 생년(yearOfBirth) 기준" />
-          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
-            {engagement && engagement.ageBuckets.length > 0 ? (
-              engagement.ageBuckets.map((b) => (
-                <Bar
-                  key={b.label}
-                  label={b.label}
-                  value={b.count}
-                  total={ageTotal}
-                  color={
-                    b.label === '45세 미만'
-                      ? '#EF4444'
-                      : b.label === '미상'
-                        ? '#9CA3AF'
-                        : '#10B981'
-                  }
-                />
-              ))
-            ) : (
-              <div className="text-sm text-gray-400 py-6 text-center">데이터 없음</div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 신규 가입 트렌드 ────────────────────────────── */}
+      {/* ── 2. 활성 지표 ───────────────────────────────────────────────────── */}
       <section>
-        <SectionHeading
-          title="신규 가입 트렌드 (최근 30일)"
-          hint="가입 완료 회원의 createdAt 일별 집계"
-        />
-        <div className="bg-white rounded-xl border border-gray-100 p-4">
-          <SignupChart data={trend} />
+        <SectionTitle hint="lastActiveAt(세션 시작)을 기준으로, 앱을 열어본 유저까지 포함합니다. 저장·매칭 없이 열어만 봐도 카운트됩니다.">
+          🔥 활성 지표 (세션 기준)
+        </SectionTitle>
+        <div className="flex gap-3 overflow-x-auto pb-1 mb-3">
+          <Chip
+            label="DAU"
+            value={dau}
+            sub={`MAU 대비 ${pct(dau, mau)}`}
+            info="오늘 앱을 열어본 인증 유저"
+          />
+          <Chip
+            label="WAU"
+            value={wau}
+            sub={`MAU 대비 ${pct(wau, mau)}`}
+            info="최근 7일 내 앱을 열어본 유저"
+          />
+          <Chip
+            label="MAU"
+            value={mau}
+            sub={`전체 대비 ${pct(mau, total)}`}
+            info="최근 30일 내 앱을 열어본 유저"
+          />
+          <Chip
+            label="고착도 DAU/MAU"
+            value={`${stickinessDauMau}%`}
+            sub={stickinessDauMau >= 20 ? '✅ 양호' : stickinessDauMau >= 10 ? '⚠️ 보통' : '❌ 낮음'}
+            info="DAU/MAU × 100. 20%↑ 양호, 5% 이하는 이탈 위험 신호. SNS 앱 평균 20~25%."
+          />
+          <Chip
+            label="고착도 WAU/MAU"
+            value={`${stickinessWauMau}%`}
+            sub={stickinessWauMau >= 40 ? '✅ 양호' : stickinessWauMau >= 20 ? '⚠️ 보통' : '❌ 낮음'}
+            info="WAU/MAU × 100. 40%↑ 양호, 60%↑ 우수. 주간 습관 형성 여부를 나타냅니다."
+          />
+        </div>
+
+        {/* 기타 지표 (비율 포함) */}
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          <Chip
+            label="활성 계정"
+            value={activeCount}
+            sub={`전체 대비 ${pct(activeCount, total)}`}
+            info="accountStatus = active (또는 미설정). 정지·차단 제외."
+          />
+          <Chip
+            label="알림 구독"
+            value={notifEnabled}
+            sub={`전체 대비 ${pct(notifEnabled, total)}`}
+            info="notificationEnabled = true. 50% 이상이면 양호."
+          />
+          <Chip
+            label="취향 완료"
+            value={hasInterests}
+            sub={`전체 대비 ${pct(hasInterests, total)}`}
+            info="interests 배열에 값이 있는 유저. 온보딩 완료율 지표."
+          />
         </div>
       </section>
 
-      {/* ── 활동 시간대 & 참여 유형 ─────────────────────── */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
-          <SectionHeading
-            title="Peak hour — 활동 시간대 (최근 7일)"
-            hint="users/{uid}/activity_daily.hoursActive 집계 · 각 시간대에 접속한 unique 유저 수"
-          />
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            {activity && activity.totalActiveUsers > 0 ? (
-              <>
-                <PeakHourChart data={activity.peakHours} />
-                <div className="text-[11px] text-gray-500 mt-3 flex justify-between">
-                  <span>최근 7일 활성 사용자 <span className="font-semibold text-gray-900">{activity.totalActiveUsers}</span>명</span>
-                  <span>평균 heartbeat <span className="font-semibold text-gray-900">{activity.avgHeartbeatsPerUser}</span> / 사용자</span>
-                </div>
-              </>
-            ) : activity?.error ? (
-              <IndexErrorNotice error={activity.error} />
-            ) : (
-              <div className="text-sm text-gray-400 py-8 text-center">
-                아직 활동 데이터가 없어요. 앱 배포 후 유저들이 앱을 열면
-                <br/>여기 시간대별 히스토그램이 뜹니다.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <SectionHeading
-            title="참여 유형 (최근 7일)"
-            hint="최근 7일 활동자들을 최고 참여 액션으로 분류"
-          />
-          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
-            {activity && activity.totalActiveUsers > 0 ? (
-              <>
-                <Bar
-                  label="💬 메시지까지 보냄"
-                  value={activity.engagementBuckets.messageSender}
-                  total={activity.totalActiveUsers}
-                  color="#1F4E3D"
-                />
-                <Bar
-                  label="🗨️ 대화 열어봄"
-                  value={activity.engagementBuckets.conversationOpener}
-                  total={activity.totalActiveUsers}
-                  color="#22C55E"
-                />
-                <Bar
-                  label="👋 웨이브 보냄"
-                  value={activity.engagementBuckets.waveSender}
-                  total={activity.totalActiveUsers}
-                  color="#F59E0B"
-                />
-                <Bar
-                  label="👀 열기만 함"
-                  value={activity.engagementBuckets.visitOnly}
-                  total={activity.totalActiveUsers}
-                  color="#9CA3AF"
-                />
-                <div className="pt-2 text-[11px] text-gray-500 border-t border-gray-100">
-                  💡 "열기만 함" 비율이 크면 홈 화면에 할 일이 없다는 신호. 재활성화 push나 그룹 대화 추천이 필요합니다.
-                </div>
-              </>
-            ) : activity?.error ? (
-              <IndexErrorNotice error={activity.error} />
-            ) : (
-              <div className="text-sm text-gray-400 py-8 text-center">
-                활동 데이터 대기 중.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 온보딩 Funnel + 디바이스 ─────────────────── */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
-          <SectionHeading
-            title="온보딩 진행"
-            href="/dashboard/onboarding"
-            hint="Firestore 상태 스냅샷 (세부 이탈 단계는 GA4 funnel 참조)"
-          />
-          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
-            {funnel && (
-              <>
-                <Bar label="완료" value={funnel.byCompleted} total={funnel.totalSignedUp} color="#10B981" />
-                <Bar label="프로필 작성 중 중단" value={funnel.byProfilePartial} total={funnel.totalSignedUp} color="#FBBF24" />
-                <Bar label="NICE 통과, 프로필 시작 전" value={funnel.byNiceDone} total={funnel.totalSignedUp} color="#F59E0B" />
-                <Bar label="가입만 함 (본인인증 전 이탈)" value={funnel.bySignedUp} total={funnel.totalSignedUp} color="#EF4444" />
-                <div className="pt-2 border-t border-gray-100 text-xs text-gray-500">
-                  최근 7일 미완료 사용자 <span className="font-semibold text-gray-900">{funnel.recentDropoffs.length}명</span> — 링크에서 follow-up 대상 확인
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <SectionHeading title="디바이스 사용" hint="가입 완료 회원 기준 · users.device.platform" />
-          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-3">
-            {device && deviceTotal > 0 ? (
-              <>
-                <Bar label="iOS" value={device.ios} total={deviceTotal} color="#111827" />
-                <Bar label="Android" value={device.android} total={deviceTotal} color="#22C55E" />
-                {device.web > 0 && <Bar label="Web" value={device.web} total={deviceTotal} color="#3B82F6" />}
-                {device.unknown > 0 && (
-                  <Bar label="미상 (기록 전 가입자)" value={device.unknown} total={deviceTotal} color="#9CA3AF" />
-                )}
-              </>
-            ) : (
-              <div className="text-sm text-gray-400 py-6 text-center">디바이스 정보 없음</div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 매칭 & 웨이브 ─────────────────────────────── */}
+      {/* ── 3. 가입 트렌드 차트 ────────────────────────────────────────────── */}
       <section>
-        <SectionHeading
-          title="매칭 & 웨이브"
-          href="/dashboard/matching"
-          hint="waves 컬렉션 status 기반"
-        />
+        <div className="flex items-center justify-between mb-3">
+          <SectionTitle hint="본인인증 완료 유저의 가입일(createdAt) 기준. 빈 날도 0으로 표시합니다.">
+            📊 가입 트렌드
+          </SectionTitle>
+          <div className="flex rounded-xl overflow-hidden border border-gray-200 text-xs flex-shrink-0">
+            {(['30d', '12w', '12m'] as Period[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  period === p ? 'bg-green-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {p === '30d' ? '30일' : p === '12w' ? '12주' : '12개월'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-xs text-gray-400 mb-3">{periodLabel} · 막대에 커서를 올리면 상세 수치</p>
+          <BarChart data={trendData} />
+          {usersWithoutCreatedAt > 0 && (
+            <p className="text-xs text-gray-400 mt-3 pt-3 border-t border-gray-50">
+              ⚠️ createdAt 없는 유저 <strong>{usersWithoutCreatedAt}명</strong>은 차트에 포함되지 않음
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* ── 4. 생존율 (Retention) ──────────────────────────────────────────── */}
+      <section>
+        <SectionTitle hint="가입 후 N일 이상 지난 유저 중, N일째 이후에도 앱을 열어본 비율. 분모는 해당 기간이 경과한 유저로만 제한합니다.">
+          💊 생존율 (Retention)
+        </SectionTitle>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Metric
-            label="매칭 통과율"
-            value={matching?.acceptanceRate ?? 0}
-            suffix="%"
-            hint="응답 중 accepted 비율"
-            emphasis="strong"
+          <RetentionCard
+            label="D1 (다음날 복귀)"
+            stat={retention.d1}
+            okPct={30} goodPct={50}
+            hint="가입 다음날에도 앱을 열었는가. 소셜앱 평균 30~40%, 50% 이상이면 우수."
           />
-          <Metric
-            label="웨이브 응답률"
-            value={matching?.responseRate ?? 0}
-            suffix="%"
-            hint="전체 웨이브 중 응답 (accept+decline)"
+          <RetentionCard
+            label="D7 (1주 생존)"
+            stat={retention.d7}
+            okPct={15} goodPct={30}
+            hint="가입 7일 뒤에도 활성. 20% 이상이면 건강한 습관 형성 신호."
           />
-          <Metric
-            label="총 웨이브"
-            value={matching?.totalWaves ?? 0}
-            hint={`최근 24시간 ${matching?.wavesLast24h ?? 0} · 7일 ${matching?.wavesLast7d ?? 0}`}
+          <RetentionCard
+            label="D30 (1개월 생존)"
+            stat={retention.d30}
+            okPct={8} goodPct={20}
+            hint="가입 30일 이후에도 사용. 10%↑ 양호, 20%↑ 우수."
           />
-          <Metric
-            label="대화 시작률"
-            value={matching?.conversationStartRate ?? 0}
-            suffix="%"
-            hint={`총 대화 ${matching?.totalConversations ?? 0}개`}
+          <RetentionCard
+            label="D90 (3개월 생존)"
+            stat={retention.d90}
+            okPct={5} goodPct={15}
+            hint="가입 90일 이후에도 사용. 5%↑ 양호, 15%↑ 충성 유저층."
           />
         </div>
-        <div className="grid grid-cols-3 gap-3 mt-3">
-          <Metric label="pending 웨이브" value={matching?.pendingWaves ?? 0} emphasis="muted" />
-          <Metric label="accepted" value={matching?.acceptedWaves ?? 0} emphasis="muted" />
-          <Metric label="declined" value={matching?.declinedWaves ?? 0} emphasis="muted" />
-        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          ※ 활성 기준 = <code>lastActiveAt</code>(최근 세션 시작). D7 분모가 D30보다 크더라도 정상 — 각 행의 분모가 다릅니다.
+        </p>
       </section>
 
-      {/* ── 결큐 데이터 ───────────────────────────────── */}
+      {/* ── 5. 코호트 리텐션 표 ───────────────────────────────────────────── */}
       <section>
-        <SectionHeading
-          title="결큐 답변 & 데이터 수집"
-          href="/dashboard/data-collection"
-          hint="users/{uid}/dailyQuestions 집계"
-        />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Metric
-            label="결큐 답변한 사용자"
-            value={answerRate}
-            suffix="%"
-            hint={`${dataCol?.usersWithTags ?? 0} / ${dataCol?.totalUsers ?? 0}명 (dailyQuestionTags 있음)`}
-            emphasis="strong"
-          />
-          <Metric
-            label="누적 답변"
-            value={dataCol?.totalDailyAnswers ?? 0}
-            hint={`오늘 ${dataCol?.todaysDailyAnswers ?? 0}건`}
-          />
-          <Metric
-            label="사용자당 평균"
-            value={dataCol?.avgAnswersPerUser?.toFixed(1) ?? '0.0'}
-            hint="유의미한 매칭엔 5+ 필요"
-          />
-          <Metric
-            label="임베딩 완료"
-            value={dataCol?.usersWithEmbedding ?? 0}
-            hint="매칭 후보에 나타나는 사용자"
-          />
+        <SectionTitle hint="가입 월별로 묶어, 가입 후 각 30일 구간에 앱을 열어본 비율. * = 해당 구간이 아직 진행 중.">
+          🗓️ 가입 월 코호트 리텐션 (M0~M5)
+        </SectionTitle>
+        <CohortTable cohorts={cohorts} />
+        <div className="flex flex-wrap gap-2 mt-3 text-xs text-gray-400">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-600 inline-block" /> 50%+</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-400 inline-block" /> 35~49%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-200 inline-block" /> 20~34%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 inline-block" /> 10~19%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block" /> 1~9%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-50 border inline-block" /> 0%</span>
         </div>
+        <p className="text-xs text-gray-400 mt-2">
+          건강한 앱 기준: M1 이상 30%↑ 유지, M3 이상 15%↑. 코호트별 하락 기울기가 완만할수록 리텐션 구조가 좋습니다.
+        </p>
       </section>
-
-      {/* ── Footer hint ─────────────────────────────── */}
-      <p className="text-xs text-gray-400 leading-relaxed">
-        Tip: DAU 일별 트렌드처럼 시계열이 필요한 지표는 Firebase Analytics (GA4)를 활용하세요. 여기 나오는 DAU/WAU/MAU는 <span className="font-mono">lastActiveAt</span> 하트비트에 기반한 스냅샷 값 (해당 창 안에서 최소 한 번이라도 앱 포그라운드로 진입한 사용자 수)입니다.
-      </p>
     </div>
   );
 }
