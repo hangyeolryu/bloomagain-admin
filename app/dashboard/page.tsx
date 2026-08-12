@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getDashboardStats, getAdminAlerts, getReports } from '@/lib/firestore';
 import type { DashboardStats, AdminAlert, Report } from '@/types';
 import StatsCard from '@/components/ui/StatsCard';
+import StickinessCard from '@/components/dashboard/StickinessCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import StatWarnings from '@/components/ui/StatWarnings';
 import Badge from '@/components/ui/Badge';
@@ -64,6 +65,9 @@ export default function DashboardPage() {
           {/* ── 사용자 현황 ── */}
           <div>
             <SectionHeading>사용자 현황</SectionHeading>
+            <div className="mb-4">
+              <StickinessCard />
+            </div>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               <StatsCard
                 label="총 사용자"
