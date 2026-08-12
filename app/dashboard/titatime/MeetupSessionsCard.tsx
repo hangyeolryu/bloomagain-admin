@@ -12,6 +12,9 @@ import { useCallback, useEffect, useState } from 'react';
 type Status = 'open' | 'almost' | 'closed' | 'planning';
 
 interface Session {
+  cardTitle?: string;
+  cardColor?: string;
+  cardImageUrl?: string;
   id: string;
   district: string;
   dateLabel: string;
@@ -44,7 +47,20 @@ const EMPTY_FORM = {
   description: '',
   published: true,
   sortOrder: 0,
+  // 홈 카드 겉모습(선택). 비우면 앱 기본(찻잔 아이콘·기본 초록·날짜 제목).
+  cardTitle: '',
+  cardColor: '',
+  cardImageUrl: '',
 };
+
+// 앱 팔레트에서 고른 프리셋 — 자유 hex도 되지만, 아무 색이나 고르면 브랜드가
+// 흩어진다. 광고 캐러셀(블러시)과 앱 테마(크림·세이지)에서만 뽑았다.
+const CARD_COLORS: { hex: string; label: string }[] = [
+  { hex: '', label: '기본(초록)' },
+  { hex: '#F7E4E1', label: '블러시' },
+  { hex: '#F2EDE3', label: '크림' },
+  { hex: '#D6E2D8', label: '세이지' },
+];
 
 type FormState = typeof EMPTY_FORM;
 
@@ -81,6 +97,9 @@ export default function MeetupSessionsCard() {
     setForm({
       district: s.district ?? '',
       dateLabel: s.dateLabel ?? '',
+      cardTitle: s.cardTitle ?? '',
+      cardColor: s.cardColor ?? '',
+      cardImageUrl: s.cardImageUrl ?? '',
       spotsLabel: s.spotsLabel ?? '',
       status: s.status,
       description: s.description ?? '',
@@ -276,6 +295,77 @@ export default function MeetupSessionsCard() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2"
               />
             </label>
+            <div className="sm:col-span-2 rounded-lg border border-gray-200 bg-white p-3">
+              <p className="mb-2 text-xs font-semibold text-gray-600">
+                홈 카드 겉모습 (선택) — 비우면 기본 모양으로 나갑니다
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">카드 제목</span>
+                  <input
+                    value={form.cardTitle}
+                    onChange={(e) => setForm({ ...form, cardTitle: e.target.value })}
+                    placeholder="비우면 '날짜 티타임 · 동네'"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">카드 이미지 주소 (https)</span>
+                  <input
+                    value={form.cardImageUrl}
+                    onChange={(e) => setForm({ ...form, cardImageUrl: e.target.value })}
+                    placeholder="비우면 찻잔 아이콘"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  />
+                </label>
+                <div className="text-sm sm:col-span-2">
+                  <span className="mb-1 block font-medium text-gray-700">카드 색</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {CARD_COLORS.map((c) => (
+                      <button
+                        key={c.hex}
+                        type="button"
+                        onClick={() => setForm({ ...form, cardColor: c.hex })}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                          form.cardColor === c.hex
+                            ? 'border-emerald-600 ring-1 ring-emerald-600'
+                            : 'border-gray-300'
+                        }`}
+                        style={c.hex ? { backgroundColor: c.hex } : undefined}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                    <input
+                      value={form.cardColor}
+                      onChange={(e) => setForm({ ...form, cardColor: e.target.value })}
+                      placeholder="#RRGGBB 직접 입력"
+                      className="w-36 rounded-lg border border-gray-300 px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                </div>
+                {/* 미리보기 — 앱 카드와 같은 구성. 저장 전에 눈으로 확인한다. */}
+                <div
+                  className="sm:col-span-2 flex items-center gap-3 rounded-xl border border-black/10 p-4"
+                  style={{ backgroundColor: form.cardColor.match(/^#[0-9a-fA-F]{6}$/) ? form.cardColor : '#E4EAE6' }}
+                >
+                  {form.cardImageUrl.startsWith('https://') ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={form.cardImageUrl} alt="" className="h-11 w-11 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-lg">차</span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-extrabold text-gray-900">
+                      {form.cardTitle || `${form.dateLabel || '날짜'} 티타임 · ${form.district || '동네'}`}
+                    </p>
+                    <p className="truncate text-xs text-gray-600">
+                      {(form.description || '자리 안내 첫 줄이 여기 보여요').split('\n')[0]}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="flex items-center gap-4 sm:col-span-2">
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input
