@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getStatsPageData } from '@/lib/stats';
+import { getEngagementRollup, type EngagementRollup } from '@/lib/firestore';
 import type { StatsPageData, TrendPoint, RetentionStat, CohortRow } from '@/lib/stats';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
@@ -59,6 +60,23 @@ function Chip({
       </div>
       {sub && <span className="text-xs text-gray-400">{sub}</span>}
       {info && <span className="text-xs text-gray-400 mt-1 leading-relaxed">{info}</span>}
+    </div>
+  );
+}
+
+function HBar({ label, value, total, color }: {
+  label: string; value: number; total: number; color: string;
+}) {
+  const p = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <span className="w-16 shrink-0 text-gray-600">{label}</span>
+      <div className="h-3 flex-1 overflow-hidden rounded-full bg-gray-100">
+        <div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: color }} />
+      </div>
+      <span className="w-20 shrink-0 text-right tabular-nums text-gray-700">
+        {value.toLocaleString()}명 · {p}%
+      </span>
     </div>
   );
 }
@@ -210,10 +228,14 @@ type Period = '30d' | '12w' | '12m';
 
 export default function StatsPage() {
   const [data, setData] = useState<StatsPageData | null>(null);
+  // 성비·나이 분포. 8/11에 이 페이지를 성장 지표로 재작성하면서 빠뜨렸다가
+  // 되살렸다 — 자리 정원·성비 판단(전원 남성 방 침묵 신호)에 매일 쓰는 수치다.
+  const [engagement, setEngagement] = useState<EngagementRollup | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>('30d');
 
   useEffect(() => {
+    getEngagementRollup().then(setEngagement).catch(() => {});
     getStatsPageData()
       .then(setData)
       .catch((e) => console.error('[Stats]', e))
@@ -335,6 +357,47 @@ export default function StatsPage() {
             sub={`전체 대비 ${pct(hasInterests, total)}`}
             info="interests 배열에 값이 있는 유저. 온보딩 완료율 지표."
           />
+        </div>
+      </section>
+
+      {/* ── 회원 구성 (성비 · 나이) ─────────────────────────────────────────
+          8/11 재작성 때 빠뜨렸던 섹션. 데이터는 기존 getEngagementRollup 그대로. */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div>
+          <SectionTitle hint="본인인증 완료 회원 기준">남녀 비율</SectionTitle>
+          <div className="space-y-3 rounded-xl border border-gray-100 bg-white p-4">
+            {engagement ? (
+              <>
+                <HBar label="여성" value={engagement.gender.female}
+                  total={engagement.gender.female + engagement.gender.male + engagement.gender.unknown}
+                  color="#EC4899" />
+                <HBar label="남성" value={engagement.gender.male}
+                  total={engagement.gender.female + engagement.gender.male + engagement.gender.unknown}
+                  color="#3B82F6" />
+                {engagement.gender.unknown > 0 && (
+                  <HBar label="미상" value={engagement.gender.unknown}
+                    total={engagement.gender.female + engagement.gender.male + engagement.gender.unknown}
+                    color="#9CA3AF" />
+                )}
+              </>
+            ) : (
+              <div className="py-6 text-center text-sm text-gray-400">불러오는 중…</div>
+            )}
+          </div>
+        </div>
+        <div>
+          <SectionTitle hint="본인인증 생년 기준">나이 분포</SectionTitle>
+          <div className="space-y-3 rounded-xl border border-gray-100 bg-white p-4">
+            {engagement && engagement.ageBuckets.length > 0 ? (
+              engagement.ageBuckets.map((b) => (
+                <HBar key={b.label} label={b.label} value={b.count}
+                  total={engagement.ageBuckets.reduce((s2, x) => s2 + x.count, 0)}
+                  color={b.label === '45세 미만' ? '#EF4444' : b.label === '미상' ? '#9CA3AF' : '#10B981'} />
+              ))
+            ) : (
+              <div className="py-6 text-center text-sm text-gray-400">불러오는 중…</div>
+            )}
+          </div>
         </div>
       </section>
 
