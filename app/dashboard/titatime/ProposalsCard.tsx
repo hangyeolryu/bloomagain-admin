@@ -16,10 +16,13 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   getSeatProposals,
+  getSeatProposalFunnel,
   decideSeatProposal,
   addProposerSignup,
   type SeatProposal,
 } from '@/lib/firestore';
+
+type Funnel = { shown: number; tapped: number; uniqueViewers: number };
 
 const SLOT_KO: Record<string, string> = {
   day: '평일 낮',
@@ -32,6 +35,7 @@ const fmt = (d?: Date) =>
 
 export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: () => void }) {
   const [rows, setRows] = useState<SeatProposal[] | null>(null);
+  const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -41,6 +45,10 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
     } catch (e) {
       setErr(e instanceof Error ? e.message : '불러오기 실패');
     }
+    // 퍼널은 부가 정보 — 못 불러와도 제안 목록은 그대로 보여준다.
+    try {
+      setFunnel(await getSeatProposalFunnel());
+    } catch {/* 조용히 접는다 */}
   }, []);
 
   useEffect(() => {
@@ -115,6 +123,17 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
           <span className="ml-2 tabular-nums text-gray-400">{pending.length}</span>
         </h2>
       </div>
+      {/* 입구 퍼널 — 제출 0건일 때 "원하는 사람이 없다"와 "아무도 못 봤다"를
+          가른다. 노출이 전부 운영자 계정이던 날도 있었다(2026-08-14). */}
+      {funnel && (
+        <p className="mt-1 text-xs text-gray-500">
+          입구: 노출 <b className="tabular-nums">{funnel.shown}</b>회
+          (사람 <b className="tabular-nums">{funnel.uniqueViewers}</b>명) ·
+          눌러봄 <b className="tabular-nums">{funnel.tapped}</b>회
+          {funnel.uniqueViewers <= 1 && funnel.shown > 0 &&
+            ' — 사실상 운영자만 본 상태예요(그 빌드가 유저에게 아직 안 감)'}
+        </p>
+      )}
       <p className="mt-1 text-xs leading-relaxed text-gray-500">
         승인하면 <b>안 보이는 초안</b>이 만들어지고 제안한 분이 첫 신청자로 올라갑니다.
         아래 자리 목록에서 날짜·설명을 채워 게시하면 그때 앱에 뜹니다.

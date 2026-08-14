@@ -163,6 +163,34 @@ export interface SeatProposal {
   sessionId?: string;
 }
 
+/**
+ * 자리 제안 **입구** 퍼널 — 링크를 몇 명이 보고, 몇 명이 눌렀나.
+ *
+ * 제안 카드(아래)는 제출된 것만 보여줘서, 제출 0건일 때 "아무도 원하지
+ * 않는다"인지 "아무도 못 봤다"인지 구분이 안 됐다. 실제로 2026-08-14 확인
+ * 결과 노출 전부가 운영자 본인 계정이었다 — 그 빌드가 유저에게 아직 안 간
+ * 것. 이 구분이 없으면 버튼을 키우는 헛수고를 하게 된다.
+ *
+ * uniqueViewers를 함께 주는 이유: 같은 사람이 홈을 열 때마다 노출이 쌓이므로
+ * 총 노출만 보면 부풀려 읽힌다.
+ */
+export async function getSeatProposalFunnel(): Promise<{
+  shown: number; tapped: number; uniqueViewers: number;
+}> {
+  const snap = await getDocs(query(
+    collection(db, 'teatime_funnel'),
+    where('eventId', '==', 'seat_proposal'),
+  ));
+  let shown = 0; let tapped = 0;
+  const viewers = new Set<string>();
+  snap.forEach((d) => {
+    const x = d.data();
+    if (x.phase === 'cardShown') { shown++; viewers.add((x.uid as string) ?? ''); }
+    if (x.phase === 'cardTap') tapped++;
+  });
+  return { shown, tapped, uniqueViewers: viewers.size };
+}
+
 export async function getSeatProposals(): Promise<SeatProposal[]> {
   // status 단일 필드 쿼리 + 클라 정렬 — 복합 인덱스 없이 간다(문서 수가 적다).
   const snap = await getDocs(collection(db, 'seat_proposals'));
