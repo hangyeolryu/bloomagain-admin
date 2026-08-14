@@ -4482,6 +4482,9 @@ export async function getMoimStats(): Promise<MoimStats> {
 // users/{uid}/posts·circles/{cid}/posts·루트 posts 를 collectionGroup으로 한 번에.
 export interface AdminPost {
   postId: string;
+  /** 문서 전체 경로 — 티타픽 토글이 이 경로로 update 한다. */
+  path: string;
+  titaPick: boolean;
   authorUid: string;
   authorName: string;
   region: string | null; // 작성자 프로필의 동네(시·군·구) — 게시물엔 지역이 없다
@@ -4491,6 +4494,18 @@ export interface AdminPost {
   likes: number;
   comments: number;
   createdAt: Date | null;
+}
+
+/**
+ * 티타픽 켜고 끄기 — 회원 글 중 티타가 고른 글에 표시를 단다.
+ * 앱 카드에 '티타픽' 필이 뜬다. 룰이 titaPick·updatedAt만 허용하므로
+ * 내용은 건드릴 수 없다(픽은 추천이지 편집이 아니다).
+ */
+export async function setTitaPick(path: string, on: boolean): Promise<void> {
+  await updateDoc(doc(db, path), {
+    titaPick: on,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function getAllPosts(max = 300): Promise<AdminPost[]> {
@@ -4541,6 +4556,8 @@ export async function getAllPosts(max = 300): Promise<AdminPost[]> {
           : 0;
     return {
       postId: d.id,
+      path: d.ref.path,
+      titaPick: p.titaPick === true,
       authorUid,
       authorName: info.get(authorUid)?.name ?? '(?)',
       region: info.get(authorUid)?.region ?? null,

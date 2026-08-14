@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { getAllPosts, type AdminPost } from '@/lib/firestore';
+import { getAllPosts, setTitaPick, type AdminPost } from '@/lib/firestore';
 
 function fmt(d: Date | null) {
   if (!d) return '—';
@@ -22,6 +22,21 @@ export default function PostsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [region, setRegion] = useState<string>('전체');
   const [q, setQ] = useState('');
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+
+  // 티타픽 토글 — 성공하면 목록의 그 글만 갱신한다(전체 재조회는 느리다).
+  async function togglePick(p: AdminPost) {
+    setBusyPath(p.path);
+    try {
+      await setTitaPick(p.path, !p.titaPick);
+      setPosts((prev) => prev?.map((x) =>
+        x.path === p.path ? { ...x, titaPick: !p.titaPick } : x) ?? prev);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyPath(null);
+    }
+  }
 
   useEffect(() => {
     getAllPosts()
@@ -51,7 +66,7 @@ export default function PostsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="전체 게시물" subtitle="모든 사용자 글을 최신순으로 (읽기 전용)" />
+      <Header title="전체 게시물" subtitle="모든 사용자 글을 최신순으로 · 티타픽 선정" />
       <main className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -124,6 +139,9 @@ export default function PostsPage() {
                     {p.source === 'circle' && (
                       <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">모임 글</span>
                     )}
+                    {p.titaPick && (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">티타픽</span>
+                    )}
                     <span className="ml-auto text-xs text-gray-400">{fmt(p.createdAt)}</span>
                   </div>
                   <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-gray-800 line-clamp-4">
@@ -132,6 +150,19 @@ export default function PostsPage() {
                   <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
                     <span className="tabular-nums">♥ {p.likes}</span>
                     <span className="tabular-nums">💬 {p.comments}</span>
+                    {/* 티타픽 — 앱 카드에 '티타픽' 필이 뜬다. 내용은 못 고친다(룰). */}
+                    <button
+                      type="button"
+                      disabled={busyPath === p.path}
+                      onClick={() => togglePick(p)}
+                      className={`ml-auto rounded-lg border px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${
+                        p.titaPick
+                          ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                          : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {p.titaPick ? '티타픽 해제' : '티타픽으로'}
+                    </button>
                   </div>
                 </div>
               </li>
