@@ -12,7 +12,9 @@
  * 목록을 보여주고, 버튼을 눌러야 나간다. 사람에게 가는 말은 사람이 정한다.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
@@ -81,6 +83,34 @@ export default function SeatRoster({
   const { user } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // 자리별 운영 메모(테이블 배치 등). seat_table_plans/{sessionId} —
+  // 당일 이 화면을 열고 참석 체크를 하므로, 배치도 여기 있어야 찾는다.
+  const [plan, setPlan] = useState<string>('');
+  const [planDirty, setPlanDirty] = useState(false);
+  const [planSaving, setPlanSaving] = useState(false);
+
+  useEffect(() => {
+    getDoc(doc(db, 'seat_table_plans', session.id))
+      .then((d) => setPlan((d.data()?.text as string) ?? ''))
+      .catch(() => {});
+  }, [session.id]);
+
+  async function savePlan() {
+    setPlanSaving(true);
+    try {
+      await setDoc(doc(db, 'seat_table_plans', session.id), {
+        sessionId: session.id,
+        text: plan,
+        updatedAt: serverTimestamp(),
+      });
+      setPlanDirty(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '메모 저장 실패');
+    } finally {
+      setPlanSaving(false);
+    }
+  }
 
   // 문자 준비 상태. 열기 전에는 아무 일도 일어나지 않는다.
   const [drafting, setDrafting] = useState(false);
@@ -221,6 +251,32 @@ export default function SeatRoster({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* ── 운영 메모 (테이블 배치) ──────────────────────────────────────
+          당일 참석 체크를 하는 화면이라 배치도 여기 있어야 찾는다. */}
+      {(plan || planDirty) && (
+        <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold text-gray-700">운영 메모 · 테이블 배치</p>
+            {planDirty && (
+              <button
+                type="button"
+                disabled={planSaving}
+                onClick={savePlan}
+                className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {planSaving ? '저장 중…' : '메모 저장'}
+              </button>
+            )}
+          </div>
+          <textarea
+            value={plan}
+            onChange={(e) => { setPlan(e.target.value); setPlanDirty(true); }}
+            rows={Math.max(4, plan.split('\n').length)}
+            className="w-full rounded-lg border border-gray-200 bg-white p-3 font-mono text-xs leading-relaxed text-gray-800"
+          />
+        </div>
       )}
 
       {/* ── 확인 문자 ─────────────────────────────────────────────────────
