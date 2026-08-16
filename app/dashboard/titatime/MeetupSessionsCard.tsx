@@ -7,7 +7,7 @@
 // 22일처럼 미뤄야 하면: 해당 세션을 '게시 해제'하거나 status를 '편성예정'으로.
 // 게시된 open/almost 세션이 하나도 없으면 웹은 자동으로 "편성 예정"만 보여준다.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type Status = 'open' | 'almost' | 'closed' | 'planning';
 
@@ -68,6 +68,7 @@ export default function MeetupSessionsCard() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null); // null=닫힘, ''=새로만들기
+  const formRef = useRef<HTMLDivElement | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -108,6 +109,10 @@ export default function MeetupSessionsCard() {
     });
     setEditingId(s.id);
     setNotice(null);
+    // 폼은 목록 **위**에 렌더된다 — 아래쪽 자리에서 수정을 누르면 화면 밖에
+    // 열려 "안 눌리는 것"처럼 보인다. 끌어온다(2026-08-16).
+    requestAnimationFrame(() =>
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
   async function save() {
@@ -244,7 +249,7 @@ export default function MeetupSessionsCard() {
 
       {/* 편집 폼 */}
       {editingId !== null && (
-        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+        <div ref={formRef} className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-sm">
               <span className="mb-1 block font-medium text-gray-700">동네</span>
