@@ -224,6 +224,17 @@ export default function SeatRoster({
                 <span className="ml-2 text-xs text-gray-400">
                   {genderKo(r.gender)} · {r.region || '지역미상'}
                 </span>
+                {r.compositionPref && (
+                  <span
+                    className={`ml-2 rounded-full border px-1.5 py-0.5 text-[11px] ${
+                      r.compositionPref === 'same_gender'
+                        ? 'border-amber-300 bg-amber-50 text-amber-800'
+                        : 'border-gray-200 bg-gray-50 text-gray-500'
+                    }`}
+                  >
+                    {r.compositionPref === 'same_gender' ? '같은 성별끼리' : '섞여도 좋아요'}
+                  </span>
+                )}
                 {r.confirmSentAt && (
                   <span className="ml-2 text-[11px] text-gray-400">
                     문자 {fmt(r.confirmSentAt)}

@@ -105,6 +105,11 @@ export interface TeatimeSignup {
   createdAt?: Date;
   /** 신청 후 탈퇴한 사람. 정원·성비에서 빼야 한다. */
   withdrawn?: boolean;
+  /**
+   * 자리 구성 선호 (신청 시트에서 본인이 고름). same_gender를 고른 분이
+   * 있는 자리에는 반대 성별 공지를 보내지 않는 게 운영 원칙. 없으면 무관.
+   */
+  compositionPref?: 'same_gender' | 'mixed_ok';
 
   /**
    * 참석 상태. 신청과 참석은 다르다 — 무료에 보증금도 없어서 신청이 곧
@@ -282,6 +287,7 @@ export async function getTeatimeSignups(): Promise<TeatimeSignup[]> {
       gender: x.gender as string | undefined,
       status: (x.status as string) ?? 'requested',
       createdAt: toDate(x.createdAt),
+      compositionPref: x.compositionPref as TeatimeSignup['compositionPref'],
       attendance: (x.attendance as TeatimeSignup['attendance']) ?? 'pending',
       attendanceAt: toDate(x.attendanceAt),
       confirmSentAt: toDate(x.confirmSentAt),
