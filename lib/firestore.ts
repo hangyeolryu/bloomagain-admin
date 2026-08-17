@@ -125,6 +125,11 @@ export interface TeatimeSignup {
    */
   attendance?: 'pending' | 'coming' | 'cant' | 'attended' | 'noshow';
   attendanceAt?: Date;
+  /**
+   * 본인이 당일 앱에서 누른 '도착했어요' 시각. 운영자가 자리에 없는 모임의
+   * 참석 근거. 운영자 기록(attendance)이 있으면 그쪽이 우선.
+   */
+  selfCheckInAt?: Date;
   /** 확인 문자를 보낸 시각. 두 번 보내지 않으려고 남긴다. */
   confirmSentAt?: Date;
 }
@@ -290,6 +295,7 @@ export async function getTeatimeSignups(): Promise<TeatimeSignup[]> {
       compositionPref: x.compositionPref as TeatimeSignup['compositionPref'],
       attendance: (x.attendance as TeatimeSignup['attendance']) ?? 'pending',
       attendanceAt: toDate(x.attendanceAt),
+      selfCheckInAt: toDate(x.selfCheckInAt),
       confirmSentAt: toDate(x.confirmSentAt),
     };
   });

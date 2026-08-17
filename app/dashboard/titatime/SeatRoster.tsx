@@ -151,6 +151,11 @@ export default function SeatRoster({
   const coming = live.filter((r) => r.attendance === 'coming').length;
   const cant = live.filter((r) => r.attendance === 'cant').length;
   const attended = live.filter((r) => r.attendance === 'attended').length;
+  // 참석 근거 = 운영자 '왔음' 또는 본인 체크인(운영자가 '안 왔음'으로 뒤집지 않은 한).
+  // 운영자가 자리에 없던 모임에서도 대화방을 만들 수 있게 하는 수.
+  const present = live.filter(
+    (r) => r.attendance === 'attended' || (r.selfCheckInAt && r.attendance !== 'noshow' && r.attendance !== 'cant'),
+  ).length;
   const noshow = live.filter((r) => r.attendance === 'noshow').length;
   const asked = live.filter((r) => r.confirmSentAt).length;
 
@@ -230,13 +235,13 @@ export default function SeatRoster({
         <Chip label="왔음" n={attended} tone="text-blue-800 bg-blue-50" />
         <Chip label="안 왔음" n={noshow} tone="text-red-700 bg-red-50" />
         <Chip label="문자 보냄" n={asked} tone="text-gray-600 bg-gray-100" />
-        {attended >= 2 && (
+        {present >= 2 && (
           <button
             onClick={createRoom}
             disabled={roomBusy}
             className="rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
           >
-            {roomBusy ? '만드는 중…' : `참석자 대화방 만들기 (${attended}명)`}
+            {roomBusy ? '만드는 중…' : `참석자 대화방 만들기 (${present}명)`}
           </button>
         )}
       </div>
@@ -273,6 +278,11 @@ export default function SeatRoster({
                     }`}
                   >
                     {r.compositionPref === 'same_gender' ? '같은 성별끼리' : '섞여도 좋아요'}
+                  </span>
+                )}
+                {r.selfCheckInAt && (
+                  <span className="ml-2 rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800">
+                    본인 체크인 {fmt(r.selfCheckInAt)}
                   </span>
                 )}
                 {r.confirmSentAt && (
