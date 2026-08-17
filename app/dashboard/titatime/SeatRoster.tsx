@@ -112,6 +112,34 @@ export default function SeatRoster({
     }
   }
 
+  // 참석자 대화방 — 연락처를 주고받게 하지 않는다. 대신 '왔음'으로 기록된
+  // 사람들만의 앱 안 대화방을 만들어준다 (안전장치가 유지되는 유일한 경로).
+  const [roomBusy, setRoomBusy] = useState(false);
+  const [roomResult, setRoomResult] = useState<string | null>(null);
+
+  async function createRoom() {
+    if (roomBusy) return;
+    if (!window.confirm("'왔음'으로 기록된 분들만의 대화방을 만들고, 각자에게 알림을 보냅니다. 진행할까요?")) return;
+    setRoomBusy(true);
+    setErr(null);
+    try {
+      const fns = getFunctions(undefined, 'asia-northeast3');
+      const call = httpsCallable(fns, 'createTeatimeChatRoom');
+      const res = (await call({ sessionId: session.id })).data as {
+        conversationId: string; created: boolean; memberCount: number | null; pushed?: number;
+      };
+      setRoomResult(
+        res.created
+          ? `대화방을 만들었어요 — ${res.memberCount}명, 알림 ${res.pushed ?? 0}건`
+          : '이미 이 자리의 대화방이 있어요.',
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '대화방 생성 실패');
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
   // 문자 준비 상태. 열기 전에는 아무 일도 일어나지 않는다.
   const [drafting, setDrafting] = useState(false);
   const [text, setText] = useState('');
@@ -202,7 +230,19 @@ export default function SeatRoster({
         <Chip label="왔음" n={attended} tone="text-blue-800 bg-blue-50" />
         <Chip label="안 왔음" n={noshow} tone="text-red-700 bg-red-50" />
         <Chip label="문자 보냄" n={asked} tone="text-gray-600 bg-gray-100" />
+        {attended >= 2 && (
+          <button
+            onClick={createRoom}
+            disabled={roomBusy}
+            className="rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {roomBusy ? '만드는 중…' : `참석자 대화방 만들기 (${attended}명)`}
+          </button>
+        )}
       </div>
+      {roomResult && (
+        <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">{roomResult}</p>
+      )}
 
       {err && (
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>
