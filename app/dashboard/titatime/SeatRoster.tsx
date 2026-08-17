@@ -281,8 +281,19 @@ export default function SeatRoster({
                   </span>
                 )}
                 {r.selfCheckInAt && (
-                  <span className="ml-2 rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800">
+                  <span
+                    className={`ml-2 rounded-full border px-1.5 py-0.5 text-[11px] ${
+                      r.selfCheckInVerified === false
+                        ? 'border-amber-300 bg-amber-50 text-amber-800'
+                        : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                    }`}
+                  >
                     본인 체크인 {fmt(r.selfCheckInAt)}
+                    {r.selfCheckInVerified === false
+                      ? ' · 위치 미확인'
+                      : r.selfCheckInDistanceM != null
+                        ? ` · ${r.selfCheckInDistanceM}m`
+                        : ''}
                   </span>
                 )}
                 {r.confirmSentAt && (

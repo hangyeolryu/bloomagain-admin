@@ -130,6 +130,9 @@ export interface TeatimeSignup {
    * 참석 근거. 운영자 기록(attendance)이 있으면 그쪽이 우선.
    */
   selfCheckInAt?: Date;
+  /** 체크인 시 위치가 장소 500m 안이었는지. false면 좌표 없는 자리의 무검증 체크인. */
+  selfCheckInVerified?: boolean;
+  selfCheckInDistanceM?: number;
   /** 확인 문자를 보낸 시각. 두 번 보내지 않으려고 남긴다. */
   confirmSentAt?: Date;
 }
@@ -296,6 +299,8 @@ export async function getTeatimeSignups(): Promise<TeatimeSignup[]> {
       attendance: (x.attendance as TeatimeSignup['attendance']) ?? 'pending',
       attendanceAt: toDate(x.attendanceAt),
       selfCheckInAt: toDate(x.selfCheckInAt),
+      selfCheckInVerified: x.selfCheckInVerified as boolean | undefined,
+      selfCheckInDistanceM: x.selfCheckInDistanceM as number | undefined,
       confirmSentAt: toDate(x.confirmSentAt),
     };
   });
