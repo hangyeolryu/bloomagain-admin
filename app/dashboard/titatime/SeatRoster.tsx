@@ -147,7 +147,8 @@ export default function SeatRoster({
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
-  const live = useMemo(() => rows.filter((r) => !r.withdrawn), [rows]);
+  // 취소한 신청은 명단에서 뺀다 — 앱의 '신청 취소하기'(3.1.26+)가 status를 남긴다.
+  const live = useMemo(() => rows.filter((r) => !r.withdrawn && r.status !== 'cancelled'), [rows]);
   const coming = live.filter((r) => r.attendance === 'coming').length;
   const cant = live.filter((r) => r.attendance === 'cant').length;
   const attended = live.filter((r) => r.attendance === 'attended').length;
