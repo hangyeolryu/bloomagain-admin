@@ -302,7 +302,9 @@ export default function SeatRoster({
                   </span>
                 )}
               </div>
-              <div className="flex shrink-0 flex-wrap gap-1">
+              {/* 모바일(현장)에선 2×2 큰 버튼 — 50대 운영자가 서서 엄지로 누른다.
+                  데스크톱은 기존 컴팩트 한 줄. */}
+              <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap sm:gap-1">
                 {ATT.map((a) => {
                   const on = r.attendance === a.key;
                   return (
@@ -311,7 +313,7 @@ export default function SeatRoster({
                       type="button"
                       disabled={busy === r.id}
                       onClick={() => mark(r, a.key)}
-                      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition disabled:opacity-40 ${
+                      className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition disabled:opacity-40 sm:px-2.5 sm:py-1 sm:text-xs ${
                         on ? a.tone : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
                       }`}
                     >
@@ -355,7 +357,7 @@ export default function SeatRoster({
           정원을 늘리는 건 노쇼를 상쇄할 뿐이고, 확인 문자는 노쇼를 줄인다.
           그래서 명단 바로 아래에 둔다. */}
       {live.length > 0 && !drafting && (
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3">
+        <div className="mt-4 flex flex-col gap-3 rounded-xl bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-relaxed text-gray-600">
             만나기 <b>이틀 전</b>에 확인 문자를 보내면 안 오실 분을 미리 알 수 있어요.
             문구를 만들어 보여드리고, <b>확인하신 뒤 눌러야</b> 나갑니다.

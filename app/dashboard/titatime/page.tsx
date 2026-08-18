@@ -53,7 +53,7 @@ export default function TitatimePage() {
   }, [load]);
 
   return (
-    <div className="max-w-5xl space-y-8 p-6">
+    <div className="max-w-5xl space-y-6 p-0 sm:space-y-8 sm:p-6">
       <Header
         title="티타임 자리 관리"
         subtitle="날짜·장소가 정해진 자리를 열고, 몇 명이 신청했는지 봅니다."
