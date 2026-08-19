@@ -20,6 +20,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   setSignupAttendance,
   markConfirmSent,
+  cancelSignup,
   type TeatimeSignup,
   type AttendanceStatus,
 } from '@/lib/firestore';
@@ -306,6 +307,26 @@ export default function SeatRoster({
               {/* 모바일(현장)에선 2×2 큰 버튼 — 50대 운영자가 서서 엄지로 누른다.
                   데스크톱은 기존 컴팩트 한 줄. */}
               <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap sm:gap-1">
+                <button
+                  type="button"
+                  disabled={busy === r.id}
+                  onClick={async () => {
+                    if (!window.confirm(`${r.name || '이 분'}의 신청을 취소할까요? 자리가 다른 분께 열립니다.`)) return;
+                    setBusy(r.id);
+                    setErr(null);
+                    try {
+                      await cancelSignup(r.id, user?.uid);
+                      onChanged();
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : '취소 실패');
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                  className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-400 hover:bg-gray-50 disabled:opacity-40 sm:order-last sm:px-2.5 sm:py-1"
+                >
+                  Cancel signup
+                </button>
                 {ATT.map((a) => {
                   const on = r.attendance === a.key;
                   return (

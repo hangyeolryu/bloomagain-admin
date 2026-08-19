@@ -139,6 +139,18 @@ export interface TeatimeSignup {
 
 export type AttendanceStatus = NonNullable<TeatimeSignup['attendance']>;
 
+/**
+ * 신청 취소 — 회원이 전화·현장에서 못 온다고 알려오면 운영자가 대신 취소한다.
+ * 삭제가 아니라 status='cancelled' (서버 집계가 취소를 빼고 세어 자리가 열린다).
+ */
+export async function cancelSignup(signupId: string, byUid?: string): Promise<void> {
+  await updateDoc(doc(db, 'teatime_signups', signupId), {
+    status: 'cancelled',
+    cancelledAt: serverTimestamp(),
+    cancelledBy: byUid ?? 'admin',
+  });
+}
+
 /** 참석 상태를 기록한다. 누가 언제 눌렀는지도 남긴다. */
 export async function setSignupAttendance(
   signupId: string,
