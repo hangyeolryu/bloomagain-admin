@@ -34,10 +34,10 @@ type Session = {
 };
 
 const ATT: { key: AttendanceStatus; label: string; tone: string }[] = [
-  { key: 'coming', label: '온다고 함', tone: 'bg-emerald-50 text-emerald-800 border-emerald-300' },
-  { key: 'cant', label: '못 온다고 함', tone: 'bg-gray-100 text-gray-600 border-gray-300' },
-  { key: 'attended', label: '왔음', tone: 'bg-blue-50 text-blue-800 border-blue-300' },
-  { key: 'noshow', label: '안 왔음', tone: 'bg-red-50 text-red-700 border-red-300' },
+  { key: 'coming', label: 'Coming', tone: 'bg-emerald-50 text-emerald-800 border-emerald-300' },
+  { key: 'cant', label: "Can't", tone: 'bg-gray-100 text-gray-600 border-gray-300' },
+  { key: 'attended', label: 'Came', tone: 'bg-blue-50 text-blue-800 border-blue-300' },
+  { key: 'noshow', label: 'No-show', tone: 'bg-red-50 text-red-700 border-red-300' },
 ];
 
 const fmt = (d?: Date) =>
@@ -45,9 +45,9 @@ const fmt = (d?: Date) =>
 
 function genderKo(g?: string): string {
   const v = (g ?? '').toLowerCase().trim();
-  if (['female', 'f', '여', '여성', 'woman'].includes(v)) return '여성';
-  if (['male', 'm', '남', '남성', 'man'].includes(v)) return '남성';
-  return '미상';
+  if (['female', 'f', '여', '여성', 'woman'].includes(v)) return 'F';
+  if (['male', 'm', '남', '남성', 'man'].includes(v)) return 'M';
+  return '-';
 }
 
 /**
@@ -119,7 +119,7 @@ export default function SeatRoster({
 
   async function createRoom() {
     if (roomBusy) return;
-    if (!window.confirm("'왔음'으로 기록된 분들만의 대화방을 만들고, 각자에게 알림을 보냅니다. 진행할까요?")) return;
+    if (!window.confirm("Create a group chat with everyone marked present, and notify them?")) return;
     setRoomBusy(true);
     setErr(null);
     try {
@@ -130,8 +130,8 @@ export default function SeatRoster({
       };
       setRoomResult(
         res.created
-          ? `대화방을 만들었어요 — ${res.memberCount}명, 알림 ${res.pushed ?? 0}건`
-          : '이미 이 자리의 대화방이 있어요.',
+          ? `Chat room created — ${res.memberCount} members, ${res.pushed ?? 0} notified`
+          : 'This seat already has a chat room.',
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : '대화방 생성 실패');
@@ -218,31 +218,31 @@ export default function SeatRoster({
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <div className="text-base font-bold text-gray-900">{session.dateLabel || '(날짜 미정)'}</div>
+          <div className="text-base font-bold text-gray-900">{session.dateLabel || '(no date)'}</div>
           <div className="mt-0.5 text-xs text-gray-500">
-            {session.district || '(지역 미정)'} · {session.spotsLabel || ''}
+            {session.district || '(no area)'} · {session.spotsLabel || ''}
           </div>
         </div>
         <div className="text-right">
           <div className="text-3xl font-bold tabular-nums text-gray-900">{live.length}</div>
-          <div className="text-xs text-gray-400">신청</div>
+          <div className="text-xs text-gray-400">signups</div>
         </div>
       </div>
 
       {/* 신청과 참석을 나란히 둔다. 이 둘의 차이가 다음 자리 정원의 근거다. */}
       <div className="mt-3 flex flex-wrap gap-2 text-xs">
-        <Chip label="온다고 함" n={coming} tone="text-emerald-800 bg-emerald-50" />
-        <Chip label="못 온다고 함" n={cant} tone="text-gray-600 bg-gray-100" />
-        <Chip label="왔음" n={attended} tone="text-blue-800 bg-blue-50" />
-        <Chip label="안 왔음" n={noshow} tone="text-red-700 bg-red-50" />
-        <Chip label="문자 보냄" n={asked} tone="text-gray-600 bg-gray-100" />
+        <Chip label="Coming" n={coming} tone="text-emerald-800 bg-emerald-50" />
+        <Chip label="Can't" n={cant} tone="text-gray-600 bg-gray-100" />
+        <Chip label="Came" n={attended} tone="text-blue-800 bg-blue-50" />
+        <Chip label="No-show" n={noshow} tone="text-red-700 bg-red-50" />
+        <Chip label="Msg sent" n={asked} tone="text-gray-600 bg-gray-100" />
         {present >= 2 && (
           <button
             onClick={createRoom}
             disabled={roomBusy}
             className="rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
           >
-            {roomBusy ? '만드는 중…' : `참석자 대화방 만들기 (${present}명)`}
+            {roomBusy ? 'Creating…' : `Create group chat (${present})`}
           </button>
         )}
       </div>
@@ -255,7 +255,7 @@ export default function SeatRoster({
       )}
 
       {live.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-400">아직 신청이 없어요.</p>
+        <p className="mt-4 text-sm text-gray-400">No signups yet.</p>
       ) : (
         <ul className="mt-4 divide-y divide-gray-100 border-t border-gray-100">
           {live.map((r) => (
@@ -265,7 +265,7 @@ export default function SeatRoster({
                   href={`/dashboard/users/view?id=${r.uid}`}
                   className="text-sm font-medium text-blue-600 hover:underline"
                 >
-                  {r.name || '이름없음'}
+                  {r.name || '(no name)'}
                 </Link>
                 <span className="ml-2 text-xs text-gray-400">
                   {genderKo(r.gender)} · {r.region || '지역미상'}
@@ -278,7 +278,7 @@ export default function SeatRoster({
                         : 'border-gray-200 bg-gray-50 text-gray-500'
                     }`}
                   >
-                    {r.compositionPref === 'same_gender' ? '같은 성별끼리' : '섞여도 좋아요'}
+                    {r.compositionPref === 'same_gender' ? 'same gender' : 'mixed ok'}
                   </span>
                 )}
                 {r.selfCheckInAt && (
@@ -289,9 +289,9 @@ export default function SeatRoster({
                         : 'border-emerald-300 bg-emerald-50 text-emerald-800'
                     }`}
                   >
-                    본인 체크인 {fmt(r.selfCheckInAt)}
+                    Self check-in {fmt(r.selfCheckInAt)}
                     {r.selfCheckInVerified === false
-                      ? ' · 위치 미확인'
+                      ? ' · unverified'
                       : r.selfCheckInDistanceM != null
                         ? ` · ${r.selfCheckInDistanceM}m`
                         : ''}
@@ -299,7 +299,7 @@ export default function SeatRoster({
                 )}
                 {r.confirmSentAt && (
                   <span className="ml-2 text-[11px] text-gray-400">
-                    문자 {fmt(r.confirmSentAt)}
+                    Msg {fmt(r.confirmSentAt)}
                   </span>
                 )}
               </div>
@@ -333,7 +333,7 @@ export default function SeatRoster({
       {(plan || planDirty) && (
         <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-semibold text-gray-700">운영 메모 · 테이블 배치</p>
+            <p className="text-xs font-semibold text-gray-700">Notes · seating</p>
             {planDirty && (
               <button
                 type="button"
@@ -341,7 +341,7 @@ export default function SeatRoster({
                 onClick={savePlan}
                 className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
               >
-                {planSaving ? '저장 중…' : '메모 저장'}
+                {planSaving ? 'Saving…' : 'Save note'}
               </button>
             )}
           </div>

@@ -55,8 +55,8 @@ export default function TitatimePage() {
   return (
     <div className="max-w-5xl space-y-6 p-0 sm:space-y-8 sm:p-6">
       <Header
-        title="티타임 자리 관리"
-        subtitle="날짜·장소가 정해진 자리를 열고, 몇 명이 신청했는지 봅니다."
+        title="Seats"
+        subtitle="Open a seat, see who signed up, check attendance."
       />
 
       {err ? (
@@ -75,11 +75,11 @@ export default function TitatimePage() {
       <MeetupSessionsCard />
 
       <p className="text-xs text-gray-500">
-        전체 신청 이력은{' '}
+        Full signup history:{' '}
         <Link href="/dashboard/teatime" className="font-medium text-emerald-700 underline">
-          티타임 신청 명단
+          All signups
         </Link>
-        에서 봅니다.
+
       </p>
     </div>
   );
@@ -94,13 +94,16 @@ function SignupSummary({
   signups: TeatimeSignup[];
   onChanged: () => void;
 }) {
-  const live = sessions.filter((s) => s.published !== false && s.status !== 'closed');
+  // 마감(closed)된 자리도 보여준다 — 참석 체크('왔음')는 신청이 닫힌 뒤,
+  // 모임 당일에 하는 일이다. 마감을 숨기면 정작 당일에 명단을 못 연다
+  // (2026-08-19 현장에서 발견). 준비 중(planning)만 뺀다.
+  const live = sessions.filter((s) => s.published !== false && s.status !== 'planning');
 
   if (live.length === 0) {
     return (
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
         <p className="text-sm text-gray-600">
-          지금 열린 자리가 없습니다. 아래에서 새 자리를 만드세요.
+          No seats yet. Create one below.
         </p>
       </div>
     );
