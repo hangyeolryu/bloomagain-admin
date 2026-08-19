@@ -171,6 +171,12 @@ export interface SeatProposal {
   region?: string;
   timeSlots: string[];
   note?: string;
+  /** 제안자가 고른 자리 구성. 결큐 답이 아니라 이게 그 자리의 규칙이 된다. */
+  genderPref?: 'women' | 'men' | 'any';
+  agePref?: 'near' | 'wide' | 'any';
+  /** 제안자 = 그 자리의 리더. 승인 시 세션으로 넘어간다. */
+  leaderUid?: string;
+  leaderName?: string;
   status: 'pending' | 'accepted' | 'declined';
   createdAt?: Date;
   sessionId?: string;
@@ -217,6 +223,10 @@ export async function getSeatProposals(): Promise<SeatProposal[]> {
         activity: x.activity as string | undefined,
         region: x.region as string | undefined,
         timeSlots: (x.timeSlots as string[]) ?? [],
+      genderPref: x.genderPref as SeatProposal['genderPref'],
+      agePref: x.agePref as SeatProposal['agePref'],
+      leaderUid: x.leaderUid as string | undefined,
+      leaderName: x.leaderName as string | undefined,
         note: x.note as string | undefined,
         status: (x.status as SeatProposal['status']) ?? 'pending',
         createdAt: toDate(x.createdAt),

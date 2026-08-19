@@ -24,6 +24,16 @@ import {
 
 type Funnel = { shown: number; tapped: number; uniqueViewers: number };
 
+const GENDER_KO: Record<string, string> = {
+  women: '여성분들끼리',
+  men: '남성분들끼리',
+  any: '함께',
+};
+const AGE_KO: Record<string, string> = {
+  near: '제 또래로',
+  wide: '조금 넓게',
+  any: '상관없음',
+};
 const SLOT_KO: Record<string, string> = {
   day: '평일 낮',
   evening: '평일 저녁',
@@ -72,9 +82,14 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
           description:
             `[회원 제안] ${p.activity ?? ''} · ${p.region ?? ''} · ` +
             `${p.timeSlots.map((s) => SLOT_KO[s] ?? s).join('·')}\n` +
+            `원하는 구성: ${GENDER_KO[p.genderPref ?? 'any']} · ${AGE_KO[p.agePref ?? 'any']}\n` +
             (p.note ? `제안한 분의 말: ${p.note}\n` : '') +
-            `제안: ${p.nickname ?? p.uid.slice(0, 8)}\n\n` +
+            `제안·리더: ${p.nickname ?? p.uid.slice(0, 8)}\n\n` +
             `(게시 전에 이 안내문을 실제 자리 설명으로 바꿔주세요)`,
+          // 제안자가 리더. 자리 카드와 명단에서 주인이 보인다.
+          leaderUid: p.leaderUid ?? p.uid,
+          leaderName: p.nickname ?? null,
+          genderPref: p.genderPref ?? 'any',
         }),
       });
       const json = await res.json();
@@ -162,6 +177,18 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
                   <span className="ml-2 text-gray-600">
                     {p.region} · {p.timeSlots.map((s) => SLOT_KO[s] ?? s).join('·')}
                   </span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[11px] ${
+                      p.genderPref && p.genderPref !== 'any'
+                        ? 'border-amber-300 bg-amber-50 text-amber-800'
+                        : 'border-gray-200 bg-gray-50 text-gray-500'
+                    }`}>
+                      {GENDER_KO[p.genderPref ?? 'any']}
+                    </span>
+                    <span className="rounded-full border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-500">
+                      {AGE_KO[p.agePref ?? 'any']}
+                    </span>
+                  </div>
                   {p.note && (
                     <p className="mt-1 text-xs leading-relaxed text-gray-600">“{p.note}”</p>
                   )}
