@@ -151,6 +151,43 @@ export async function cancelSignup(signupId: string, byUid?: string): Promise<vo
   });
 }
 
+
+/**
+ * 장소 대장 — 자리를 열 때마다 네이버에서 장소를 새로 찾고 좌표를 뽑고
+ * 안내문을 새로 쓰던 일을 없앤다. 한 번 적어두면 다음 자리는 "장소 고르고
+ * 날짜 넣기"로 끝난다. 자동화의 첫 재료(2026-08-20).
+ */
+export interface Venue {
+  id: string;
+  name: string;
+  area: string;                 // 동네 · 가까운 역
+  type?: 'exhibition' | 'brunch' | 'cafe' | 'walk' | 'movie' | string;
+  lat?: number;
+  lng?: number;
+  mapUrl?: string;
+  needsReservation?: boolean;
+  reservationNote?: string;     // 예약 방법·주의점
+  priceNote?: string;           // 1인 비용
+  suggestedCapacity?: number;
+  visited?: boolean;            // 가본 곳인지
+  notes?: string;
+}
+
+export async function getVenues(): Promise<Venue[]> {
+  const snap = await getDocs(collection(db, 'venues'));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<Venue, 'id'>) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function saveVenue(id: string, v: Omit<Venue, 'id'>): Promise<void> {
+  await setDoc(
+    doc(db, 'venues', id),
+    { ...v, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+}
+
 /** 참석 상태를 기록한다. 누가 언제 눌렀는지도 남긴다. */
 export async function setSignupAttendance(
   signupId: string,

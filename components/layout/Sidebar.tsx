@@ -38,6 +38,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/titatime', label: '티타임 자리 관리', icon: '🫖', section: '만나기' },
   { href: '/dashboard/teatime', label: '티타임 신청 명단', icon: '📋', section: '만나기' },
   { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️', section: '만나기' },
+  { href: '/dashboard/venues', label: '장소 대장', icon: '📍', section: '만나기' },
   { href: '/dashboard/moim-builder', label: '티타임 편성 (QA)', icon: '🪑', section: '만나기' },
   { href: '/dashboard/matching', label: '매칭 모니터링', icon: '💞', section: '만나기' },
   { href: '/dashboard/district-density', label: '지역 밀집도', icon: '🗺️', section: '만나기' },
