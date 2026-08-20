@@ -33,6 +33,36 @@ const EMPTY: Omit<Venue, 'id'> = {
   visited: false,
 };
 
+
+/**
+ * 장소 + 날짜 → 자리 안내문 초안.
+ *
+ * 매번 처음부터 쓰던 글을 장소 정보로 조립한다. 약속 네 줄과 세 명 규칙은
+ * 자리마다 같아야 하는 것들이라 여기에 못 박는다 — 빠뜨리면 현장에서 문제가
+ * 되는 항목들이다(각자 계산·호칭·돈 얘기·연락처).
+ */
+function draftDescription(v: Venue): string {
+  const lines: string[] = [];
+  if (v.notes) lines.push(v.notes, '');
+  lines.push(
+    '세 분 이상 모이면 열리는 자리예요. 그보다 적으면 다음 기회로 미루고 미리 알려드릴게요.',
+    '',
+    '이 자리의 약속',
+    v.priceNote
+      ? `- ${v.priceNote} — 각자 주문하고 각자 계산해요`
+      : '- 식사·음료는 각자 주문하고 각자 계산해요',
+    '- 부르고 싶은 호칭으로 편하게 불러요. 나이·직업을 묻지 않아도 됩니다',
+    '- 돈·투자·물건 판매 이야기는 하지 않기로 해요',
+    '- 연락처는 주고받지 않으셔도 돼요. 신청하시면 함께하실 분들의 대화방이 열려요',
+    '',
+    '자세한 위치는 신청하신 분께 안내드려요.',
+  );
+  if (v.needsReservation) {
+    lines.push('', `(운영 메모 — 게시 전에 지울 것: ${v.reservationNote ?? '예약 필요'})`);
+  }
+  return lines.join('\n');
+}
+
 export default function VenuesPage() {
   const [venues, setVenues] = useState<Venue[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -40,6 +70,8 @@ export default function VenuesPage() {
   const [form, setForm] = useState<Omit<Venue, 'id'>>(EMPTY);
   const [newId, setNewId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState<string | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +112,41 @@ export default function VenuesPage() {
     }
   }
 
+  /** 장소를 골라 자리 초안을 만든다. 날짜는 비워 두므로 앱에는 안 뜬다. */
+  async function createSeat(v: Venue) {
+    if (creating) return;
+    setCreating(v.id);
+    setErr(null);
+    setCreated(null);
+    try {
+      const res = await fetch('/api/backend/titatime-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          district: v.area || v.name,
+          dateLabel: '', // 날짜를 채워야 앱에 뜬다
+          spotsLabel: `정원 ${v.suggestedCapacity ?? 6}명 · 선착순 모집`,
+          capacity: v.suggestedCapacity ?? 6,
+          status: 'open',
+          published: false,
+          sortOrder: 5,
+          description: draftDescription(v),
+          cardTitle: v.name,
+          mapUrl: v.mapUrl ?? null,
+          lat: v.lat ?? null,
+          lng: v.lng ?? null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? '자리 생성 실패');
+      setCreated(v.name);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '자리 생성 실패');
+    } finally {
+      setCreating(null);
+    }
+  }
+
   const input: React.CSSProperties = {
     width: '100%',
     padding: '8px 10px',
@@ -97,6 +164,12 @@ export default function VenuesPage() {
 
       {err && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>
+      )}
+      {created && (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {created} 자리 초안을 만들었어요. <b>자리 관리</b>에서 날짜를 넣고 게시하세요 —
+          날짜가 비어 있으면 앱에 뜨지 않습니다.
+        </p>
       )}
 
       {!venues ? (
@@ -144,12 +217,21 @@ export default function VenuesPage() {
                     <p className="mt-1 text-xs leading-relaxed text-gray-500">{v.notes}</p>
                   )}
                 </div>
-                <button
-                  onClick={() => startEdit(v)}
-                  className="shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  고치기
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => createSeat(v)}
+                    disabled={creating === v.id}
+                    className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                  >
+                    {creating === v.id ? '만드는 중…' : '이 장소로 자리 만들기'}
+                  </button>
+                  <button
+                    onClick={() => startEdit(v)}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    고치기
+                  </button>
+                </div>
               </div>
             </li>
           ))}
