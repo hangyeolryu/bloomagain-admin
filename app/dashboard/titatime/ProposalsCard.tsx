@@ -34,6 +34,16 @@ const AGE_KO: Record<string, string> = {
   wide: '조금 넓게',
   any: '상관없음',
 };
+const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** '2026-08-30' → '8월 30일 (일)'. 요일이 붙어야 운영자가 바로 판단한다. */
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(y, m - 1, d);
+  return `${m}월 ${d}일 (${WEEKDAY_KO[dt.getDay()]})`;
+}
+
 const SLOT_KO: Record<string, string> = {
   day: '평일 낮',
   evening: '평일 저녁',
@@ -83,6 +93,9 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
             `[회원 제안] ${p.activity ?? ''} · ${p.region ?? ''} · ` +
             `${p.timeSlots.map((s) => SLOT_KO[s] ?? s).join('·')}\n` +
             `원하는 구성: ${GENDER_KO[p.genderPref ?? 'any']} · ${AGE_KO[p.agePref ?? 'any']}\n` +
+            (p.preferredDates?.length
+              ? `나오실 수 있는 날: ${p.preferredDates.map(fmtDate).join(', ')}\n`
+              : '') +
             (p.note ? `제안한 분의 말: ${p.note}\n` : '') +
             `제안·리더: ${p.nickname ?? p.uid.slice(0, 8)}\n\n` +
             `(게시 전에 이 안내문을 실제 자리 설명으로 바꿔주세요)`,
@@ -189,6 +202,23 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
                       {AGE_KO[p.agePref ?? 'any']}
                     </span>
                   </div>
+                  {p.preferredDates?.length ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <span className="text-[11px] text-gray-500">나오실 수 있는 날</span>
+                      {p.preferredDates.map((d) => (
+                        <span
+                          key={d}
+                          className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800"
+                        >
+                          {fmtDate(d)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      날짜를 안 고르셨어요 — 여쭤보고 정하세요
+                    </p>
+                  )}
                   {p.note && (
                     <p className="mt-1 text-xs leading-relaxed text-gray-600">“{p.note}”</p>
                   )}

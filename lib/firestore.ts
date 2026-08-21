@@ -219,6 +219,8 @@ export interface SeatProposal {
   activity?: string;
   region?: string;
   timeSlots: string[];
+  /** 제안한 분이 직접 고른, 나오실 수 있는 날 (YYYY-MM-DD). 없을 수 있다. */
+  preferredDates?: string[];
   note?: string;
   /** 제안자가 고른 자리 구성. 결큐 답이 아니라 이게 그 자리의 규칙이 된다. */
   genderPref?: 'women' | 'men' | 'any';
