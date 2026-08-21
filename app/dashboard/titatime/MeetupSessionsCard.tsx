@@ -8,10 +8,13 @@
 // 게시된 open/almost 세션이 하나도 없으면 웹은 자동으로 "편성 예정"만 보여준다.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ExcludeMembers from './ExcludeMembers';
 
 type Status = 'open' | 'almost' | 'closed' | 'planning';
 
 interface Session {
+  /** 이 자리에서 뺀 회원. 서버가 목록에서 걸러 준다. */
+  excludeUids?: string[];
   cardTitle?: string;
   cardColor?: string;
   cardImageUrl?: string;
@@ -441,6 +444,13 @@ export default function MeetupSessionsCard() {
                 <div className="mt-0.5 text-sm text-gray-700">{s.dateLabel || '날짜 미정'}</div>
                 <div className="text-xs text-gray-500">{s.spotsLabel}</div>
                 {s.description && <div className="mt-0.5 text-xs text-gray-400">{s.description}</div>}
+                <div className="mt-1">
+                  <ExcludeMembers
+                    sessionId={s.id}
+                    excludeUids={s.excludeUids ?? []}
+                    onSaved={load}
+                  />
+                </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                 <button
