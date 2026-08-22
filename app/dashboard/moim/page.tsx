@@ -199,10 +199,12 @@ export default function MoimDashboardPage() {
         <section>
           <h2 className="mb-3 text-sm font-bold text-gray-900">자리표 (대기 수요)</h2>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Tile label="대기 중 자리표" value={t.active} strong hint={`전체 ${t.total}장 · 쉬는 중 ${t.paused}장`} />
-            <Tile label="대화 자리 (전 세계 풀)" value={t.chat} />
-            <Tile label="만나는 자리 (동네 풀)" value={t.meet} />
-            <Tile label="'이번 주 안엔'" value={t.thisWeek} hint="긴급 시드 우선" />
+            {/* 장이 아니라 사람을 센다. 한 분이 여러 장 내면 장 수는 부풀고,
+                그 숫자를 보고 자리를 열면 최소 인원을 못 채운다. */}
+            <Tile label="대기 중인 분" value={t.active} strong hint={`자리표 ${t.total}장 · 쉬는 중 ${t.paused}명`} />
+            <Tile label="대화 자리 (전 세계 풀)" value={t.chat} hint="명" />
+            <Tile label="만나는 자리 (동네 풀)" value={t.meet} hint="명" />
+            <Tile label="'이번 주 안엔'" value={t.thisWeek} hint="명 · 긴급 시드 우선" />
           </div>
         </section>
 

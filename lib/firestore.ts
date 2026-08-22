@@ -261,6 +261,51 @@ export async function getSeatProposalFunnel(): Promise<{
   return { shown, tapped, uniqueViewers: viewers.size };
 }
 
+/** 자리 하나의 깔때기. 고유 인원과 총 횟수를 함께 준다 — 같은 사람이 홈을
+ * 열 때마다 노출이 쌓여서, 총 횟수만 보면 부풀려 읽힌다. */
+export interface TeatimeFunnel {
+  shown: number;        // 카드 노출 횟수
+  viewers: number;      // 카드를 본 고유 인원
+  tapped: number;       // 카드를 눌러 시트를 연 고유 인원
+  closed: number;       // 시트를 열었다가 그냥 닫은 횟수
+  signup: number;       // 신청까지 간 횟수
+}
+
+/**
+ * 자리별 깔때기. teatime_funnel 전체를 한 번 읽어 eventId로 묶는다.
+ *
+ * "본 사람은 많은데 아무도 안 눌렀다"와 "눌러는 봤는데 다 그냥 닫았다"는
+ * 완전히 다른 문제다. 앞은 카드가 안 끌린 것이고, 뒤는 안내를 보고 마음이
+ * 식은 것이다. 고칠 곳이 다르니 나눠서 보여준다.
+ */
+export async function getTeatimeFunnelByEvent(): Promise<Record<string, TeatimeFunnel>> {
+  const snap = await getDocs(collection(db, 'teatime_funnel'));
+  const out: Record<string, TeatimeFunnel> = {};
+  const viewers: Record<string, Set<string>> = {};
+  const tappers: Record<string, Set<string>> = {};
+  snap.forEach((d) => {
+    const x = d.data();
+    const id = (x.eventId as string) ?? '';
+    if (!id) return;
+    out[id] ??= { shown: 0, viewers: 0, tapped: 0, closed: 0, signup: 0 };
+    viewers[id] ??= new Set();
+    tappers[id] ??= new Set();
+    const uid = (x.uid as string) ?? '';
+    switch (x.phase) {
+      case 'cardShown': out[id].shown++; if (uid) viewers[id].add(uid); break;
+      case 'cardTap': if (uid) tappers[id].add(uid); break;
+      case 'sheetClose': out[id].closed++; break;
+      case 'signup': out[id].signup++; break;
+      default: break;
+    }
+  });
+  for (const id of Object.keys(out)) {
+    out[id].viewers = viewers[id].size;
+    out[id].tapped = tappers[id].size;
+  }
+  return out;
+}
+
 export async function getSeatProposals(): Promise<SeatProposal[]> {
   // status 단일 필드 쿼리 + 클라 정렬 — 복합 인덱스 없이 간다(문서 수가 적다).
   const snap = await getDocs(collection(db, 'seat_proposals'));
@@ -4392,39 +4437,80 @@ export async function getMoimStats(): Promise<MoimStats> {
   );
 
   // 2단계: 유효한 등록자의 자리표만 집계 (탈퇴·삭제·정지 제외).
+  // 장 수가 아니라 사람 수를 센다.
+  //
+  // 한 분이 자리표를 여러 장 낼 수 있다(안동순님은 도봉구로 세 장). 장을 세면
+  // 도봉이 4명으로 보이는데 실제로는 두 분이었다 — 그 숫자를 보고 자리를 열면
+  // 최소 인원을 못 채운다(2026-08-22).
+  //
+  // 다만 한 분이 동네 두 곳에 낸 것(수원시+서초구)은 둘 다 센다. 어느 쪽이든
+  // 나오실 수 있다는 뜻이라 동네별 수요로는 각각 맞다.
   const tickets = { total: 0, active: 0, paused: 0, chat: 0, meet: 0, thisWeek: 0 };
   const districtCount = new Map<string, { count: number; couple: number }>();
   const topicCount = new Map<string, number>();
   const validRows = ticketRows.filter((r) => ownerInfo.get(r.uid)?.valid);
+
+  const activePeople = new Set<string>();
+  const pausedPeople = new Set<string>();
+  const chatPeople = new Set<string>();
+  const meetPeople = new Set<string>();
+  const thisWeekPeople = new Set<string>();
+  const districtPeople = new Map<string, { who: Set<string>; couple: Set<string> }>();
+  const topicPeople = new Map<string, Set<string>>();
+
   for (const r of validRows) {
     const t = r.data;
-    tickets.total += 1;
+    tickets.total += 1; // 장 수는 그대로 — "전체 N장" 힌트에 쓴다
     if (t.active !== true) {
-      tickets.paused += 1;
+      pausedPeople.add(r.uid);
       continue;
     }
-    tickets.active += 1;
+    activePeople.add(r.uid);
     if (t.type === 'meet') {
-      tickets.meet += 1;
+      meetPeople.add(r.uid);
       const district = String(t.district ?? '(동네 미설정)');
-      const row = districtCount.get(district) ?? { count: 0, couple: 0 };
-      row.count += 1;
-      if (t.party === 'couple') row.couple += 1;
-      districtCount.set(district, row);
+      const row = districtPeople.get(district) ??
+        { who: new Set<string>(), couple: new Set<string>() };
+      row.who.add(r.uid);
+      if (t.party === 'couple') row.couple.add(r.uid);
+      districtPeople.set(district, row);
     } else {
-      tickets.chat += 1;
+      chatPeople.add(r.uid);
     }
-    if (t.urgency === 'this_week') tickets.thisWeek += 1;
+    if (t.urgency === 'this_week') thisWeekPeople.add(r.uid);
     for (const topic of (t.topics as string[] | undefined) ?? []) {
-      topicCount.set(topic, (topicCount.get(topic) ?? 0) + 1);
+      const set = topicPeople.get(topic) ?? new Set<string>();
+      set.add(r.uid);
+      topicPeople.set(topic, set);
     }
   }
+
+  tickets.active = activePeople.size;
+  // 대기 중인 자리표가 하나도 없는 분만 '쉬는 중'으로 센다 — 한 장 쉬고
+  // 한 장 열어둔 분을 양쪽에 세면 합이 안 맞는다.
+  tickets.paused = [...pausedPeople].filter((u) => !activePeople.has(u)).length;
+  tickets.chat = chatPeople.size;
+  tickets.meet = meetPeople.size;
+  tickets.thisWeek = thisWeekPeople.size;
+  for (const [k, v] of districtPeople) {
+    districtCount.set(k, { count: v.who.size, couple: v.couple.size });
+  }
+  for (const [k, v] of topicPeople) topicCount.set(k, v.size);
 
   // 최근 등록순 상위 40장 (유효 자리표만).
   validRows.sort(
     (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
   );
-  const recentTickets: MoimStats['recentTickets'] = validRows.slice(0, 40).map((r) => {
+  // 같은 분이 같은 동네로 여러 장 낸 것은 최신 한 장만 남긴다. 목록에 같은
+  // 이름이 세 번 뜨면 사람이 많아 보인다.
+  const seenKey = new Set<string>();
+  const dedupedRows = validRows.filter((r) => {
+    const key = `${r.uid}|${r.data.type ?? ''}|${r.data.district ?? ''}`;
+    if (seenKey.has(key)) return false;
+    seenKey.add(key);
+    return true;
+  });
+  const recentTickets: MoimStats['recentTickets'] = dedupedRows.slice(0, 40).map((r) => {
     const t = r.data;
     return {
       uid: r.uid,
@@ -5092,5 +5178,77 @@ export async function getStatsPageData(): Promise<StatsPageData> {
     dau, wau, mau, activeCount, notifEnabled, hasInterests,
     trend30d, trend12w, trend12m, usersWithoutCreatedAt,
     retention, cohorts,
+  };
+}
+
+// ─── 자리 열 준비 — 도시별 ────────────────────────────────────────────────────
+
+/**
+ * 도시별로 "지금 자리를 열 수 있는가"를 센다.
+ *
+ * district_density의 user_count와 다른 수를 센다. 그쪽은 가입한 사람 전부인데,
+ * 자리를 신청할 수 있는 건 본인인증을 마친 분들뿐이다. 부산에 스무 명이
+ * 있어도 인증한 분이 둘이면 자리는 못 연다.
+ *
+ * 집계 컬렉션을 새로 만들지 않고 count 집계로 센다 — 시도 17개니 질의가
+ * 34번이고, 전체 문서를 읽어 코드에서 세는 것보다 훨씬 싸다. 대신 값은
+ * 항상 지금 시점이라 야간 집계를 기다릴 필요가 없다.
+ */
+export const SEAT_READY_MIN = 4;    // 자리 하나의 최소 정원
+export const SEAT_READY_OK = 8;     // 한 자리를 채우고도 여유가 있는 선
+
+/** 수도권은 이미 서울 자리로 닿는다. 따로 열 이유를 세는 표에서 구분한다. */
+const METRO_CITIES = ['서울', '경기', '인천'];
+
+const KR_CITIES = [
+  '서울', '경기', '인천', '부산', '대구', '광주', '대전', '울산', '세종',
+  '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
+];
+
+export interface CityReadiness {
+  city: string;
+  verified: number;
+  total: number;
+  metro: boolean;
+}
+
+export interface SeatReadiness {
+  cities: CityReadiness[];
+  verifiedTotal: number;
+  /** 인증은 했는데 도시를 안 적으신 분들. 이 수가 크면 아래 표를 믿을 수 없다. */
+  verifiedWithoutCity: number;
+  warnings: Array<{ label: string; message: string }>;
+}
+
+export async function getSeatReadiness(): Promise<SeatReadiness> {
+  const warnings: Array<{ label: string; message: string }> = [];
+  const users = collection(db, 'users');
+
+  const rows = await Promise.all(
+    KR_CITIES.map(async (city) => {
+      const [verified, total] = await Promise.all([
+        safeCount(
+          query(users, where('city', '==', city), where('identityVerified', '==', true)),
+          `${city} 인증`,
+          warnings,
+        ),
+        safeCount(query(users, where('city', '==', city)), `${city} 전체`, warnings),
+      ]);
+      return { city, verified, total, metro: METRO_CITIES.includes(city) };
+    }),
+  );
+
+  const verifiedTotal = await safeCount(
+    query(users, where('identityVerified', '==', true)),
+    '인증 전체',
+    warnings,
+  );
+
+  const counted = rows.reduce((n, r) => n + r.verified, 0);
+  return {
+    cities: rows.sort((a, b) => b.verified - a.verified),
+    verifiedTotal,
+    verifiedWithoutCity: Math.max(0, verifiedTotal - counted),
+    warnings,
   };
 }
