@@ -15,6 +15,9 @@ type Status = 'open' | 'almost' | 'closed' | 'planning';
 interface Session {
   /** 이 자리에서 뺀 회원. 서버가 목록에서 걸러 준다. */
   excludeUids?: string[];
+  /** 회원 제안으로 만들어진 초안. 장소를 넣고 공개해야 자리가 된다. */
+  needsVenue?: boolean;
+  leaderName?: string;
   cardTitle?: string;
   cardColor?: string;
   cardImageUrl?: string;
@@ -437,8 +440,15 @@ export default function MeetupSessionsCard() {
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_CLASS[s.status]}`}>
                     {STATUS_LABEL[s.status]}
                   </span>
-                  {!s.published && (
+                  {!s.published && !s.needsVenue && (
                     <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">숨김</span>
+                  )}
+                  {/* 회원이 제안해서 생긴 초안. 장소만 넣으면 열 수 있다 —
+                      '숨김'과 섞이면 손대야 할 것이 안 보인다. */}
+                  {s.needsVenue && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                      장소 필요{s.leaderName ? ` · ${s.leaderName}님 제안` : ''}
+                    </span>
                   )}
                 </div>
                 <div className="mt-0.5 text-sm text-gray-700">{s.dateLabel || '날짜 미정'}</div>
