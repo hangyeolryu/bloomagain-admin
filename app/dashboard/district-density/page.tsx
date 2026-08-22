@@ -3,9 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   getDistrictDensity,
+  getSeatReadiness,
+  SEAT_READY_MIN,
+  SEAT_READY_OK,
   type DistrictDensityRecord,
+  type SeatReadiness,
 } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
+import SeoulClusters from './SeoulClusters';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 function formatDate(date?: Date) {
@@ -19,20 +24,31 @@ function formatDate(date?: Date) {
   });
 }
 
-/** Density classification — used to flag cold-start deserts. */
+/** 밀집도 등급. 200/50/10으로 잡았더니 전 지역이 '황무지'로 떠 판단에 못 썼다.
+ *  지금 규모(전국 300명대)에 맞춰 내렸다. 규모가 커지면 다시 올릴 것. */
 function densityLevel(users: number): {
   label: string;
   color: string;
   emoji: string;
 } {
-  if (users >= 200) return { label: '충분', color: 'bg-green-100 text-green-800', emoji: '🟢' };
-  if (users >= 50)  return { label: '보통', color: 'bg-yellow-100 text-yellow-800', emoji: '🟡' };
-  if (users >= 10)  return { label: '부족', color: 'bg-orange-100 text-orange-800', emoji: '🟠' };
-  return              { label: '황무지', color: 'bg-red-100 text-red-800', emoji: '🔴' };
+  if (users >= 40) return { label: '충분', color: 'bg-green-100 text-green-800', emoji: '🟢' };
+  if (users >= 15) return { label: '보통', color: 'bg-yellow-100 text-yellow-800', emoji: '🟡' };
+  if (users >= 5)  return { label: '부족', color: 'bg-orange-100 text-orange-800', emoji: '🟠' };
+  return             { label: '황무지', color: 'bg-red-100 text-red-800', emoji: '🔴' };
+}
+
+/** 자리를 열 수 있는지. 세는 대상은 인증을 마친 분들뿐이다 — 신청은 그분들만 된다. */
+function readyLevel(verified: number) {
+  if (verified >= SEAT_READY_OK)
+    return { label: '열 수 있어요', color: 'bg-green-100 text-green-800' };
+  if (verified >= SEAT_READY_MIN)
+    return { label: '한 자리는 가능', color: 'bg-yellow-100 text-yellow-800' };
+  return { label: `${SEAT_READY_MIN - verified}명 더`, color: 'bg-gray-100 text-gray-500' };
 }
 
 export default function DistrictDensityPage() {
   const [rows, setRows] = useState<DistrictDensityRecord[]>([]);
+  const [ready, setReady] = useState<SeatReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterCity, setFilterCity] = useState<string>('all');
 
@@ -40,6 +56,8 @@ export default function DistrictDensityPage() {
     getDistrictDensity()
       .then(setRows)
       .finally(() => setLoading(false));
+    // 준비 현황은 부가 정보 — 못 불러와도 아래 표는 그대로 보여준다.
+    getSeatReadiness().then(setReady).catch(() => {});
   }, []);
 
   const cities = useMemo(() => {
@@ -89,6 +107,12 @@ export default function DistrictDensityPage() {
           가 4시간마다 업데이트합니다.
         </span>
       </div>
+
+      {ready && <SeatReadinessCard data={ready} />}
+
+      {/* 구 하나씩 세면 어디도 자리를 못 여는 것처럼 보인다. 옆 동네는 같은
+          자리라, 묶어서 보는 화면을 표보다 앞에 둔다. */}
+      {!loading && rows.length > 0 && <SeoulClusters rows={rows} />}
 
       {/* Totals */}
       <div className="grid grid-cols-3 gap-3">
@@ -172,6 +196,98 @@ export default function DistrictDensityPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * 어느 도시에 자리를 열 수 있는지. 전국 광고를 돌리면 서울 밖에서 들어오시는데,
+ * 그분들께 열어드릴 자리가 언제 생기는지는 이 표에서만 보인다.
+ */
+function SeatReadinessCard({ data }: { data: SeatReadiness }) {
+  const outside = data.cities.filter((c) => !c.metro && c.total > 0);
+  const metro = data.cities.filter((c) => c.metro);
+  const metroVerified = metro.reduce((n, c) => n + c.verified, 0);
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-gray-900">자리 열 준비 — 도시별</h2>
+        <span className="text-xs text-gray-400">지금 시점</span>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-gray-500">
+        아래 밀집도 표와 세는 대상이 다릅니다. 여기서는 <b>본인인증을 마친 분들만</b>{' '}
+        셉니다 — 자리를 신청할 수 있는 건 그분들뿐이라, 가입자가 많아도 인증한 분이
+        적으면 자리를 못 엽니다. 정원 {SEAT_READY_MIN}명이 최소, {SEAT_READY_OK}명부터
+        여유가 있습니다.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-3 text-sm">
+        <span className="rounded-lg bg-gray-50 px-3 py-1.5 text-gray-700">
+          인증 완료 <b className="tabular-nums">{data.verifiedTotal}</b>명
+        </span>
+        <span className="rounded-lg bg-gray-50 px-3 py-1.5 text-gray-700">
+          수도권 <b className="tabular-nums">{metroVerified}</b>명 · 이미 서울 자리로 닿음
+        </span>
+        {data.verifiedWithoutCity > 0 && (
+          <span className="rounded-lg bg-amber-50 px-3 py-1.5 text-amber-800">
+            도시 미상 <b className="tabular-nums">{data.verifiedWithoutCity}</b>명 —
+            이만큼은 아래 표에서 빠져 있습니다
+          </span>
+        )}
+      </div>
+
+      {outside.length === 0 ? (
+        <p className="mt-4 text-sm text-gray-400">서울 밖 회원이 아직 없어요.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-gray-100">
+          {outside.map((c) => {
+            const lv = readyLevel(c.verified);
+            return (
+              <li key={c.city} className="flex items-center gap-3 py-2">
+                <span className="w-14 text-sm text-gray-800">{c.city}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    className="h-full rounded-full bg-green-500"
+                    style={{
+                      width: `${Math.min(100, (c.verified / SEAT_READY_OK) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="w-24 text-right text-sm tabular-nums text-gray-700">
+                  인증 {c.verified} / 가입 {c.total}
+                </span>
+                <span
+                  className={`w-24 shrink-0 rounded px-2 py-0.5 text-center text-xs font-medium ${lv.color}`}
+                >
+                  {lv.label}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {data.warnings.length > 0 && (
+        <div className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">
+          <p className="font-medium">못 센 항목이 있습니다 (0으로 보일 수 있어요)</p>
+          <ul className="mt-1 space-y-1">
+            {data.warnings.map((w, i) => {
+              const url = w.message.match(/https:\/\/console\.firebase\.google\.com\S+/)?.[0];
+              return (
+                <li key={i} className="break-all">
+                  <b>{w.label}</b> — {url ? '색인이 없습니다. ' : w.message}
+                  {url && (
+                    <a href={url} target="_blank" rel="noreferrer" className="underline">
+                      색인 만들기
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
