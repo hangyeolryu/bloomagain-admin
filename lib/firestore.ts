@@ -278,6 +278,54 @@ export interface TeatimeFunnel {
  * 완전히 다른 문제다. 앞은 카드가 안 끌린 것이고, 뒤는 안내를 보고 마음이
  * 식은 것이다. 고칠 곳이 다르니 나눠서 보여준다.
  */
+/** 자리를 열어보고 그냥 닫은 이유. 회원이 직접 고른 값이다. */
+export interface CloseReasonSummary {
+  total: number;
+  byReason: { key: string; label: string; count: number }[];
+  byEvent: { eventId: string; count: number }[];
+}
+
+const CLOSE_REASON_LABEL: Record<string, string> = {
+  date_time: '날짜·시간이 안 맞아요',
+  far: '가기에 멀어요',
+  first_time: '처음이라 망설여져요',
+  few_people: '오시는 분이 적어서',
+  cost: '비용이 부담돼요',
+  browsing: '그냥 둘러봤어요',
+};
+
+/**
+ * 왜 열어보고 안 하는지 — 숫자로는 알 수 없던 것.
+ *
+ * 8/26 자리를 열 명이 열어보고 아무도 신청하지 않았는데, 이틀 동안 도달·주말·
+ * 자리 부족을 차례로 의심하고 셋 다 틀렸다. 이유를 아는 사람은 닫은 본인뿐이라
+ * 직접 여쭤보기로 했다(2026-08-23).
+ *
+ * '그냥 둘러봤어요'를 따로 세는 게 중요하다 — 그걸 거절로 세면 문제를 실제보다
+ * 크게 본다.
+ */
+export async function getCloseReasons(): Promise<CloseReasonSummary> {
+  const snap = await getDocs(collection(db, 'seat_close_reasons'));
+  const byReason = new Map<string, number>();
+  const byEvent = new Map<string, number>();
+  snap.forEach((d) => {
+    const x = d.data();
+    const r = (x.reason as string) ?? '(없음)';
+    byReason.set(r, (byReason.get(r) ?? 0) + 1);
+    const e = (x.eventId as string) ?? '(없음)';
+    byEvent.set(e, (byEvent.get(e) ?? 0) + 1);
+  });
+  return {
+    total: snap.size,
+    byReason: [...byReason.entries()]
+      .map(([key, count]) => ({ key, label: CLOSE_REASON_LABEL[key] ?? key, count }))
+      .sort((a, b) => b.count - a.count),
+    byEvent: [...byEvent.entries()]
+      .map(([eventId, count]) => ({ eventId, count }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
 export async function getTeatimeFunnelByEvent(): Promise<Record<string, TeatimeFunnel>> {
   const snap = await getDocs(collection(db, 'teatime_funnel'));
   const out: Record<string, TeatimeFunnel> = {};

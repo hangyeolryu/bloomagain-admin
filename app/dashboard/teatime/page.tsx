@@ -8,8 +8,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { getTeatimeSignups } from '@/lib/firestore';
-import type { TeatimeSignup } from '@/lib/firestore';
+import { getTeatimeSignups, getTeatimeFunnelByEvent, getCloseReasons } from '@/lib/firestore';
+import type { TeatimeSignup, TeatimeFunnel, CloseReasonSummary } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -37,15 +37,88 @@ function genderKo(g?: string): string {
   return '미상';
 }
 
+interface SeatInfo {
+  id: string;
+  dateLabel?: string;
+  district?: string;
+  cardTitle?: string;
+  capacity?: number;
+  minToOpen?: number;
+  published?: boolean;
+  startAt?: string;
+}
+
+/** 자리 이름 한 줄. 세션을 못 읽었으면 id라도 보여준다. */
+function seatName(s: SeatInfo | undefined, id: string): string {
+  if (!s) return id;
+  const parts = [s.dateLabel, s.district].filter(Boolean);
+  return parts.length ? parts.join(' · ') : (s.cardTitle || id);
+}
+
+/**
+ * 본 사람 → 열어본 사람 → 신청.
+ *
+ * "그냥 닫음"을 따로 보여주는 이유: 열어봤는데 안 한 사람이 많다는 건
+ * 카드가 아니라 안내문이나 조건에서 마음이 식었다는 뜻이다. 카드를 키워봐야
+ * 소용이 없다.
+ */
+function FunnelBar({ f }: { f?: TeatimeFunnel }) {
+  if (!f) return <span className="text-xs text-gray-400">기록 없음</span>;
+  const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums">
+      <span className="text-gray-600">
+        본 사람 <b className="text-gray-900">{f.viewers}</b>
+        <span className="ml-1 text-gray-400">(노출 {f.shown})</span>
+      </span>
+      <span className="text-gray-300">→</span>
+      <span className="text-gray-600">
+        열어봄 <b className="text-gray-900">{f.tapped}</b>
+        <span className="ml-1 text-gray-400">{pct(f.tapped, f.viewers)}%</span>
+      </span>
+      <span className="text-gray-300">→</span>
+      <span className={f.signup > 0 ? 'text-emerald-700' : 'text-gray-500'}>
+        신청 <b>{f.signup}</b>
+        <span className="ml-1 text-gray-400">{pct(f.signup, f.tapped)}%</span>
+      </span>
+      {f.closed > 0 && (
+        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">
+          열었다 그냥 나감 {f.closed}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function TeatimePage() {
   const [rows, setRows] = useState<TeatimeSignup[] | null>(null);
+  const [funnel, setFunnel] = useState<Record<string, TeatimeFunnel>>({});
+  const [seats, setSeats] = useState<Record<string, SeatInfo>>({});
   const [error, setError] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<CloseReasonSummary | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    getCloseReasons()
+      .then((r) => { if (!cancelled) setReasons(r); })
+      .catch(() => {/* 못 읽어도 명단은 보여준다 */});
     getTeatimeSignups()
       .then((r) => { if (!cancelled) setRows(r); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
+    getTeatimeFunnelByEvent()
+      .then((f) => { if (!cancelled) setFunnel(f); })
+      .catch(() => {/* 깔때기를 못 읽어도 명단은 보여준다 */});
+    // 자리 제목은 세션에서 온다. 예전엔 여기 문서 id가 그대로 떠서, 어느
+    // 자리인지 알려면 id를 외우고 있어야 했다.
+    fetch('/api/backend/titatime-sessions', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const m: Record<string, SeatInfo> = {};
+        for (const s of (j.items ?? []) as SeatInfo[]) m[s.id] = s;
+        setSeats(m);
+      })
+      .catch(() => {/* 못 읽으면 id로라도 보여준다 */});
     return () => { cancelled = true; };
   }, []);
 
@@ -75,6 +148,36 @@ export default function TeatimePage() {
         에서 합니다. 이 화면은 신청 이력만 보여줍니다.
       </p>
 
+      {/* 열어보고 왜 안 했는지 — 회원이 직접 고른 답. 깔때기가 "몇 명이
+          돌아섰나"를 말한다면 이건 "왜"를 말한다. */}
+      {reasons && reasons.total > 0 && (
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="font-semibold text-gray-900">열어보고 안 한 이유</h2>
+          <p className="mt-0.5 text-xs text-gray-500">
+            자리를 열어보고 그냥 닫으신 분께 여쭤본 답 {reasons.total}건. 한 분께
+            7일에 한 번만, 두 자리 이상 닫아보신 뒤에 묻습니다.
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {reasons.byReason.map((r) => {
+              const pct = Math.round((r.count / reasons.total) * 100);
+              return (
+                <li key={r.key} className="flex items-center gap-3 text-sm">
+                  <span className="w-44 shrink-0 text-gray-700">{r.label}</span>
+                  <span className="w-8 shrink-0 text-right font-semibold tabular-nums text-gray-900">
+                    {r.count}
+                  </span>
+                  <span
+                    className="h-2 rounded-full bg-emerald-500"
+                    style={{ width: `${Math.max(pct * 2, 4)}px` }}
+                  />
+                  <span className="text-xs text-gray-400">{pct}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {error ? (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
           불러오기 실패: {error}
@@ -98,12 +201,20 @@ export default function TeatimePage() {
           return (
             <section key={eventId} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-semibold text-gray-900">
-                  {eventId}
-                  <span className="ml-3 text-sm font-normal text-gray-500">
-                    총 {list.length}명 · 여성 {f} · 남성 {m} · 미상 {na}
-                  </span>
-                </h2>
+                <div>
+                  <h2 className="font-semibold text-gray-900">
+                    {seatName(seats[eventId], eventId)}
+                    {seats[eventId]?.published === false && (
+                      <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-xs font-normal text-gray-600">숨김</span>
+                    )}
+                    <span className="ml-3 text-sm font-normal text-gray-500">
+                      총 {list.length}명 · 여성 {f} · 남성 {m} · 미상 {na}
+                      {seats[eventId]?.capacity ? ` / 정원 ${seats[eventId]?.capacity}` : ''}
+                    </span>
+                  </h2>
+                  <div className="mt-0.5 font-mono text-[11px] text-gray-400">{eventId}</div>
+                </div>
+                <FunnelBar f={funnel[eventId]} />
               </div>
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -150,6 +261,44 @@ export default function TeatimePage() {
           );
         })
       )}
+
+      {/* 신청이 0인 자리는 위 목록에 아예 안 나온다. 그런데 "본 사람은 있는데
+          아무도 신청 안 한 자리"가 제일 봐야 할 자리다 — 무엇이 걸리는지
+          거기에 답이 있다. */}
+      {(() => {
+        const withSignups = new Set(byEvent.map(([id]) => id));
+        const empty = Object.values(seats)
+          .filter((s) => !withSignups.has(s.id))
+          .sort((a, b) => (b.startAt ?? '').localeCompare(a.startAt ?? ''));
+        if (!empty.length) return null;
+        return (
+          <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 px-5 py-4">
+              <h2 className="font-semibold text-gray-900">아직 신청이 없는 자리</h2>
+              <p className="mt-0.5 text-xs text-gray-500">
+                본 사람은 있는데 아무도 신청하지 않은 자리. 카드에서 막힌 건지
+                안내문에서 막힌 건지 여기서 갈립니다.
+              </p>
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {empty.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">
+                      {seatName(s, s.id)}
+                    </span>
+                    {s.published === false && (
+                      <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">숨김</span>
+                    )}
+                    <div className="mt-0.5 font-mono text-[11px] text-gray-400">{s.id}</div>
+                  </div>
+                  <FunnelBar f={funnel[s.id]} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
     </div>
   );
 }
