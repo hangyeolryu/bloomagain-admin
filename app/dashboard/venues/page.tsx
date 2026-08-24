@@ -352,6 +352,91 @@ export default function VenuesPage() {
               placeholder='전화 예약, 오후 2시까지. "티타" 이름으로.'
             />
           </label>
+          <div className="sm:col-span-2 mt-1 rounded-lg bg-emerald-50/60 p-3">
+            <div className="mb-2 text-xs font-semibold text-emerald-900">
+              가서 확인한 것 &middot; 45+ 기준
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {([
+                ['seatsFour', '넷이 마주 앉을 자리'],
+                ['hasBackrest', '등받이 있는 의자'],
+                ['stepFree', '계단 없이 입장'],
+                ['quietEnough', '대화가 묻히지 않음'],
+                ['brightEnough', '메뉴판 보일 만큼 밝음'],
+              ] as const).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-2 text-xs text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={!!form[k]}
+                    onChange={(e) => setForm({ ...form, [k]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <label className="text-xs text-gray-600">
+                역에서 도보 (분)
+                <input
+                  style={input}
+                  value={form.walkMinutes ?? ''}
+                  onChange={(e) =>
+                    setForm({ ...form, walkMinutes: Number(e.target.value) || undefined })
+                  }
+                  placeholder="7"
+                />
+              </label>
+              <label className="text-xs text-gray-600">
+                다녀온 날
+                <input
+                  style={input}
+                  type="date"
+                  value={form.visitedAt ?? ''}
+                  onChange={(e) => setForm({ ...form, visitedAt: e.target.value })}
+                />
+              </label>
+            </div>
+            <label className="mt-2 block text-xs text-gray-600">
+              그 밖의 접근성 메모
+              <input
+                style={input}
+                value={form.accessNotes ?? ''}
+                onChange={(e) => setForm({ ...form, accessNotes: e.target.value })}
+                placeholder="오르막 3분, 화장실은 건물 공용"
+              />
+            </label>
+          </div>
+
+          <div className="sm:col-span-2 rounded-lg bg-amber-50/70 p-3">
+            <div className="mb-1 text-xs font-semibold text-amber-900">사진</div>
+            <p className="mb-2 text-[11px] leading-relaxed text-amber-800">
+              직접 찍은 사진만 넣습니다. 장소의 공식 이미지는 출처를 남겨도
+              사용 허락이 되지 않습니다. 허락을 받은 경우에만 아래에 적고 씁니다.
+            </p>
+            <label className="text-xs text-gray-600">
+              사진 주소 (줄바꿈으로 여러 장)
+              <textarea
+                style={{ ...input, minHeight: 60 }}
+                value={(form.photos ?? []).join('\n')}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    photos: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean),
+                  })
+                }
+              />
+            </label>
+            <label className="mt-2 block text-xs text-gray-600">
+              출처 (비우면 티타 직접 촬영)
+              <input
+                style={input}
+                value={form.photoCredit ?? ''}
+                onChange={(e) => setForm({ ...form, photoCredit: e.target.value })}
+                placeholder="루시드 서울 제공 (2026-08-25 사용 허락)"
+              />
+            </label>
+          </div>
+
           <label className="text-xs text-gray-600 sm:col-span-2">
             메모 (어떤 곳인지, 다음에 주의할 점)
             <textarea

@@ -170,7 +170,26 @@ export interface Venue {
   priceNote?: string;           // 1인 비용
   suggestedCapacity?: number;
   visited?: boolean;            // 가본 곳인지
+  visitedAt?: string;           // 다녀온 날 (YYYY-MM-DD)
   notes?: string;
+
+  // ── 콘텐츠용 ────────────────────────────────────────────────────────────
+  // 장소를 글·인스타로 소개하려면 여기까지 채워야 한다.
+  //
+  // ⚠️ photos는 **직접 찍은 사진만** 넣는다. 장소의 공식 이미지를 가져다 쓰는
+  // 것은 출처를 남겨도 사용 허락이 되지 않는다(저작권법상 출처 표시는 인용의
+  // 조건 중 하나일 뿐이고, 마케팅 게시물은 인용으로 보기 어렵다). 장소에서
+  // 직접 허락받은 경우에만 photoCredit에 그 사실을 적고 쓴다.
+  photos?: string[];            // Storage 경로 또는 URL
+  photoCredit?: string;         // 비워두면 티타 직접 촬영. 받은 사진이면 출처·허락 여부
+  // 45+ 관점의 접근성 메모. 예쁜 곳 소개는 어디에나 있지만 이건 티타만 쓴다.
+  seatsFour?: boolean;          // 넷이 마주 앉을 자리가 있나
+  hasBackrest?: boolean;        // 등받이 있는 의자인가 (스툴이면 한 시간이 힘들다)
+  stepFree?: boolean;           // 계단 없이 들어갈 수 있나
+  quietEnough?: boolean;        // 옆자리 소리에 대화가 묻히지 않나
+  brightEnough?: boolean;       // 메뉴판이 보일 만큼 밝은가
+  walkMinutes?: number;         // 역에서 도보 몇 분
+  accessNotes?: string;         // 위 항목으로 안 담기는 것 (언덕, 화장실 위치 등)
 }
 
 export async function getVenues(): Promise<Venue[]> {
