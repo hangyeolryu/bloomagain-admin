@@ -76,7 +76,7 @@ function VBars({ points, highlightMax }: {
 }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
-    <div className="flex items-end gap-1 h-32">
+    <div className="flex items-end gap-1">
       {points.map((p, i) => {
         const isMax = highlightMax && p.count === max && p.count > 0;
         return (
@@ -84,10 +84,14 @@ function VBars({ points, highlightMax }: {
             <span className={`text-[10px] tabular-nums ${isMax ? 'font-bold text-emerald-700' : 'text-gray-400'}`}>
               {p.count > 0 ? p.count : ''}
             </span>
-            <div
-              className={`w-full rounded-t ${isMax ? 'bg-emerald-500' : p.dim ? 'bg-gray-200' : 'bg-emerald-300'}`}
-              style={{ height: `${Math.round((p.count / max) * 88)}%`, minHeight: p.count > 0 ? 3 : 1 }}
-            />
+            {/* 고정 높이 트랙 안에서 %를 계산한다 — 컬럼 자체는 내용 높이라
+                막대에 바로 %를 주면 무시돼 전부 최소높이로 깔린다. */}
+            <div className="w-full h-24 flex items-end">
+              <div
+                className={`w-full rounded-t ${isMax ? 'bg-emerald-500' : p.dim ? 'bg-gray-200' : 'bg-emerald-300'}`}
+                style={{ height: `${Math.max(Math.round((p.count / max) * 100), p.count > 0 ? 4 : 1)}%` }}
+              />
+            </div>
             <span className="text-[10px] text-gray-400 truncate w-full text-center">{p.label}</span>
           </div>
         );

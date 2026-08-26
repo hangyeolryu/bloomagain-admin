@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getUsers, blockUser, unblockUser, updateUserStatus, type UserSortKey } from '@/lib/firestore';
+import { getUsers, blockUser, unblockUser, updateUserStatus, getUserActivitySummaries, type UserSortKey, type UserActivitySummary } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import Toast, { type ToastState } from '@/components/ui/Toast';
@@ -240,6 +240,14 @@ export default function UsersPage() {
   const [reason, setReason]             = useState('');
   const [acting, setActing]             = useState(false);
   const [toast, setToast]               = useState<ToastState | null>(null);
+
+  // 최근 30일 활동 요약(uid → 활동일·하트비트). 페이지네이션과 무관하게
+  // 한 번만 불러온다 — collectionGroup 윈도우 쿼리 한 방이라 행마다
+  // 서브컬렉션을 긁는 것보다 훨씬 싸다.
+  const [activity, setActivity] = useState<Record<string, UserActivitySummary>>({});
+  useEffect(() => {
+    getUserActivitySummaries(30).then(setActivity);
+  }, []);
 
   // ── PostgreSQL status ──────────────────────────────────────────────────────
   // null  = not yet fetched for this uid
@@ -597,6 +605,9 @@ export default function UsersPage() {
                     가입일{sortBy === 'createdAt' ? ' ↓' : ''}
                   </button>
                 </th>
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="최근 30일 — 앱을 연 날 수 · 세션 수(30분 하트비트 합, 근사치)">
+                  30일 활동
+                </th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   <button
                     type="button"
@@ -615,7 +626,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-400">
+                  <td colSpan={10} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -672,6 +683,16 @@ export default function UsersPage() {
                       />
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
+                    <td className="hidden md:table-cell px-4 py-2.5 text-xs whitespace-nowrap">
+                      {activity[u.id] ? (
+                        <span className="text-gray-700">
+                          <span className="font-semibold tabular-nums">{activity[u.id].activeDays}일</span>
+                          <span className="text-gray-400"> · {activity[u.id].heartbeats}회</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
                     <td
                       className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500"
                       title={u.lastActiveAt ? u.lastActiveAt.toLocaleString('ko-KR') : undefined}

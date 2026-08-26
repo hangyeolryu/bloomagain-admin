@@ -2903,6 +2903,43 @@ export async function getActivityPatterns(
   };
 }
 
+/**
+ * 유저별 최근 N일 활동 요약 — 사용자 관리 테이블의 '활동' 컬럼용.
+ * getActivityPatterns와 같은 collectionGroup 윈도우 쿼리 하나로,
+ * uid → {활동일수, 하트비트 합}을 만든다. 실패하면 빈 맵 — 컬럼은 '-'로
+ * 남고 목록 자체는 죽지 않는다.
+ */
+export interface UserActivitySummary {
+  activeDays: number;  // 윈도우 안에 앱을 연 날 수
+  heartbeats: number;  // 30분 스로틀 하트비트 합 — 세션 수 근사치
+}
+
+export async function getUserActivitySummaries(
+  days: number,
+): Promise<Record<string, UserActivitySummary>> {
+  const fromKey = yyyymmdd(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+  const out: Record<string, UserActivitySummary> = {};
+  try {
+    const q = query(
+      collectionGroup(db, 'activity_daily'),
+      where('dayKey', '>=', fromKey),
+    );
+    const snap = await getDocs(q);
+    for (const doc of snap.docs) {
+      const uid = doc.ref.parent.parent?.id;
+      if (!uid) continue;
+      const cur = out[uid] ?? { activeDays: 0, heartbeats: 0 };
+      cur.activeDays += 1;
+      const hb = Number(doc.data().heartbeatCount ?? 0);
+      if (Number.isFinite(hb)) cur.heartbeats += hb;
+      out[uid] = cur;
+    }
+  } catch (e) {
+    console.warn('[getUserActivitySummaries] failed:', e);
+  }
+  return out;
+}
+
 // ─── Onboarding / Activation Funnel — "0일차 이탈" ───────────────────────────
 //
 // 탈퇴 설문은 계정을 '정식 삭제'한 사람만 잡는다. 대부분의 0일차 이탈은
