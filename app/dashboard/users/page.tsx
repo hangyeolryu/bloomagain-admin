@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getUsers, blockUser, unblockUser, updateUserStatus, getUserActivitySummaries, type UserSortKey, type UserActivitySummary } from '@/lib/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
@@ -71,15 +70,6 @@ async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
   return res.json();
 }
 
-async function backfillUserInBackend(payload: BackfillPayload): Promise<boolean> {
-  const res = await fetch('/api/backend/admin-backfill', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return res.ok;
-}
-
 interface BatchRegisterResult {
   registered: string[];
   already_existed: string[];
@@ -98,36 +88,6 @@ async function batchBackfillUsersInBackend(
   return res.json();
 }
 
-interface SetSubscriptionResponse {
-  user_id: string;
-  tier: string;
-  expires_at: string | null;
-  founding_member_number: number | null;
-  error?: string;
-}
-
-/**
- * Admin override — flip a user between FREE and PREMIUM for QA testing.
- * The backend does NOT touch founding_member_number, so this never consumes
- * a launch-cohort slot.
- */
-async function setSubscriptionInBackend(
-  userId: string,
-  tier: 'PREMIUM' | 'FREE',
-  expiresAt?: string,
-): Promise<SetSubscriptionResponse> {
-  const res = await fetch('/api/backend/set-subscription', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, tier, expiresAt }),
-  });
-  const data = (await res.json()) as SetSubscriptionResponse;
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to set subscription');
-  }
-  return data;
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getStatusBadge(user: UserProfile) {
   if (user.isBlacklisted) return <Badge variant="red">차단됨</Badge>;
@@ -137,67 +97,6 @@ function getStatusBadge(user: UserProfile) {
   return <Badge variant="green">활성</Badge>;
 }
 
-function PgBadge({
-  status,
-  onRegister,
-  onTogglePlus,
-  togglingPlus,
-}: {
-  status: PgStatus | undefined;
-  onRegister: () => void;
-  onTogglePlus: () => void;
-  togglingPlus: boolean;
-}) {
-  if (!status) {
-    return <span className="text-xs text-gray-300 animate-pulse">확인 중…</span>;
-  }
-  if (status.exists) {
-    const tier = (status.subscription_tier || 'FREE').toUpperCase();
-    const isPlus = tier === 'PREMIUM';
-    return (
-      <div className="flex flex-col gap-0.5">
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit">
-          <span>DB ✓</span>
-        </span>
-        {isPlus && (
-          <span className="inline-flex text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full w-fit">
-            PREMIUM
-          </span>
-        )}
-        <button
-          onClick={onTogglePlus}
-          disabled={togglingPlus}
-          title={
-            isPlus
-              ? '테스트용 Plus 권한 해제 (Founding number 변경 없음)'
-              : '테스트용 Plus 권한 부여 (Founding number 변경 없음)'
-          }
-          className={`text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors w-fit disabled:opacity-50 ${
-            isPlus
-              ? 'text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100'
-              : 'text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100'
-          }`}
-        >
-          {togglingPlus ? '처리 중…' : isPlus ? 'Plus 해제' : 'Plus 부여'}
-        </button>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="inline-flex items-center text-xs font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full w-fit">
-        미등록
-      </span>
-      <button
-        onClick={onRegister}
-        className="text-xs text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-full font-medium transition-colors w-fit"
-      >
-        등록
-      </button>
-    </div>
-  );
-}
-
 function formatAge(yearOfBirth?: number) {
   if (!yearOfBirth) return '-';
   return `${new Date().getFullYear() - yearOfBirth}세`;
@@ -205,7 +104,16 @@ function formatAge(yearOfBirth?: number) {
 
 function formatDate(date?: Date) {
   if (!date) return '-';
-  return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
+  const yy = String(date.getFullYear() % 100).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yy}/${mm}/${dd}`;
+}
+
+function formatGender(gender?: string) {
+  if (gender === 'male') return '남';
+  if (gender === 'female') return '여';
+  return '-';
 }
 
 /** Compact relative-time formatter for the "마지막 접속" column. Falls back to
@@ -261,10 +169,6 @@ export default function UsersPage() {
   const [bulkRegistering, setBulkRegistering] = useState(false);
   // Track which UIDs we've already sent to batch-check so we don't re-fetch on render.
   const checkedUidsRef = useRef<Set<string>>(new Set());
-
-  // Per-user Plus toggle in-flight state, keyed by uid. Keeps the button busy
-  // for that one row while letting other rows act independently.
-  const [togglingPlusUids, setTogglingPlusUids] = useState<Set<string>>(new Set());
 
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -347,21 +251,6 @@ export default function UsersPage() {
     return () => observer.disconnect();
   }, [loading]);
 
-  // ── Register single user in backend ──────────────────────────────────────
-  const handleRegisterUser = async (u: UserProfile) => {
-    const ok = await backfillUserInBackend(buildBackfillPayload(u));
-    if (ok) {
-      setPgStatus((prev) => ({
-        ...prev,
-        [u.id]: {
-          exists: true,
-          account_status: u.accountStatus ?? 'active',
-          subscription_tier: 'FREE',
-        },
-      }));
-    }
-  };
-
   // ── Bulk-register all missing users in the current loaded batch ───────────
   // Uses a single batch endpoint (no N parallel requests → no rate-limit issues).
   const missingUsers = allUsers.filter((u) => pgStatus[u.id]?.exists === false);
@@ -395,47 +284,6 @@ export default function UsersPage() {
     checkedUidsRef.current.clear();
     setPgStatus({});
     await checkNewUsers(allUsers);
-  };
-
-  // ── Toggle Plus subscription for QA testing (no founding-member impact) ──
-  const handleTogglePlus = async (u: UserProfile) => {
-    const current = (pgStatus[u.id]?.subscription_tier || 'FREE').toUpperCase();
-    const next: 'PREMIUM' | 'FREE' = current === 'PREMIUM' ? 'FREE' : 'PREMIUM';
-
-    // Confirm — Plus 부여는 가벼운 토글이지만 prod 데이터 위에서 작동하므로
-    // 이름 한 번 더 보여주는 게 안전.
-    const confirmed = window.confirm(
-      next === 'PREMIUM'
-        ? `${u.displayName ?? u.id}님께 Plus 권한을 부여하시겠어요?\n(Founding member number는 변경되지 않습니다.)`
-        : `${u.displayName ?? u.id}님의 Plus 권한을 해제하시겠어요?`,
-    );
-    if (!confirmed) return;
-
-    setTogglingPlusUids((prev) => {
-      const set = new Set(prev);
-      set.add(u.id);
-      return set;
-    });
-    try {
-      const result = await setSubscriptionInBackend(u.id, next);
-      setPgStatus((prev) => ({
-        ...prev,
-        [u.id]: {
-          ...(prev[u.id] || { exists: true }),
-          exists: true,
-          subscription_tier: result.tier,
-        },
-      }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      window.alert(`Plus 권한 변경 실패: ${msg}`);
-    } finally {
-      setTogglingPlusUids((prev) => {
-        const set = new Set(prev);
-        set.delete(u.id);
-        return set;
-      });
-    }
   };
 
   // ── Moderation actions ────────────────────────────────────────────────────
@@ -636,10 +484,9 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="창립회원 가입 번호 (PostgreSQL)">창립</th>
-                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
+                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이·성별/지역</th>
                 <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">자기소개</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
-                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">DB</th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   <button
                     type="button"
@@ -667,13 +514,12 @@ export default function UsersPage() {
                     마지막 접속{sortBy === 'lastActiveAt' ? ' ↓' : ''}
                   </button>
                 </th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">작업</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-gray-400">
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -729,8 +575,8 @@ export default function UsersPage() {
                         <span className="text-xs text-gray-300">-</span>
                       )}
                     </td>
-                    <td className="hidden sm:table-cell px-4 py-2.5 text-xs text-gray-600">
-                      {formatAge(u.yearOfBirth)} / {u.city || '-'}
+                    <td className="hidden sm:table-cell px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                      {formatAge(u.yearOfBirth)} {formatGender(u.gender)} / {[u.city, u.district].filter(Boolean).join(' ') || '-'}
                     </td>
                     <td className="hidden lg:table-cell px-4 py-2.5 max-w-xs">
                       {u.about ? (
@@ -740,14 +586,6 @@ export default function UsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-2.5">{getStatusBadge(u)}</td>
-                    <td className="hidden sm:table-cell px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <PgBadge
-                        status={pgStatus[u.id]}
-                        onRegister={() => handleRegisterUser(u)}
-                        onTogglePlus={() => handleTogglePlus(u)}
-                        togglingPlus={togglingPlusUids.has(u.id)}
-                      />
-                    </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs whitespace-nowrap">
                       {activity[u.id] ? (
@@ -764,40 +602,6 @@ export default function UsersPage() {
                       title={u.lastActiveAt ? u.lastActiveAt.toLocaleString('ko-KR') : undefined}
                     >
                       {formatRelativeTime(u.lastActiveAt)}
-                    </td>
-                    <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/dashboard/users/view?id=${u.id}`}
-                          className="text-xs text-green-600 hover:underline font-medium"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          상세
-                        </Link>
-                        {u.isBlacklisted || u.accountStatus === 'blocked' ? (
-                          <button
-                            onClick={() => setActionModal({ user: u, type: 'unblock' })}
-                            className="text-xs text-blue-600 hover:underline font-medium"
-                          >
-                            해제
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => setActionModal({ user: u, type: 'suspend' })}
-                              className="text-xs text-orange-600 hover:underline font-medium"
-                            >
-                              정지
-                            </button>
-                            <button
-                              onClick={() => setActionModal({ user: u, type: 'block' })}
-                              className="text-xs text-red-600 hover:underline font-medium"
-                            >
-                              차단
-                            </button>
-                          </>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 ))
