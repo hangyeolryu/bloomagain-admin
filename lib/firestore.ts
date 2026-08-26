@@ -535,6 +535,7 @@ export async function getUsers(
   pageSize = 30,
   cursor?: QueryDocumentSnapshot,
   sortBy: UserSortKey = 'createdAt',
+  verifiedOnly = false,
 ): Promise<PaginatedResult<UserProfile>> {
   // Single-field orderBy keeps the index requirement minimal — Firestore
   // builds a single-field index on every field by default, so changing
@@ -547,8 +548,15 @@ export async function getUsers(
   //   lastActiveAt write path was added won't appear. This is usually
   //   the desired behavior for a "최근 활동순" view (we don't want
   //   inactive ghosts at the top), but it's worth knowing.
+  // verifiedOnly는 서버 필터다(클라 필터로 걸면 페이지당 행 수가 들쭉날쭉).
+  // equality + orderBy 조합이라 (identityVerified, createdAt desc)·
+  // (identityVerified, lastActiveAt desc) 복합 인덱스가 필요하다 — 없으면
+  // FAILED_PRECONDITION에 생성 링크가 담겨 온다.
+  // 폴백 필드(identityVerificationStatus 등)만 있고 identityVerified가 없는
+  // 문서는 0건임을 확인하고 이 필드 하나로 거른다(2026-08-26, 387명 전수).
   const q = query(
     collection(db, 'users'),
+    ...(verifiedOnly ? [where('identityVerified', '==', true)] : []),
     orderBy(sortBy, 'desc'),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),

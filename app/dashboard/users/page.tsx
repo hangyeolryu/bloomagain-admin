@@ -20,6 +20,7 @@ interface PgStatus {
   exists: boolean;
   account_status?: string;
   subscription_tier?: string;
+  founding_member_number?: number | null;
 }
 
 type PgStatusMap = Record<string, PgStatus>;
@@ -236,6 +237,9 @@ export default function UsersPage() {
   // mixing rows fetched under different orderings would scramble the
   // infinite-scroll order.
   const [sortBy, setSortBy]             = useState<UserSortKey>('createdAt');
+  // 기본은 본인인증 완료자만(서버 필터). 미인증까지 봐야 할 때만 체크를 푼다.
+  const [verifiedOnly, setVerifiedOnly] = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
   const [actionModal, setActionModal]   = useState<{ user: UserProfile; type: 'block' | 'unblock' | 'suspend' } | null>(null);
   const [reason, setReason]             = useState('');
   const [acting, setActing]             = useState(false);
@@ -292,7 +296,7 @@ export default function UsersPage() {
     if (!hasMore || loadingMore || !lastDocRef.current) return;
     setLoadingMore(true);
     try {
-      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current, sortBy);
+      const { items, lastDoc } = await getUsers(PAGE_SIZE, lastDocRef.current, sortBy, verifiedOnly);
       lastDocRef.current = lastDoc;
       setAllUsers((prev) => [...prev, ...items]);
       setHasMore(items.length === PAGE_SIZE);
@@ -300,7 +304,7 @@ export default function UsersPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, checkNewUsers, sortBy]);
+  }, [hasMore, loadingMore, checkNewUsers, sortBy, verifiedOnly]);
   loadMoreRef.current = loadMore;
 
   // ── Initial load + sort change ────────────────────────────────────────────
@@ -309,16 +313,24 @@ export default function UsersPage() {
   // the infinite-scroll order and double-show some users).
   useEffect(() => {
     setLoading(true);
+    setLoadError(null);
     lastDocRef.current = null;
     setAllUsers([]);
-    getUsers(PAGE_SIZE, undefined, sortBy).then(async ({ items, lastDoc }) => {
-      setAllUsers(items);
-      lastDocRef.current = lastDoc;
-      setHasMore(items.length === PAGE_SIZE);
-      setLoading(false);
-      await checkNewUsers(items);
-    });
-  }, [checkNewUsers, sortBy]);
+    getUsers(PAGE_SIZE, undefined, sortBy, verifiedOnly)
+      .then(async ({ items, lastDoc }) => {
+        setAllUsers(items);
+        lastDocRef.current = lastDoc;
+        setHasMore(items.length === PAGE_SIZE);
+        setLoading(false);
+        await checkNewUsers(items);
+      })
+      .catch((e) => {
+        // 인증자 필터는 복합 인덱스가 필요하다 — 없으면 여기로 떨어지고,
+        // 메시지 안에 콘솔 생성 링크가 들어 있다. 0건으로 위장하지 않는다.
+        setLoadError(e instanceof Error ? e.message : String(e));
+        setLoading(false);
+      });
+  }, [checkNewUsers, sortBy, verifiedOnly]);
 
   // ── IntersectionObserver ──────────────────────────────────────────────────
   // Must run after initial load: while `loading` is true we only render a spinner,
@@ -548,9 +560,26 @@ export default function UsersPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
         />
+        <label
+          className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white cursor-pointer whitespace-nowrap select-none"
+          title="기본은 본인인증 완료 회원만 서버에서 필터해 불러옵니다"
+        >
+          <input
+            type="checkbox"
+            checked={!verifiedOnly}
+            onChange={(e) => setVerifiedOnly(!e.target.checked)}
+            className="accent-green-600"
+          />
+          <span className="text-gray-600">미인증 포함</span>
+        </label>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            // 서버가 인증자만 주고 있는데 '미인증'을 고르면 영원히 빈 목록 —
+            // 이 조합은 함정이라 필터를 자동으로 풀어준다.
+            if (e.target.value === 'unverified') setVerifiedOnly(false);
+          }}
           className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
         >
           <option value="all">전체 상태</option>
@@ -581,6 +610,23 @@ export default function UsersPage() {
         </button>
       </div>
 
+      {loadError && (
+        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <p className="font-semibold text-amber-900">목록을 불러오지 못했어요</p>
+          <p className="mt-1 break-all whitespace-pre-wrap font-mono text-xs text-amber-700">{loadError}</p>
+          {loadError.match(/https?:\/\/\S+/) && (
+            <a
+              href={loadError.match(/https?:\/\/\S+/)![0]}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-block text-sm font-medium text-amber-900 underline"
+            >
+              인덱스 만들러 가기 →
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -589,6 +635,7 @@ export default function UsersPage() {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">사용자</th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">법적 이름</th>
+                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="창립회원 가입 번호 (PostgreSQL)">창립</th>
                 <th className="hidden sm:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">나이/지역</th>
                 <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">자기소개</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">상태</th>
@@ -626,7 +673,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-gray-400">
+                  <td colSpan={11} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -639,9 +686,19 @@ export default function UsersPage() {
                   >
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm font-bold text-green-700 flex-shrink-0">
-                          {u.displayName?.[0] || '?'}
-                        </div>
+                        {u.photoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={u.photoUrl}
+                            alt={u.displayName || '프로필'}
+                            className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-green-100"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm font-bold text-green-700 flex-shrink-0">
+                            {u.displayName?.[0] || '?'}
+                          </div>
+                        )}
                         <div>
                           <p className="font-medium text-gray-900 text-sm leading-tight">{u.displayName || '이름 없음'}</p>
                           <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 8)}…</p>
@@ -661,6 +718,15 @@ export default function UsersPage() {
                         </div>
                       ) : (
                         <span className="text-xs text-gray-400">미인증</span>
+                      )}
+                    </td>
+                    <td className="hidden sm:table-cell px-4 py-2.5">
+                      {pgStatus[u.id]?.founding_member_number != null ? (
+                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full tabular-nums">
+                          #{String(pgStatus[u.id].founding_member_number).padStart(3, '0')}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
                       )}
                     </td>
                     <td className="hidden sm:table-cell px-4 py-2.5 text-xs text-gray-600">
