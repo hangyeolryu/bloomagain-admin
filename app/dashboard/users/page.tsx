@@ -408,6 +408,8 @@ export default function UsersPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
         />
+        {/* 모바일에서 컨트롤 하나가 한 줄씩 다 먹지 않게 — 좁으면 감싸며 흐른다 */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <label
           className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white cursor-pointer whitespace-nowrap select-none"
           title="기본은 본인인증 완료 회원만 서버에서 필터해 불러옵니다"
@@ -456,6 +458,7 @@ export default function UsersPage() {
         >
           {pgChecking ? 'DB 확인 중…' : 'DB 재확인'}
         </button>
+        </div>
       </div>
 
       {loadError && (
@@ -475,9 +478,65 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Table (md+) / Card list (mobile) */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* 모바일: 열을 숨겨 이름·상태만 남던 테이블 대신, 한 사람이 한 장으로
+            읽히는 카드 목록. 데이터는 같은 filtered를 그대로 쓴다. */}
+        <div className="md:hidden divide-y divide-gray-50">
+          {filtered.length === 0 ? (
+            <p className="text-center py-12 text-gray-400 text-sm">검색 결과 없음</p>
+          ) : (
+            filtered.map((u) => (
+              <div
+                key={u.id}
+                className="px-4 py-3 active:bg-gray-50 cursor-pointer"
+                onClick={() => router.push(`/dashboard/users/view?id=${u.id}`)}
+              >
+                <div className="flex items-center gap-3">
+                  {u.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={u.photoUrl}
+                      alt={u.displayName || '프로필'}
+                      className="w-11 h-11 rounded-full object-cover flex-shrink-0 bg-green-100"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center text-base font-bold text-green-700 flex-shrink-0">
+                      {u.displayName?.[0] || '?'}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium text-gray-900 text-sm">{u.displayName || '이름 없음'}</span>
+                      {pgStatus[u.id]?.founding_member_number != null && (
+                        <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full tabular-nums">
+                          #{String(pgStatus[u.id].founding_member_number).padStart(3, '0')}
+                        </span>
+                      )}
+                      {getStatusBadge(u)}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      {formatAge(u.yearOfBirth)} {formatGender(u.gender)} / {[u.city, u.district].filter(Boolean).join(' ') || '-'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-400 pl-14">
+                  <span>가입 {formatDate(u.createdAt)}</span>
+                  <span>접속 {formatRelativeTime(u.lastActiveAt)}</span>
+                  {activity[u.id] && (
+                    <span className="text-gray-500">
+                      30일 <span className="font-semibold text-gray-700 tabular-nums">{activity[u.id].activeDays}일</span>
+                      <span> · {activity[u.id].heartbeats}회</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
