@@ -2685,6 +2685,17 @@ export interface ActivityPatterns {
   // "sessions" ≈ heartbeatCount summed across the window; not a true session
   // count (heartbeat is 30-min throttled) but a decent proxy for time-in-app.
   avgHeartbeatsPerUser: number;
+  // ── 방문 빈도 — 윈도우 안에서 며칠 들어왔는가 ──────────────────────────
+  // 하루 한 번이든 열 번이든 그 날은 '활동일 1일'. 재방문 습관을 보는 축이라
+  // 하루 안의 세션 수(heartbeat)와는 일부러 분리한다.
+  activeDaysBuckets: { label: string; count: number }[];
+  avgActiveDays: number;    // 활동 회원 1인당 평균 활동일수
+  medianActiveDays: number; // 절반이 이보다 자주/드물게 — 평균은 헤비유저가 끌어올린다
+  dayOfWeek: number[];      // 0=일 … 6=토, 요일별 고유 활동 회원 수
+  dauTrend: { dayKey: string; count: number }[]; // 일별 고유 활동 회원(오름차순)
+  // 지지난 7일(8~14일 전) 활동자 중 최근 7일에도 온 사람 — 주간 재방문율.
+  // windowDays < 14면 계산 불가라 eligible=0.
+  weekReturn: { eligible: number; returned: number };
   // 쿼리 실패 시(예: collectionGroup 인덱스 없음) 원문 에러 메시지.
   // Firestore가 인덱스 생성 링크를 여기 담아줘서 UI에서 그대로 노출한다.
   error?: string;
@@ -2723,6 +2734,11 @@ export async function getActivityPatterns(
   };
   let totalHeartbeats = 0;
 
+  // 방문 빈도용: 유저별 활동일 집합 + 날짜별 활동 유저 집합.
+  // 같은 collectionGroup 스냅샷에서 다 나오므로 추가 읽기 비용은 없다.
+  const dayKeysByUid = new Map<string, Set<string>>();
+  const uidsByDay = new Map<string, Set<string>>();
+
   try {
     // dayKey 범위로 윈도우만 읽는다(효율). collectionGroup 범위 쿼리라
     // firestore.indexes.json의 fieldOverrides(activity_daily.dayKey,
@@ -2739,6 +2755,14 @@ export async function getActivityPatterns(
       uidsInWindow.add(uid);
 
       const data = doc.data();
+
+      const dayKey = typeof data.dayKey === 'string' ? data.dayKey : doc.id;
+      if (/^\d{8}$/.test(dayKey)) {
+        if (!dayKeysByUid.has(uid)) dayKeysByUid.set(uid, new Set());
+        dayKeysByUid.get(uid)!.add(dayKey);
+        if (!uidsByDay.has(dayKey)) uidsByDay.set(dayKey, new Set());
+        uidsByDay.get(dayKey)!.add(uid);
+      }
 
       const hoursActive = Array.isArray(data.hoursActive) ? data.hoursActive : [];
       for (const raw of hoursActive) {
@@ -2773,6 +2797,12 @@ export async function getActivityPatterns(
         messageSender: 0,
       },
       avgHeartbeatsPerUser: 0,
+      activeDaysBuckets: [],
+      avgActiveDays: 0,
+      medianActiveDays: 0,
+      dayOfWeek: new Array(7).fill(0),
+      dauTrend: [],
+      weekReturn: { eligible: 0, returned: 0 },
       error: e instanceof Error ? e.message : String(e),
     };
   }
@@ -2790,6 +2820,66 @@ export async function getActivityPatterns(
     }
   }
 
+  // ── 방문 빈도 파생값 ───────────────────────────────────────────────────────
+  const activeDayCounts = [...dayKeysByUid.values()].map((s) => s.size);
+  activeDayCounts.sort((a, b) => a - b);
+  const sumDays = activeDayCounts.reduce((a, b) => a + b, 0);
+  const avgActiveDays = activeDayCounts.length
+    ? Math.round((sumDays / activeDayCounts.length) * 10) / 10
+    : 0;
+  const medianActiveDays = activeDayCounts.length
+    ? activeDayCounts[Math.floor((activeDayCounts.length - 1) / 2)]
+    : 0;
+
+  // 버킷 경계는 "달에 한 번 / 가끔 / 주 1회쯤 / 주 2~3회 / 거의 매일"을
+  // 30일 윈도우 기준으로 옮긴 것. 윈도우가 짧아도 라벨은 그대로 둔다 —
+  // 기준이 흔들리면 지난주와 비교를 못 한다.
+  const bucketDefs: { label: string; min: number; max: number }[] = [
+    { label: '1일', min: 1, max: 1 },
+    { label: '2–3일', min: 2, max: 3 },
+    { label: '4–7일', min: 4, max: 7 },
+    { label: '8–14일', min: 8, max: 14 },
+    { label: '15일+', min: 15, max: Infinity },
+  ];
+  const activeDaysBuckets = bucketDefs.map((b) => ({
+    label: b.label,
+    count: activeDayCounts.filter((n) => n >= b.min && n <= b.max).length,
+  }));
+
+  // 요일별 고유 활동 유저. dayKey(yyyymmdd) → 요일.
+  const dowSets = new Array(7).fill(null).map(() => new Set<string>());
+  for (const [dayKey, uids] of uidsByDay) {
+    const d = new Date(
+      Number(dayKey.slice(0, 4)),
+      Number(dayKey.slice(4, 6)) - 1,
+      Number(dayKey.slice(6, 8)),
+    );
+    for (const uid of uids) dowSets[d.getDay()].add(uid);
+  }
+
+  const dauTrend = [...uidsByDay.entries()]
+    .map(([dayKey, uids]) => ({ dayKey, count: uids.size }))
+    .sort((a, b) => a.dayKey.localeCompare(b.dayKey));
+
+  // 주간 재방문: 8~14일 전 활동자 중 최근 7일에도 온 비율.
+  const weekReturn = { eligible: 0, returned: 0 };
+  if (days >= 14) {
+    const day = 24 * 60 * 60 * 1000;
+    const lastWeekFrom = yyyymmdd(new Date(Date.now() - 7 * day));
+    const prevWeekFrom = yyyymmdd(new Date(Date.now() - 14 * day));
+    const lastWeekUids = new Set<string>();
+    const prevWeekUids = new Set<string>();
+    for (const [dayKey, uids] of uidsByDay) {
+      if (dayKey >= lastWeekFrom) {
+        for (const uid of uids) lastWeekUids.add(uid);
+      } else if (dayKey >= prevWeekFrom) {
+        for (const uid of uids) prevWeekUids.add(uid);
+      }
+    }
+    weekReturn.eligible = prevWeekUids.size;
+    weekReturn.returned = [...prevWeekUids].filter((u) => lastWeekUids.has(u)).length;
+  }
+
   return {
     windowDays: days,
     totalActiveUsers: uidsInWindow.size,
@@ -2804,6 +2894,12 @@ export async function getActivityPatterns(
       uidsInWindow.size > 0
         ? Math.round((totalHeartbeats / uidsInWindow.size) * 10) / 10
         : 0,
+    activeDaysBuckets,
+    avgActiveDays,
+    medianActiveDays,
+    dayOfWeek: dowSets.map((s) => s.size),
+    dauTrend,
+    weekReturn,
   };
 }
 

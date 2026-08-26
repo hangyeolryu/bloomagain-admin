@@ -26,6 +26,7 @@ const navItems: NavItem[] = [
   // 맨 위 고정 — 매일 여는 두 개.
   { href: '/dashboard', label: '대시보드', icon: '📊' },
   { href: '/dashboard/stats', label: '통계 오버뷰', icon: '📈' },
+  { href: '/dashboard/patterns', label: '사용자 패턴', icon: '🕰️' },
 
   // 사람을 데려오는 일.
   { href: '/dashboard/needs', label: '니즈 설문 (5060)', icon: '🧭', section: '모으기' },
