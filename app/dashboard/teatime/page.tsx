@@ -40,6 +40,16 @@ const ATT_TONE: Record<string, string> = {
   noshow: 'text-red-600',
 };
 
+// 취소 사유 key → 사람 말. 앱 3.1.35+가 취소 시 묻기 시작한 값.
+const CANCEL_REASON_KO: Record<string, string> = {
+  schedule: '일정이 생겼어요',
+  date_time: '날짜·시간이 안 맞아요',
+  health: '몸이 안 좋아요',
+  other_seat: '다른 자리로 갈게요',
+  hesitant: '아직 망설여져요',
+  etc: '기타',
+};
+
 function genderKo(g?: string): string {
   const v = (g ?? '').toLowerCase().trim();
   if (['female', 'f', '여', '여성', 'woman'].includes(v)) return '여성';
@@ -155,10 +165,15 @@ function EventBody({
   cantRows: CloseReasonSummary['rows'];
   nameOf: (uid: string) => string;
 }) {
-  const list = signups.filter((r) => !r.withdrawn);
+  // 취소한 신청은 명단에서 뺀다 — 자리는 이미 다른 분께 열려 있는데 명단에
+  // 그대로 있으면 정원을 잘못 센다. 대신 아래에 신청→취소 시각과 함께 남긴다.
+  const cancelled = signups.filter((r) => r.status === 'cancelled' && !r.withdrawn);
+  const list = signups.filter((r) => !r.withdrawn && r.status !== 'cancelled');
   const left = signups.filter((r) => r.withdrawn);
   const openedViewers = viewers.filter((v) => v.opened && !v.signedUp);
   const cardOnly = viewers.filter((v) => !v.opened);
+  const fmtShort = (d?: Date) =>
+    d ? d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '?';
 
   return (
     <>
@@ -253,6 +268,22 @@ function EventBody({
       )}
       {list.length === 0 && (
         <p className="px-5 py-4 text-sm text-gray-400">아직 신청자가 없습니다.</p>
+      )}
+      {cancelled.length > 0 && (
+        <div className="border-t border-gray-100 bg-gray-50 px-5 py-2.5 text-xs text-gray-500 space-y-1">
+          <p className="font-medium text-gray-600">신청했다가 취소 {cancelled.length}건</p>
+          {cancelled.map((r) => (
+            <p key={r.id}>
+              <Link href={`/dashboard/users/view?id=${r.uid}`} className="text-blue-600 hover:underline">
+                {r.name || '(이름 없음)'}
+              </Link>
+              <span className="ml-1 tabular-nums text-gray-400">
+                {fmtShort(r.createdAt)} 신청 → {fmtShort(r.cancelledAt)} 취소
+              </span>
+              {r.cancelReason && <span className="ml-1 text-amber-700">— {CANCEL_REASON_KO[r.cancelReason] ?? r.cancelReason}</span>}
+            </p>
+          ))}
+        </div>
       )}
       {left.length > 0 && (
         <p className="border-t border-gray-100 bg-gray-50 px-5 py-2.5 text-xs text-gray-500">
@@ -411,7 +442,7 @@ export default function TeatimePage() {
           )}
           {upcoming.map(({ id, signups }) => {
             const s = seats[id];
-            const list = signups.filter((r) => !r.withdrawn);
+            const list = signups.filter((r) => !r.withdrawn && r.status !== 'cancelled');
             const f = list.filter((r) => genderKo(r.gender) === '여성').length;
             const m = list.filter((r) => genderKo(r.gender) === '남성').length;
             const when = fmtStartAt(s?.startAt);
@@ -451,7 +482,7 @@ export default function TeatimePage() {
               <div className="divide-y divide-gray-100">
                 {past.map(({ id, signups }) => {
                   const s = seats[id];
-                  const list = signups.filter((r) => !r.withdrawn);
+                  const list = signups.filter((r) => !r.withdrawn && r.status !== 'cancelled');
                   const attended = list.filter((r) => r.attendance === 'attended').length;
                   const noshow = list.filter((r) => r.attendance === 'noshow').length;
                   const fu = funnel[id];

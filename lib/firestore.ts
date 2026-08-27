@@ -135,6 +135,10 @@ export interface TeatimeSignup {
   selfCheckInDistanceM?: number;
   /** 확인 문자를 보낸 시각. 두 번 보내지 않으려고 남긴다. */
   confirmSentAt?: Date;
+  /** 본인이 신청을 취소한 시각 (status='cancelled'일 때). */
+  cancelledAt?: Date;
+  /** 취소하며 고른 이유. 앱이 묻기 시작한 빌드(3.1.35+)부터만 있다. */
+  cancelReason?: string;
 }
 
 export type AttendanceStatus = NonNullable<TeatimeSignup['attendance']>;
@@ -410,14 +414,14 @@ export async function getTeatimeViewerDetails(): Promise<Record<string, TeatimeV
     const uid = (x.uid as string) ?? '';
     const at = toDate(x.createdAt)?.getTime();
     if (!eventId || !uid || !at) return;
-    const key = `${eventId} ${uid}`;
+    const key = `${eventId}\u0000${uid}`;
     (byKey.get(key) ?? byKey.set(key, []).get(key)!).push({ phase: x.phase as string, at });
   });
 
   const MAX_ONE_OPEN_MS = 30 * 60 * 1000;
   const out: Record<string, TeatimeViewerDetail[]> = {};
   for (const [key, events] of byKey) {
-    const [eventId, uid] = key.split(' ');
+    const [eventId, uid] = key.split('\u0000');
     events.sort((a, b) => a.at - b.at);
     let opened = false; let signedUp = false; let dwellMs = 0;
     let openAt: number | null = null;
@@ -542,6 +546,8 @@ export async function getTeatimeSignups(): Promise<TeatimeSignup[]> {
       selfCheckInVerified: x.selfCheckInVerified as boolean | undefined,
       selfCheckInDistanceM: x.selfCheckInDistanceM as number | undefined,
       confirmSentAt: toDate(x.confirmSentAt),
+      cancelledAt: toDate(x.cancelledAt),
+      cancelReason: x.cancelReason as string | undefined,
     };
   });
 
