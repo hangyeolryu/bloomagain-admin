@@ -302,6 +302,8 @@ export interface CloseReasonSummary {
   total: number;
   byReason: { key: string; label: string; count: number }[];
   byEvent: { eventId: string; count: number }[];
+  /** 사람 단위 원본 — 자리별로 "누가 어떤 이유로 '이번엔 못 가요'를 골랐나". */
+  rows: { uid: string; eventId: string; key: string; label: string; createdAt?: Date }[];
 }
 
 const CLOSE_REASON_LABEL: Record<string, string> = {
@@ -327,15 +329,24 @@ export async function getCloseReasons(): Promise<CloseReasonSummary> {
   const snap = await getDocs(collection(db, 'seat_close_reasons'));
   const byReason = new Map<string, number>();
   const byEvent = new Map<string, number>();
+  const rows: CloseReasonSummary['rows'] = [];
   snap.forEach((d) => {
     const x = d.data();
     const r = (x.reason as string) ?? '(없음)';
     byReason.set(r, (byReason.get(r) ?? 0) + 1);
     const e = (x.eventId as string) ?? '(없음)';
     byEvent.set(e, (byEvent.get(e) ?? 0) + 1);
+    rows.push({
+      uid: (x.uid as string) ?? '',
+      eventId: e,
+      key: r,
+      label: CLOSE_REASON_LABEL[r] ?? r,
+      createdAt: toDate(x.createdAt),
+    });
   });
   return {
     total: snap.size,
+    rows,
     byReason: [...byReason.entries()]
       .map(([key, count]) => ({ key, label: CLOSE_REASON_LABEL[key] ?? key, count }))
       .sort((a, b) => b.count - a.count),
@@ -369,6 +380,62 @@ export async function getTeatimeFunnelByEvent(): Promise<Record<string, TeatimeF
   for (const id of Object.keys(out)) {
     out[id].viewers = viewers[id].size;
     out[id].tapped = tappers[id].size;
+  }
+  return out;
+}
+
+/** 자리 하나를 본 한 사람의 행적 — 명단에 이름·머문 시간으로 풀어 보여주는 재료. */
+export interface TeatimeViewerDetail {
+  uid: string;
+  opened: boolean;   // 카드를 눌러 시트를 열어봤나
+  dwellMs: number;   // 시트를 열어 둔 시간 합. 닫힘 기록이 없는 열람은 못 센다.
+  signedUp: boolean;
+}
+
+/**
+ * 자리별 '본 사람' 상세. 깔때기(getTeatimeFunnelByEvent)가 숫자만 준다면
+ * 이건 사람 단위다 — 누가 봤고, 열어서 얼마나 머물렀고, 신청까지 갔는지.
+ *
+ * 머문 시간은 cardTap→(sheetClose|signup) 시각 차를 짝지어 합산한다.
+ * 앱을 끄거나 백그라운드로 나가면 닫힘이 안 남으므로 짝 없는 탭은 버리고,
+ * 한 번의 열람은 30분에서 자른다 — 켜둔 채 잔 시간을 머문 시간으로 세지 않게.
+ */
+export async function getTeatimeViewerDetails(): Promise<Record<string, TeatimeViewerDetail[]>> {
+  const snap = await getDocs(collection(db, 'teatime_funnel'));
+  // eventId → uid → 시각순 이벤트
+  const byKey = new Map<string, { phase: string; at: number }[]>();
+  snap.forEach((d) => {
+    const x = d.data();
+    const eventId = (x.eventId as string) ?? '';
+    const uid = (x.uid as string) ?? '';
+    const at = toDate(x.createdAt)?.getTime();
+    if (!eventId || !uid || !at) return;
+    const key = `${eventId} ${uid}`;
+    (byKey.get(key) ?? byKey.set(key, []).get(key)!).push({ phase: x.phase as string, at });
+  });
+
+  const MAX_ONE_OPEN_MS = 30 * 60 * 1000;
+  const out: Record<string, TeatimeViewerDetail[]> = {};
+  for (const [key, events] of byKey) {
+    const [eventId, uid] = key.split(' ');
+    events.sort((a, b) => a.at - b.at);
+    let opened = false; let signedUp = false; let dwellMs = 0;
+    let openAt: number | null = null;
+    for (const e of events) {
+      if (e.phase === 'cardTap') { opened = true; openAt = e.at; }
+      else if (e.phase === 'sheetClose' || e.phase === 'signup') {
+        if (e.phase === 'signup') signedUp = true;
+        if (openAt != null) {
+          dwellMs += Math.min(e.at - openAt, MAX_ONE_OPEN_MS);
+          openAt = null;
+        }
+      }
+    }
+    (out[eventId] ??= []).push({ uid, opened, dwellMs, signedUp });
+  }
+  // 열어본 사람 먼저, 그 안에서 오래 머문 순.
+  for (const id of Object.keys(out)) {
+    out[id].sort((a, b) => Number(b.opened) - Number(a.opened) || b.dwellMs - a.dwellMs);
   }
   return out;
 }

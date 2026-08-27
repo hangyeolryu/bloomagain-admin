@@ -2,14 +2,24 @@
 
 /**
  * 티타임 신청 명단 — 앱의 teatime_signup_sheet가 teatime_signups에 쓴 예약.
- * 이벤트별로 누가 신청했는지 보고, 장소 확정·문자 안내에 쓴다.
- * (열린 자리표=대기 중 블랙홀과 달리, 날짜가 확정된 자리의 실제 참석 명단)
+ *
+ * 구성(2026-08-26 개편):
+ *  - 다가오는 자리를 시간순(가까운 것부터)으로, 지난 자리는 접힌 한 줄로 아래에.
+ *  - 자리마다 노출 조건(정원·성별·출생연도·지역·숨김·제외)을 머리에 적는다 —
+ *    "왜 이 자리가 그 분에게 안 보였지?"를 코드를 열지 않고 답하기 위해.
+ *  - 본 사람을 이름으로 풀고, 시트를 열어 머문 시간과 '이번엔 못 가요' 선택까지
+ *    한 자리에서 본다. 숫자 깔때기는 "몇 명"만 말하고 "누가"는 여기서 말한다.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { getTeatimeSignups, getTeatimeFunnelByEvent, getCloseReasons } from '@/lib/firestore';
-import type { TeatimeSignup, TeatimeFunnel, CloseReasonSummary } from '@/lib/firestore';
+import {
+  getTeatimeSignups, getTeatimeFunnelByEvent, getCloseReasons,
+  getTeatimeViewerDetails, getUsersByIds,
+} from '@/lib/firestore';
+import type {
+  TeatimeSignup, TeatimeFunnel, CloseReasonSummary, TeatimeViewerDetail,
+} from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -43,9 +53,14 @@ interface SeatInfo {
   district?: string;
   cardTitle?: string;
   capacity?: number;
-  minToOpen?: number;
   published?: boolean;
+  status?: string;
   startAt?: string;
+  genderPref?: string;
+  minBirthYear?: number;
+  maxBirthYear?: number;
+  excludeUids?: string[];
+  _excludeUids?: string[];
 }
 
 /** 자리 이름 한 줄. 세션을 못 읽었으면 id라도 보여준다. */
@@ -55,12 +70,53 @@ function seatName(s: SeatInfo | undefined, id: string): string {
   return parts.length ? parts.join(' · ') : (s.cardTitle || id);
 }
 
+function fmtStartAt(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString('ko-KR', {
+    month: 'numeric', day: 'numeric', weekday: 'short',
+    hour: 'numeric', minute: '2-digit',
+  });
+}
+
+function fmtDwell(ms: number): string {
+  if (ms <= 0) return '—';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60);
+  return s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
+}
+
+/** 이 자리가 앱에서 누구에게 보이는가 — 카드가 안 뜬 이유를 찾는 첫 줄. */
+function CondLine({ s }: { s?: SeatInfo }) {
+  if (!s) return null;
+  const parts: string[] = [];
+  if (s.capacity) parts.push(`정원 ${s.capacity}`);
+  if (s.genderPref === 'women') parts.push('여성만');
+  else if (s.genderPref === 'men') parts.push('남성만');
+  else parts.push('성별 무관');
+  if (s.minBirthYear && s.maxBirthYear) parts.push(`${s.minBirthYear}~${s.maxBirthYear}년생`);
+  else if (s.minBirthYear) parts.push(`${s.minBirthYear}년생부터`);
+  else if (s.maxBirthYear) parts.push(`~${s.maxBirthYear}년생`);
+  else parts.push('나이 무관');
+  const excl = (s.excludeUids ?? s._excludeUids ?? []).length;
+  if (excl > 0) parts.push(`제외 ${excl}명`);
+  return (
+    <p className="mt-0.5 text-xs text-gray-500">
+      보이는 조건: {parts.join(' · ')}
+      {s.published === false && (
+        <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-gray-600">숨김 — 아무에게도 안 보임</span>
+      )}
+    </p>
+  );
+}
+
 /**
  * 본 사람 → 열어본 사람 → 신청.
  *
  * "그냥 닫음"을 따로 보여주는 이유: 열어봤는데 안 한 사람이 많다는 건
- * 카드가 아니라 안내문이나 조건에서 마음이 식었다는 뜻이다. 카드를 키워봐야
- * 소용이 없다.
+ * 카드가 아니라 안내문이나 조건에서 마음이 식었다는 뜻이다.
  */
 function FunnelBar({ f }: { f?: TeatimeFunnel }) {
   if (!f) return <span className="text-xs text-gray-400">기록 없음</span>;
@@ -90,10 +146,132 @@ function FunnelBar({ f }: { f?: TeatimeFunnel }) {
   );
 }
 
+/** 자리 한 곳의 전체 내용 — 다가오는 자리는 펼쳐서, 지난 자리는 접힌 안에서 재사용. */
+function EventBody({
+  signups, viewers, cantRows, nameOf,
+}: {
+  signups: TeatimeSignup[];
+  viewers: TeatimeViewerDetail[];
+  cantRows: CloseReasonSummary['rows'];
+  nameOf: (uid: string) => string;
+}) {
+  const list = signups.filter((r) => !r.withdrawn);
+  const left = signups.filter((r) => r.withdrawn);
+  const openedViewers = viewers.filter((v) => v.opened && !v.signedUp);
+  const cardOnly = viewers.filter((v) => !v.opened);
+
+  return (
+    <>
+      {/* 열어봤는데 신청 안 한 사람 — 이 자리에서 제일 궁금한 사람들 */}
+      {(openedViewers.length > 0 || cantRows.length > 0 || cardOnly.length > 0) && (
+        <div className="border-b border-gray-100 bg-gray-50/60 px-5 py-3 space-y-2 text-xs">
+          {openedViewers.length > 0 && (
+            <p className="text-gray-700">
+              <span className="font-semibold text-gray-900">열어봤지만 신청 안 함</span>{' '}
+              {openedViewers.map((v, i) => {
+                const cant = cantRows.find((c) => c.uid === v.uid);
+                return (
+                  <span key={v.uid} className="whitespace-nowrap">
+                    {i > 0 && <span className="text-gray-300"> · </span>}
+                    <Link href={`/dashboard/users/view?id=${v.uid}`} className="text-blue-600 hover:underline">
+                      {nameOf(v.uid)}
+                    </Link>
+                    <span className="text-gray-400"> {fmtDwell(v.dwellMs)}</span>
+                    {cant && <span className="text-amber-700"> — {cant.label}</span>}
+                  </span>
+                );
+              })}
+            </p>
+          )}
+          {/* 열지도 않고 '못 가요'만 남긴 경우는 드물지만 놓치지 않는다 */}
+          {cantRows.filter((c) => !openedViewers.some((v) => v.uid === c.uid)).map((c) => (
+            <p key={`${c.uid}${c.key}`} className="text-amber-800">
+              <Link href={`/dashboard/users/view?id=${c.uid}`} className="text-blue-600 hover:underline">
+                {nameOf(c.uid)}
+              </Link>
+              님이 &lsquo;이번엔 못 가요&rsquo; — {c.label}
+            </p>
+          ))}
+          {cardOnly.length > 0 && (
+            <details className="text-gray-500">
+              <summary className="cursor-pointer select-none">
+                카드만 보고 안 연 사람 {cardOnly.length}명
+              </summary>
+              <p className="mt-1 leading-relaxed">
+                {cardOnly.map((v, i) => (
+                  <span key={v.uid}>
+                    {i > 0 && ' · '}
+                    <Link href={`/dashboard/users/view?id=${v.uid}`} className="text-blue-600 hover:underline">
+                      {nameOf(v.uid)}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            </details>
+          )}
+        </div>
+      )}
+
+      {list.length > 0 && (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-5 py-2.5">이름</th>
+              <th className="text-left px-5 py-2.5">지역</th>
+              <th className="text-left px-5 py-2.5">성별</th>
+              <th className="text-left px-5 py-2.5">참석</th>
+              <th className="hidden sm:table-cell text-right px-5 py-2.5">머문 시간</th>
+              <th className="text-right px-5 py-2.5">신청 시각</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((r) => {
+              const v = viewers.find((x) => x.uid === r.uid);
+              return (
+                <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
+                  <td className="px-5 py-2.5">
+                    <Link href={`/dashboard/users/view?id=${r.uid}`} className="text-blue-600 hover:underline font-medium">
+                      {r.name || '(이름 없음)'}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-2.5 text-gray-700">{r.region || '—'}</td>
+                  <td className="px-5 py-2.5 text-gray-700">{genderKo(r.gender)}</td>
+                  <td className={`px-5 py-2.5 ${ATT_TONE[r.attendance ?? 'pending'] ?? 'text-gray-400'}`}>
+                    {ATT_KO[r.attendance ?? 'pending'] ?? '—'}
+                  </td>
+                  <td className="hidden sm:table-cell px-5 py-2.5 text-right tabular-nums text-gray-500">
+                    {v ? fmtDwell(v.dwellMs) : '—'}
+                  </td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-gray-500 whitespace-nowrap">
+                    {r.createdAt ? r.createdAt.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {list.length === 0 && (
+        <p className="px-5 py-4 text-sm text-gray-400">아직 신청자가 없습니다.</p>
+      )}
+      {left.length > 0 && (
+        <p className="border-t border-gray-100 bg-gray-50 px-5 py-2.5 text-xs text-gray-500">
+          탈퇴해서 뺀 신청 {left.length}건
+          <span className="ml-1 text-gray-400">
+            ({left.map((r) => r.name || '이름없음').join(', ')})
+          </span>
+        </p>
+      )}
+    </>
+  );
+}
+
 export default function TeatimePage() {
   const [rows, setRows] = useState<TeatimeSignup[] | null>(null);
   const [funnel, setFunnel] = useState<Record<string, TeatimeFunnel>>({});
+  const [viewerDetails, setViewerDetails] = useState<Record<string, TeatimeViewerDetail[]>>({});
   const [seats, setSeats] = useState<Record<string, SeatInfo>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [reasons, setReasons] = useState<CloseReasonSummary | null>(null);
 
@@ -108,8 +286,9 @@ export default function TeatimePage() {
     getTeatimeFunnelByEvent()
       .then((f) => { if (!cancelled) setFunnel(f); })
       .catch(() => {/* 깔때기를 못 읽어도 명단은 보여준다 */});
-    // 자리 제목은 세션에서 온다. 예전엔 여기 문서 id가 그대로 떠서, 어느
-    // 자리인지 알려면 id를 외우고 있어야 했다.
+    getTeatimeViewerDetails()
+      .then((v) => { if (!cancelled) setViewerDetails(v); })
+      .catch(() => {/* 상세를 못 읽어도 명단은 보여준다 */});
     fetch('/api/backend/titatime-sessions', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
@@ -122,14 +301,55 @@ export default function TeatimePage() {
     return () => { cancelled = true; };
   }, []);
 
-  // 이벤트별 그룹 (최신 이벤트가 위로)
-  const byEvent = useMemo(() => {
-    const m = new Map<string, TeatimeSignup[]>();
+  // 본 사람·못가요 uid들의 이름. 신청자는 문서에 이름이 박제돼 있지만
+  // 구경만 한 사람은 uid뿐이라 users에서 가져온다.
+  useEffect(() => {
+    const uids = new Set<string>();
+    Object.values(viewerDetails).forEach((l) => l.forEach((v) => uids.add(v.uid)));
+    (reasons?.rows ?? []).forEach((r) => r.uid && uids.add(r.uid));
+    const missing = [...uids].filter((u) => !(u in names));
+    if (!missing.length) return;
+    getUsersByIds(missing).then((users) => {
+      setNames((prev) => {
+        const next = { ...prev };
+        for (const u of missing) next[u] = '(탈퇴/없음)';
+        for (const u of users) next[u.id] = u.displayName || u.id.slice(0, 6);
+        return next;
+      });
+    }).catch(() => {/* 이름을 못 얻으면 uid 앞자리로 */});
+    // names를 deps에 넣으면 setNames가 다시 트리거한다 — missing 계산이 이미 중복을 막는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerDetails, reasons]);
+
+  const nameOf = (uid: string) => names[uid] ?? `${uid.slice(0, 6)}…`;
+
+  // 자리 목록 = 신청이 있는 자리 ∪ 세션에 등록된 자리. 시작 시각으로
+  // 다가오는/지난 을 가른다(시작 +3시간 지나면 지난 자리).
+  const { upcoming, past } = useMemo(() => {
+    const signupsByEvent = new Map<string, TeatimeSignup[]>();
     for (const r of rows ?? []) {
-      (m.get(r.eventId) ?? m.set(r.eventId, []).get(r.eventId)!).push(r);
+      (signupsByEvent.get(r.eventId) ?? signupsByEvent.set(r.eventId, []).get(r.eventId)!).push(r);
     }
-    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [rows]);
+    const ids = new Set<string>([...signupsByEvent.keys(), ...Object.keys(seats), ...Object.keys(viewerDetails)]);
+    const now = Date.now();
+    const items = [...ids].map((id) => {
+      const startMs = seats[id]?.startAt ? new Date(seats[id].startAt!).getTime() : NaN;
+      return {
+        id,
+        signups: signupsByEvent.get(id) ?? [],
+        startMs: isNaN(startMs) ? null : startMs,
+        isPast: !isNaN(startMs) && startMs + 3 * 60 * 60 * 1000 < now,
+      };
+    });
+    return {
+      // 가까운 자리부터. 시작 시각을 모르는 자리는 맨 뒤.
+      upcoming: items.filter((x) => !x.isPast)
+        .sort((a, b) => (a.startMs ?? Infinity) - (b.startMs ?? Infinity)),
+      // 지난 자리는 최근 것부터.
+      past: items.filter((x) => x.isPast)
+        .sort((a, b) => (b.startMs ?? 0) - (a.startMs ?? 0)),
+    };
+  }, [rows, seats, viewerDetails]);
 
   return (
     <div className="space-y-6">
@@ -148,15 +368,13 @@ export default function TeatimePage() {
         에서 합니다. 이 화면은 신청 이력만 보여줍니다.
       </p>
 
-      {/* 열어보고 왜 안 했는지 — 회원이 직접 고른 답. 깔때기가 "몇 명이
-          돌아섰나"를 말한다면 이건 "왜"를 말한다. */}
+      {/* 열어보고 왜 안 했는지 — 회원이 직접 고른 답의 전체 합계. 자리별
+          "누가"는 아래 각 자리 카드에 있다. */}
       {reasons && reasons.total > 0 && (
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="font-semibold text-gray-900">열어보고 안 한 이유</h2>
-          <p className="mt-0.5 text-xs text-gray-500">
-            자리를 열어보고 그냥 닫으신 분께 여쭤본 답 {reasons.total}건. 한 분께
-            7일에 한 번만, 두 자리 이상 닫아보신 뒤에 묻습니다.
-          </p>
+        <details className="rounded-xl border border-gray-200 bg-white p-5">
+          <summary className="cursor-pointer select-none font-semibold text-gray-900">
+            열어보고 안 한 이유 <span className="font-normal text-gray-400">전체 {reasons.total}건</span>
+          </summary>
           <ul className="mt-3 space-y-1.5">
             {reasons.byReason.map((r) => {
               const pct = Math.round((r.count / reasons.total) * 100);
@@ -175,7 +393,7 @@ export default function TeatimePage() {
               );
             })}
           </ul>
-        </section>
+        </details>
       )}
 
       {error ? (
@@ -184,121 +402,93 @@ export default function TeatimePage() {
         </div>
       ) : rows === null ? (
         <LoadingSpinner />
-      ) : rows.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-500">
-          아직 신청자가 없습니다.
-        </div>
       ) : (
-        byEvent.map(([eventId, all]) => {
-          // 신청 후 탈퇴한 사람은 명단에서 뺀다 — 정원과 성비가 그대로면
-          // 안 올 사람을 세면서 자리를 닫게 된다. 대신 몇 명이 빠졌는지는
-          // 아래 한 줄로 남긴다.
-          const list = all.filter((r) => !r.withdrawn);
-          const left = all.filter((r) => r.withdrawn);
-          const f = list.filter((r) => genderKo(r.gender) === '여성').length;
-          const m = list.filter((r) => genderKo(r.gender) === '남성').length;
-          const na = list.length - f - m;
-          return (
-            <section key={eventId} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-baseline justify-between gap-2">
-                <div>
-                  <h2 className="font-semibold text-gray-900">
-                    {seatName(seats[eventId], eventId)}
-                    {seats[eventId]?.published === false && (
-                      <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-xs font-normal text-gray-600">숨김</span>
-                    )}
-                    <span className="ml-3 text-sm font-normal text-gray-500">
-                      총 {list.length}명 · 여성 {f} · 남성 {m} · 미상 {na}
-                      {seats[eventId]?.capacity ? ` / 정원 ${seats[eventId]?.capacity}` : ''}
-                    </span>
-                  </h2>
-                  <div className="mt-0.5 font-mono text-[11px] text-gray-400">{eventId}</div>
-                </div>
-                <FunnelBar f={funnel[eventId]} />
-              </div>
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  <tr>
-                    <th className="text-left px-5 py-2.5">이름</th>
-                    <th className="text-left px-5 py-2.5">지역</th>
-                    <th className="text-left px-5 py-2.5">성별</th>
-                    <th className="text-left px-5 py-2.5">상태</th>
-                    <th className="text-left px-5 py-2.5">참석</th>
-                    <th className="text-right px-5 py-2.5">신청 시각</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((r) => (
-                    <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
-                      <td className="px-5 py-2.5">
-                        <Link href={`/dashboard/users/view?id=${r.uid}`} className="text-blue-600 hover:underline font-medium">
-                          {r.name || '(이름 없음)'}
-                        </Link>
-                        <div className="text-xs text-gray-400 font-mono mt-0.5">{r.uid.slice(0, 10)}…</div>
-                      </td>
-                      <td className="px-5 py-2.5 text-gray-700">{r.region || '—'}</td>
-                      <td className="px-5 py-2.5 text-gray-700">{genderKo(r.gender)}</td>
-                      <td className="px-5 py-2.5 text-gray-600">{r.status}</td>
-                      <td className={`px-5 py-2.5 ${ATT_TONE[r.attendance ?? 'pending'] ?? 'text-gray-400'}`}>
-                        {ATT_KO[r.attendance ?? 'pending'] ?? '—'}
-                      </td>
-                      <td className="px-5 py-2.5 text-right tabular-nums text-gray-500 whitespace-nowrap">
-                        {r.createdAt ? r.createdAt.toLocaleString('ko-KR') : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {left.length > 0 && (
-                <p className="border-t border-gray-100 bg-gray-50 px-5 py-2.5 text-xs text-gray-500">
-                  탈퇴해서 뺀 신청 {left.length}건
-                  <span className="ml-1 text-gray-400">
-                    ({left.map((r) => r.name || '이름없음').join(', ')})
-                  </span>
-                </p>
-              )}
-            </section>
-          );
-        })
-      )}
-
-      {/* 신청이 0인 자리는 위 목록에 아예 안 나온다. 그런데 "본 사람은 있는데
-          아무도 신청 안 한 자리"가 제일 봐야 할 자리다 — 무엇이 걸리는지
-          거기에 답이 있다. */}
-      {(() => {
-        const withSignups = new Set(byEvent.map(([id]) => id));
-        const empty = Object.values(seats)
-          .filter((s) => !withSignups.has(s.id))
-          .sort((a, b) => (b.startAt ?? '').localeCompare(a.startAt ?? ''));
-        if (!empty.length) return null;
-        return (
-          <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="font-semibold text-gray-900">아직 신청이 없는 자리</h2>
-              <p className="mt-0.5 text-xs text-gray-500">
-                본 사람은 있는데 아무도 신청하지 않은 자리. 카드에서 막힌 건지
-                안내문에서 막힌 건지 여기서 갈립니다.
-              </p>
+        <>
+          {upcoming.length === 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-500">
+              다가오는 자리가 없습니다.
             </div>
-            <ul className="divide-y divide-gray-100">
-              {empty.map((s) => (
-                <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
-                  <div>
-                    <span className="text-sm font-medium text-gray-900">
-                      {seatName(s, s.id)}
-                    </span>
-                    {s.published === false && (
-                      <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">숨김</span>
-                    )}
-                    <div className="mt-0.5 font-mono text-[11px] text-gray-400">{s.id}</div>
+          )}
+          {upcoming.map(({ id, signups }) => {
+            const s = seats[id];
+            const list = signups.filter((r) => !r.withdrawn);
+            const f = list.filter((r) => genderKo(r.gender) === '여성').length;
+            const m = list.filter((r) => genderKo(r.gender) === '남성').length;
+            const when = fmtStartAt(s?.startAt);
+            return (
+              <section key={id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="font-semibold text-gray-900">
+                      {seatName(s, id)}
+                      {when && <span className="ml-2 text-sm font-normal text-emerald-700">{when}</span>}
+                      <span className="ml-3 text-sm font-normal text-gray-500">
+                        신청 {list.length}명 (여 {f} · 남 {m})
+                        {s?.capacity ? ` / 정원 ${s.capacity}` : ''}
+                      </span>
+                    </h2>
+                    <FunnelBar f={funnel[id]} />
                   </div>
-                  <FunnelBar f={funnel[s.id]} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })()}
+                  <CondLine s={s} />
+                  <div className="mt-0.5 font-mono text-[11px] text-gray-300">{id}</div>
+                </div>
+                <EventBody
+                  signups={signups}
+                  viewers={viewerDetails[id] ?? []}
+                  cantRows={(reasons?.rows ?? []).filter((r) => r.eventId === id)}
+                  nameOf={nameOf}
+                />
+              </section>
+            );
+          })}
+
+          {/* 지난 자리 — 한 줄 요약으로 접어 둔다. 눌러야 전체가 열린다. */}
+          {past.length > 0 && (
+            <section className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="border-b border-gray-100 px-5 py-3">
+                <h2 className="text-sm font-semibold text-gray-500">지난 자리 {past.length}곳</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {past.map(({ id, signups }) => {
+                  const s = seats[id];
+                  const list = signups.filter((r) => !r.withdrawn);
+                  const attended = list.filter((r) => r.attendance === 'attended').length;
+                  const noshow = list.filter((r) => r.attendance === 'noshow').length;
+                  const fu = funnel[id];
+                  return (
+                    <details key={id}>
+                      <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-gray-50">
+                        <span className="text-gray-700">
+                          {seatName(s, id)}
+                          <span className="ml-2 text-xs text-gray-400">{fmtStartAt(s?.startAt)}</span>
+                        </span>
+                        <span className="text-xs tabular-nums text-gray-500">
+                          신청 {list.length}
+                          {attended > 0 && ` · 참석 ${attended}`}
+                          {noshow > 0 && ` · 노쇼 ${noshow}`}
+                          {fu && ` · 본 사람 ${fu.viewers}`}
+                        </span>
+                      </summary>
+                      <div className="border-t border-gray-100">
+                        <div className="px-5 pt-3">
+                          <FunnelBar f={fu} />
+                          <CondLine s={s} />
+                        </div>
+                        <EventBody
+                          signups={signups}
+                          viewers={viewerDetails[id] ?? []}
+                          cantRows={(reasons?.rows ?? []).filter((r) => r.eventId === id)}
+                          nameOf={nameOf}
+                        />
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 }
