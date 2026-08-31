@@ -365,11 +365,17 @@ export default function TeatimePage() {
     const now = Date.now();
     const items = [...ids].map((id) => {
       const startMs = seats[id]?.startAt ? new Date(seats[id].startAt!).getTime() : NaN;
+      // 접은 자리는 날짜가 남아 있어도 '다가오는 자리'가 아니다.
+      // 2026-08-31: 연남동 9/3, 도봉 9/4를 접었는데 이 화면 맨 위에 그대로
+      // 남아 "왜 아직 있지"를 매번 다시 확인하게 됐다. 지우지는 않는다 —
+      // 누가 몇 초 열어봤는지가 다음 자리를 만드는 근거라서 지난 자리로 내린다.
+      const isCancelled = seats[id]?.status === 'cancelled';
       return {
         id,
         signups: signupsByEvent.get(id) ?? [],
         startMs: isNaN(startMs) ? null : startMs,
-        isPast: !isNaN(startMs) && startMs + 3 * 60 * 60 * 1000 < now,
+        isPast: isCancelled ||
+          (!isNaN(startMs) && startMs + 3 * 60 * 60 * 1000 < now),
       };
     });
     return {
