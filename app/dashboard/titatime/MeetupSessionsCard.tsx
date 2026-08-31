@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ExcludeMembers from './ExcludeMembers';
 
-type Status = 'open' | 'almost' | 'closed' | 'planning';
+type Status = 'open' | 'almost' | 'closed' | 'planning' | 'cancelled';
 
 interface Session {
   /** 이 자리에서 뺀 회원. 서버가 목록에서 걸러 준다. */
@@ -36,6 +36,7 @@ const STATUS_LABEL: Record<Status, string> = {
   almost: '마감 임박',
   closed: '모집 마감',
   planning: '편성 예정',
+  cancelled: '접음',
 };
 
 const STATUS_CLASS: Record<Status, string> = {
@@ -43,6 +44,7 @@ const STATUS_CLASS: Record<Status, string> = {
   almost: 'bg-amber-100 text-amber-700',
   closed: 'bg-gray-200 text-gray-600',
   planning: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-rose-100 text-rose-700',
 };
 
 const EMPTY_FORM = {
@@ -72,6 +74,7 @@ type FormState = typeof EMPTY_FORM;
 
 export default function MeetupSessionsCard() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [showCancelled, setShowCancelled] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null); // null=닫힘, ''=새로만들기
   const formRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +225,19 @@ export default function MeetupSessionsCard() {
   }
 
   const published = (sessions ?? []).filter((s) => s.published);
+
+  // 접은 자리는 목록에서 빼고 개수만 남긴다. 토글로 다시 볼 수 있다.
+
+  const cancelledCount =
+
+    sessions?.filter((s) => s.status === 'cancelled').length ?? 0;
+
+  const visibleSessions = (sessions ?? []).filter(
+
+    (s) => showCancelled || s.status !== 'cancelled',
+
+  );
+
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -416,18 +432,22 @@ export default function MeetupSessionsCard() {
         </div>
       )}
 
-      {/* 목록 */}
+      {/* 목록 — 접은 자리는 기본으로 감춘다.
+          2026-08-31: 접은 자리가 status만 'cancelled'로 바뀌고 목록에는 그대로
+          남아 있었다. Status 타입에 'cancelled'가 없어서 상태 뱃지도 빈 채로
+          떠, 멀쩡한 자리와 구분이 안 됐다. 앱에는 안 보이는데 어드민에만
+          남아 있으면 "왜 아직 있지"를 매번 다시 확인하게 된다. */}
       <div className="mt-4 space-y-2">
         {sessions === null ? (
           <div className="py-6 text-center text-sm text-gray-400">불러오는 중…</div>
-        ) : sessions.length === 0 ? (
+        ) : visibleSessions.length === 0 && cancelledCount === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-300 py-8 text-center text-sm text-gray-500">
             아직 세션이 없어요. “+ 새 모임”으로 이번 주 자리를 만들어 주세요.
             <br />
             (세션이 없으면 웹은 “편성 예정”만 보여줍니다.)
           </div>
         ) : (
-          sessions.map((s) => (
+          visibleSessions.map((s) => (
             <div
               key={s.id}
               className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
@@ -494,6 +514,17 @@ export default function MeetupSessionsCard() {
               </div>
             </div>
           ))
+        )}
+        {cancelledCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowCancelled((v) => !v)}
+            className="w-full rounded-xl border border-dashed border-gray-300 py-2 text-xs font-semibold text-gray-500 hover:text-gray-700"
+          >
+            {showCancelled
+              ? `접은 자리 ${cancelledCount}개 숨기기`
+              : `접은 자리 ${cancelledCount}개 보기`}
+          </button>
         )}
       </div>
 
