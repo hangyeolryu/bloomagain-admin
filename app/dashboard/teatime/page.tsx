@@ -71,6 +71,8 @@ interface SeatInfo {
   maxBirthYear?: number;
   excludeUids?: string[];
   _excludeUids?: string[];
+  /** 세 분이 모이면 서버가 자동으로 여는 자리 대화방. 없으면 아직 안 열렸다. */
+  chatRoomId?: string;
 }
 
 /** 자리 이름 한 줄. 세션을 못 읽었으면 id라도 보여준다. */
@@ -117,6 +119,17 @@ function CondLine({ s }: { s?: SeatInfo }) {
       보이는 조건: {parts.join(' · ')}
       {s.published === false && (
         <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-gray-600">숨김 — 아무에게도 안 보임</span>
+      )}
+      {/* 자리 대화방은 세 분이 모이면 서버가 자동으로 연다. 어디 있는지
+          몰라서 못 찾던 것을 여기서 바로 열 수 있게 한다(2026-09-01).
+          읽기 전용 뷰어이고, 열람은 감사 로그에 남는다. */}
+      {s.chatRoomId && (
+        <Link
+          href={`/dashboard/moim/room?id=${s.chatRoomId}`}
+          className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 underline"
+        >
+          대화방 열기 →
+        </Link>
       )}
     </p>
   );
