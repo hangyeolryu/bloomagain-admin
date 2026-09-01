@@ -150,6 +150,7 @@ export default function PostsPage() {
                   <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
                     <span className="tabular-nums">♥ {p.likes}</span>
                     <span className="tabular-nums">💬 {p.comments}</span>
+                    <span className="tabular-nums" title="상세를 연 고유 회원 수 — 앱에는 5명부터 보인다">👀 {p.views}</span>
                     {/* 티타픽 — 앱 카드에 '티타픽' 필이 뜬다. 내용은 못 고친다(룰). */}
                     <button
                       type="button"

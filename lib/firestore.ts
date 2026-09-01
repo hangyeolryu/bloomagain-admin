@@ -4966,6 +4966,8 @@ export interface AdminPost {
   imageUrl: string | null;
   likes: number;
   comments: number;
+  /** 상세를 연 고유 회원 수 (앱 3.1.35+부터 집계). */
+  views: number;
   createdAt: Date | null;
 }
 
@@ -5039,6 +5041,7 @@ export async function getAllPosts(max = 300): Promise<AdminPost[]> {
       imageUrl: (p.imageUrl as string) ?? (p.image as string) ?? null,
       likes,
       comments,
+      views: typeof p.views === 'number' ? p.views : 0,
       createdAt: toDate(p.createdAt) ?? null,
     };
   });
