@@ -39,6 +39,8 @@ interface CsThread {
   lastMessage: string;
   lastMessageAt?: Date;
   lastFromUser: boolean; // 마지막 발화가 유저면 "답장 대기"
+  // 우리가 마지막에 보낸 답장을 회원이 읽었는지. 마지막 발화가 회원이면 null.
+  lastBotRead: boolean | null;
 }
 
 interface CsMessage {
@@ -46,6 +48,7 @@ interface CsMessage {
   senderId: string;
   content: string;
   sentAt?: Date;
+  isRead: boolean;
 }
 
 function toDate(v: unknown): Date | undefined {
@@ -94,13 +97,21 @@ export default function CsInboxCard() {
             userDeleted = u.data().isDeleted === true;
           }
         } catch { /* best-effort */ }
-        // 마지막 발화 주체 — 유저면 답장 대기로 표시
+        // 마지막 발화 주체 — 유저면 답장 대기로 표시.
+        // 같은 문서에서 읽음 여부도 같이 읽는다(추가 쿼리 없음). 회원이 대화를
+        // 열면 자기가 안 쓴 메시지의 isRead가 true로 바뀌므로, 우리 답장에
+        // 붙은 isRead가 곧 "회원이 봤다"는 뜻이 된다.
         let lastFromUser = false;
+        let lastBotRead: boolean | null = null;
         try {
           const m = await getDocs(
             query(collection(db, 'conversations', d0.id, 'messages'), orderBy('sentAt', 'desc'), fLimit(1)),
           );
-          if (m.size > 0) lastFromUser = m.docs[0].data().senderId === userUid;
+          if (m.size > 0) {
+            const last = m.docs[0].data();
+            lastFromUser = last.senderId === userUid;
+            if (!lastFromUser) lastBotRead = (last.isRead as boolean | undefined) ?? false;
+          }
         } catch { /* ignore */ }
         rows.push({
           conversationId: d0.id,
@@ -110,6 +121,7 @@ export default function CsInboxCard() {
           lastMessage: ((x.lastMessage as string) ?? '').slice(0, 60),
           lastMessageAt: toDate(x.lastMessageAt),
           lastFromUser,
+          lastBotRead,
         });
       }
       setThreads(rows);
@@ -136,6 +148,7 @@ export default function CsInboxCard() {
             senderId: (m.data().senderId as string) ?? '',
             content: (m.data().content as string) ?? '',
             sentAt: toDate(m.data().sentAt),
+            isRead: (m.data().isRead as boolean | undefined) ?? false,
           }))
           .reverse(),
       );
@@ -214,6 +227,15 @@ export default function CsInboxCard() {
                   {t.userDeleted && <span className="ml-1 text-xs text-red-500">(탈퇴)</span>}
                 </span>
                 <span className="flex-1 truncate text-sm text-gray-500">{t.lastMessage}</span>
+                {t.lastBotRead !== null && (
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+                      t.lastBotRead ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'
+                    }`}
+                  >
+                    {t.lastBotRead ? '읽음' : '안 읽음'}
+                  </span>
+                )}
                 <span className="shrink-0 text-xs tabular-nums text-gray-400">{fmt(t.lastMessageAt)}</span>
               </button>
 
@@ -233,6 +255,7 @@ export default function CsInboxCard() {
                             {m.content}
                             <div className={`mt-1 text-[10px] ${m.senderId === t.userUid ? 'text-gray-400' : 'text-green-100'}`}>
                               {m.senderId === t.userUid ? t.userName : '티타 문의'} · {fmt(m.sentAt)}
+                              {m.senderId !== t.userUid && (m.isRead ? ' · 읽음' : ' · 안 읽음')}
                             </div>
                           </div>
                         </div>

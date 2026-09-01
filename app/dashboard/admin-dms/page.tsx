@@ -57,7 +57,11 @@ function toDate(v: unknown): Date | undefined {
   return undefined;
 }
 
+/// 읽음 뱃지 쿼리가 인덱스 때문에 실패하면 여기에 담아 화면으로 올린다.
+let indexError: string | null = null;
+
 async function loadAdminDms(adminUid: string): Promise<DmSummary[]> {
+  indexError = null;
   // Only DMs the admin initiated via the send-message flow carry
   // metadata.source === 'admin_dm'. Filtering server-side keeps this page
   // scoped to admin outreach instead of surfacing the admin's personal chats.
@@ -110,8 +114,12 @@ async function loadAdminDms(adminUid: string): Promise<DmSummary[]> {
         lastAdminMessageRead =
           (msgSnap.docs[0].data().isRead as boolean | undefined) ?? false;
       }
-    } catch {
-      /* subcollection query may need an index — non-fatal */
+    } catch (e) {
+      // 인덱스가 없으면 읽음 뱃지가 통째로 사라진다. 예전에는 여기서 조용히
+      // 삼켜서, 화면에는 아무 문제 없어 보이는데 읽음이 영영 안 뜨는 상태가
+      // 됐다(2026-09-01 발견 — senderId+sentAt 인덱스 누락). 이제는 화면에
+      // 올려서 만들 수 있게 한다.
+      indexError = e instanceof Error ? e.message : String(e);
     }
 
     summaries.push({
@@ -461,6 +469,7 @@ export default function AdminDmsPage() {
     setError(null);
     try {
       const rows = await loadAdminDms(adminUid);
+      if (indexError) setError(indexError);
       setItems(rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -512,7 +521,23 @@ export default function AdminDmsPage() {
           쿼리 오류: {error}
           {error.includes('index') && (
             <p className="mt-1 text-xs">
-              Firestore 콘솔에서 안내한 링크로 인덱스를 생성해주세요.
+              {/* 파이어스토어가 오류 안에 생성 링크를 같이 준다. 그대로 눌러
+                  만들 수 있게 꺼내서 건다 — 콘솔을 뒤질 필요가 없다. */}
+              {(() => {
+                const url = error.match(/https:\/\/console\.firebase\.google\.com\S+/)?.[0];
+                return url ? (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline font-medium"
+                  >
+                    이 링크로 인덱스를 만들어주세요 →
+                  </a>
+                ) : (
+                  <>Firestore 콘솔에서 안내한 링크로 인덱스를 생성해주세요.</>
+                );
+              })()}
             </p>
           )}
         </div>

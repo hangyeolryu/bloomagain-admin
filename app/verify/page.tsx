@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { logVerifyStep } from './step-log';
 
 /**
  * /verify/
@@ -37,6 +38,7 @@ export default function VerifyStartPage() {
         // direct browser hits) the backend falls back to an unbound session.
         const uid =
           new URLSearchParams(window.location.search).get('uid')?.trim() ?? '';
+        logVerifyStep('page_open', uid);
 
         // Persist for /verify/callback/ — NICE's redirect drops our query
         // params, and the legacy store-result bridge needs the uid too.
@@ -74,6 +76,8 @@ export default function VerifyStartPage() {
             }
           | undefined;
 
+        logVerifyStep('init_ok', uid);
+
         if (np?.action && np.token_version_id && np.enc_data && np.integrity_value) {
           const form = document.createElement('form');
           form.method = 'POST';
@@ -92,6 +96,9 @@ export default function VerifyStartPage() {
             form.appendChild(input);
           }
           document.body.appendChild(form);
+          // 이 줄 다음에 화면이 NICE로 넘어간다. 여기까지 왔는데 콜백이 없으면
+          // NICE 화면에서 멈춘 것 — 우리 쪽 문제가 아니라는 뜻이다.
+          logVerifyStep('nice_submit', uid);
           form.submit();
           return;
         }
@@ -104,6 +111,11 @@ export default function VerifyStartPage() {
         throw new Error(json.error ?? 'Unexpected NICE init response');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '알 수 없는 오류';
+        logVerifyStep(
+          'init_fail',
+          new URLSearchParams(window.location.search).get('uid')?.trim() ?? '',
+          msg,
+        );
         setError(msg);
         setStatus('error');
 

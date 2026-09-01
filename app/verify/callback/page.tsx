@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { logVerifyStep } from '../step-log';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
@@ -55,6 +56,17 @@ function CallbackInner() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // 돌아온 것 자체를 먼저 남긴다. nice_submit은 있는데 이게 없으면 NICE
+    // 화면에서 멈춘 것이고, 이게 있는데 callback_ok가 없으면 우리 쪽 검증에서
+    // 막힌 것이다 — 두 경우의 대응이 완전히 다르다.
+    let stashedUid = '';
+    try {
+      stashedUid = sessionStorage.getItem('nice_verify_uid')?.trim() ?? '';
+    } catch {
+      /* 저장소를 못 쓰는 웹뷰 — uid 없이 단계만 남긴다 */
+    }
+    logVerifyStep('callback_open', stashedUid);
+
     const tokenVersionId = searchParams.get('token_version_id');
     const encData = searchParams.get('enc_data');
     const integrityValue = searchParams.get('integrity_value');
@@ -65,6 +77,7 @@ function CallbackInner() {
     const closed = searchParams.get('closed');
 
     if (closed === '1') {
+      logVerifyStep('callback_fail', stashedUid, 'user_cancelled');
       notifyResult({ success: false, error: '사용자가 본인확인을 취소했습니다.' });
       setStatus('closed');
       return;
@@ -76,6 +89,7 @@ function CallbackInner() {
 
     if (!nicePassOk && !niceAuthOk && !legacyOk) {
       const msg = '필수 파라미터가 없습니다.';
+      logVerifyStep('callback_fail', stashedUid, 'missing_params');
       notifyResult({ success: false, error: msg });
       setError(msg);
       setStatus('error');
@@ -126,11 +140,13 @@ function CallbackInner() {
         } catch {
           // ignore
         }
+        logVerifyStep('callback_ok', uid);
         setData(json.data);
         setStatus('success');
         notifyResult({ success: true, verification_token: json.verification_token, data: json.data });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '알 수 없는 오류';
+        logVerifyStep('callback_fail', stashedUid, msg);
         setError(msg);
         setStatus('error');
         notifyResult({ success: false, error: msg });
