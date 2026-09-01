@@ -11,7 +11,7 @@
  */
 
 /** 현재 스토어에 올라간 최신 버전. 릴리스마다 갱신할 것. */
-export const LATEST_APP_VERSION = '3.0.15';
+export const LATEST_APP_VERSION = '3.2.4';
 
 /** "3.0.15" → [3, 0, 15]. 숫자가 아닌 조각은 0으로 취급. */
 function parts(v: string): number[] {
@@ -59,4 +59,61 @@ export const VERSION_STATUS_LABEL: Record<
   behind: { label: '구버전', className: 'bg-amber-100 text-amber-800' },
   ahead: { label: '테스트 빌드', className: 'bg-blue-100 text-blue-700' },
   unknown: { label: '기록 없음', className: 'bg-gray-100 text-gray-500' },
+};
+
+/**
+ * 목록(users 테이블)용 압축 표기 — 배지를 행마다 붙이면 시끄러워서
+ * 점 하나 + 버전 숫자만 쓴다. 색 의미는 VERSION_STATUS_LABEL과 동일.
+ */
+export const VERSION_STATUS_DOT: Record<VersionStatus, string> = {
+  latest:  'bg-green-500',
+  behind:  'bg-amber-500',
+  ahead:   'bg-blue-500',
+  unknown: 'bg-gray-300',
+};
+
+export const VERSION_STATUS_TEXT: Record<VersionStatus, string> = {
+  latest:  'text-gray-700',
+  behind:  'text-amber-700 font-semibold',
+  ahead:   'text-blue-700',
+  unknown: 'text-gray-300',
+};
+
+// ─── 플랫폼 ────────────────────────────────────────────────────────────────
+//
+// 앱은 users.device.platform에 'iOS' / 'Android'(대문자 시작)를 쓴다
+// (notification_permission_service._getDeviceInfo). 다른 컬렉션(app_error 등)은
+// 소문자 'ios'/'android'를 쓰므로 대소문자 구분 없이 받는다.
+
+export type AppPlatform = 'ios' | 'android' | 'web' | 'unknown';
+
+export function normalizePlatform(raw?: string | null): AppPlatform {
+  const s = (raw ?? '').trim().toLowerCase();
+  if (!s) return 'unknown';
+  if (s.includes('ios') || s.includes('iphone') || s.includes('ipad')) return 'ios';
+  if (s.includes('android')) return 'android';
+  // 웹/데스크톱은 실사용자가 아니라 대개 내부 테스트다. 한 칸에 몰아 둔다.
+  if (s.includes('web') || s.includes('macos') || s.includes('windows') || s.includes('linux')) return 'web';
+  return 'unknown';
+}
+
+/** appAgent "Tita/3.2.4+179 (iOS; iPhone 15 Pro; 17.4)" 의 괄호 첫 조각이 플랫폼. */
+export function platformFromAppAgent(agent?: string | null): AppPlatform {
+  if (!agent) return 'unknown';
+  const m = /\(([^;)]+)/.exec(agent);
+  return normalizePlatform(m?.[1]);
+}
+
+export const PLATFORM_EMOJI: Record<AppPlatform, string> = {
+  ios:     '🍎',
+  android: '🤖',
+  web:     '🌐',
+  unknown: '❔',
+};
+
+export const PLATFORM_LABEL: Record<AppPlatform, string> = {
+  ios:     'iOS',
+  android: 'Android',
+  web:     '웹/데스크톱',
+  unknown: '플랫폼 기록 없음',
 };

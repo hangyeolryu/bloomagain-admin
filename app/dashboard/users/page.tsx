@@ -11,6 +11,8 @@ import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
+import { versionStatus, VERSION_STATUS_DOT, VERSION_STATUS_TEXT, VERSION_STATUS_LABEL, LATEST_APP_VERSION, normalizePlatform, platformFromAppAgent, PLATFORM_EMOJI, PLATFORM_LABEL } from '@/lib/app-version';
+import { activityTier, activityRatio, ACTIVITY_TIER_META } from '@/lib/activity-heat';
 
 const PAGE_SIZE = 30;
 
@@ -130,6 +132,74 @@ function formatRelativeTime(date?: Date) {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}일 전`;
   return formatDate(date);
+}
+
+const ACTIVITY_WINDOW_DAYS = 30;
+
+/**
+ * 30일 활동 온도계. 활동일 수로 색을 정하고, 막대로 30일 중 몇 칸인지 보여준다.
+ * 세션 수(하트비트)는 곁들이는 정보라 회색으로 눌러 둔다 — 색의 근거는 활동일뿐.
+ */
+function ActivityHeat({ summary }: { summary?: UserActivitySummary }) {
+  const days = summary?.activeDays ?? 0;
+  const tier = summary ? activityTier(days, ACTIVITY_WINDOW_DAYS) : 'none';
+  const meta = ACTIVITY_TIER_META[tier];
+  const pct  = Math.round(activityRatio(days, ACTIVITY_WINDOW_DAYS) * 100);
+
+  return (
+    <span
+      className="inline-flex flex-col gap-1 min-w-[84px]"
+      title={
+        summary
+          ? `${meta.label} — 최근 ${ACTIVITY_WINDOW_DAYS}일 중 ${days}일 접속 · 세션 ${summary.heartbeats}회(근사치)`
+          : '활동 기록 없음 — 안 왔다는 뜻이 아니라 하트비트가 안 잡힌 것'
+      }
+    >
+      <span className={`inline-flex items-baseline gap-1 rounded-full border px-2 py-0.5 text-xs leading-none ${meta.pillClass}`}>
+        <span className="font-bold tabular-nums">{summary ? days : '-'}</span>
+        <span className="text-[10px] opacity-70">일</span>
+        {summary && (
+          <span className="text-[10px] opacity-60 tabular-nums">· {summary.heartbeats}회</span>
+        )}
+      </span>
+      <span className="h-1 w-full rounded-full bg-gray-100 overflow-hidden">
+        <span className={`block h-full rounded-full ${meta.barClass}`} style={{ width: `${pct}%` }} />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * 앱 버전 한 칸. 이모지로 플랫폼(iOS/안드로이드), 점 색으로 최신/구버전/테스트빌드.
+ * 값 출처는 users.appVersion(하트비트가 갱신) → 없으면 users.device.appVersion.
+ * 플랫폼은 device.platform이 없으면 appAgent 괄호에서 뽑는다(둘 다 같은 시점에
+ * 쓰이지만 옛 문서엔 한쪽만 있는 경우가 있다).
+ */
+function AppVersionCell({ user }: { user: UserProfile }) {
+  const version = user.appVersion ?? user.device?.appVersion;
+  const build   = user.buildNumber ?? user.device?.buildNumber;
+  const status  = versionStatus(version);
+  const dev     = user.device;
+
+  const fromDevice = normalizePlatform(dev?.platform);
+  const platform   = fromDevice === 'unknown' ? platformFromAppAgent(user.appAgent) : fromDevice;
+
+  const detail = [
+    PLATFORM_LABEL[platform],
+    version ? `${version}${build ? `+${build}` : ''}` : '버전 기록 없음',
+    VERSION_STATUS_LABEL[status].label,
+    [dev?.model, dev?.osVersion].filter(Boolean).join(' · '),
+  ].filter(Boolean).join(' — ');
+
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={detail}>
+      <span className="text-[13px] leading-none flex-shrink-0" role="img" aria-label={PLATFORM_LABEL[platform]}>
+        {PLATFORM_EMOJI[platform]}
+      </span>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${VERSION_STATUS_DOT[status]}`} />
+      <span className={`tabular-nums ${VERSION_STATUS_TEXT[status]}`}>{version ?? '-'}</span>
+    </span>
+  );
 }
 
 export default function UsersPage() {
@@ -521,15 +591,13 @@ export default function UsersPage() {
                     </p>
                   </div>
                 </div>
-                <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-400 pl-14">
+                <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-400 pl-14 flex-wrap">
                   <span>가입 {formatDate(u.createdAt)}</span>
                   <span>접속 {formatRelativeTime(u.lastActiveAt)}</span>
-                  {activity[u.id] && (
-                    <span className="text-gray-500">
-                      30일 <span className="font-semibold text-gray-700 tabular-nums">{activity[u.id].activeDays}일</span>
-                      <span> · {activity[u.id].heartbeats}회</span>
-                    </span>
-                  )}
+                  <span className="text-[11px]"><AppVersionCell user={u} /></span>
+                </div>
+                <div className="mt-1.5 pl-14">
+                  <ActivityHeat summary={activity[u.id]} />
                 </div>
               </div>
             ))
@@ -558,8 +626,11 @@ export default function UsersPage() {
                     가입일{sortBy === 'createdAt' ? ' ↓' : ''}
                   </button>
                 </th>
-                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="최근 30일 — 앱을 연 날 수 · 세션 수(30분 하트비트 합, 근사치)">
+                <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="최근 30일 — 앱을 연 날 수 · 세션 수(30분 하트비트 합, 근사치). 색은 활동일 기준: 빨강(이탈 위험) → 주황 → 노랑 → 초록 → 보라(거의 매일)">
                   30일 활동
+                </th>
+                <th className="hidden lg:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title={`마지막 접속 시점의 플랫폼과 앱 버전. 🍎=iOS · 🤖=안드로이드 · 🌐=웹/데스크톱 · ❔=기록 없음. 점 색은 초록=최신(${LATEST_APP_VERSION}) · 주황=구버전 · 파랑=테스트 빌드 · 회색=기록 없음`}>
+                  앱 버전
                 </th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   <button
@@ -578,7 +649,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-400">
+                  <td colSpan={10} className="text-center py-12 text-gray-400">
                     검색 결과 없음
                   </td>
                 </tr>
@@ -647,14 +718,10 @@ export default function UsersPage() {
                     <td className="px-4 py-2.5">{getStatusBadge(u)}</td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500">{formatDate(u.createdAt)}</td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs whitespace-nowrap">
-                      {activity[u.id] ? (
-                        <span className="text-gray-700">
-                          <span className="font-semibold tabular-nums">{activity[u.id].activeDays}일</span>
-                          <span className="text-gray-400"> · {activity[u.id].heartbeats}회</span>
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">-</span>
-                      )}
+                      <ActivityHeat summary={activity[u.id]} />
+                    </td>
+                    <td className="hidden lg:table-cell px-4 py-2.5 text-xs">
+                      <AppVersionCell user={u} />
                     </td>
                     <td
                       className="hidden md:table-cell px-4 py-2.5 text-xs text-gray-500"
