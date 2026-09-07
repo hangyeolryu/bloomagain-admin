@@ -106,6 +106,31 @@ function regionLabel(p: UserProfile) {
   return `${p.city ?? ''}${p.district ? ` ${p.district}` : ''}`.trim();
 }
 
+/**
+ * Label the origin of a PREMIUM tier. `subscription_tier` alone is ambiguous —
+ * 창립 회원 무료 trial, 후원자·운영자 부여, 실결제가 전부 PREMIUM으로 들어온다.
+ * `first_paid_at`은 sticky라 구독이 만료된 뒤에도 "돈 낸 적 있는 사람"이 남는다.
+ */
+function subscriptionBadge(p: UserProfile): { variant: 'green' | 'blue' | 'gray'; label: string } | null {
+  if (p.subscription_tier !== 'PREMIUM') {
+    // 결제 이력은 있는데 지금은 FREE — 만료됐거나 해지한 유료 고객.
+    return p.first_paid_at ? { variant: 'gray', label: '결제 이력 · 현재 만료' } : null;
+  }
+  switch (p.subscription_source) {
+    case 'REVENUECAT':
+      return { variant: 'green', label: '결제 · Premium' };
+    case 'FOUNDING_TRIAL':
+      return { variant: 'blue', label: '창립 trial · 무상' };
+    case 'PATRON':
+      return { variant: 'blue', label: '후원자 · 무상' };
+    case 'ADMIN':
+      return { variant: 'blue', label: '운영자 부여 · 무상' };
+    default:
+      // 030 마이그레이션 이전에 부여된 구독 — 출처 기록이 없다.
+      return { variant: 'gray', label: 'Premium · 출처 미상' };
+  }
+}
+
 /** Mask a legal name, keeping only the first character: 홍길동 → 홍○○, 김민 → 김○. */
 function maskName(name?: string | null) {
   if (!name) return name ?? undefined;
@@ -325,9 +350,10 @@ export default function UserDetailClient({ id }: { id: string }) {
               {profile.founding_member_number != null && (
                 <Badge variant="blue">창립 #{profile.founding_member_number}</Badge>
               )}
-              {profile.subscription_tier === 'PREMIUM' && (
-                <Badge variant="green">Premium</Badge>
-              )}
+              {(() => {
+                const sub = subscriptionBadge(profile);
+                return sub ? <Badge variant={sub.variant}>{sub.label}</Badge> : null;
+              })()}
               {gyeolq && (
                 gyeolq.moimEligible ? (
                   <Badge variant="green">🌱 결큐 {gyeolq.total} · 결모임 자격</Badge>
@@ -454,6 +480,27 @@ export default function UserDetailClient({ id }: { id: string }) {
           <InfoRow label="가입 인증(verified)" value={profile.verified ? '✅ 완료' : '❌ 미완료'} />
           <InfoRow label="관리자" value={profile.isAdmin ? '예' : '아니오'} />
           <InfoRow label="구독 등급" value={profile.subscription_tier || 'FREE'} />
+          <InfoRow
+            label="구독 출처"
+            value={
+              profile.subscription_source
+                ? {
+                    REVENUECAT: '실결제 (Play/App Store)',
+                    FOUNDING_TRIAL: '창립 회원 무료 trial',
+                    PATRON: '후원자 부여',
+                    ADMIN: '운영자 수동 부여',
+                  }[profile.subscription_source]
+                : '-'
+            }
+          />
+          <InfoRow
+            label="최초 결제일"
+            value={
+              profile.first_paid_at
+                ? new Date(profile.first_paid_at).toLocaleString('ko-KR')
+                : '결제 이력 없음'
+            }
+          />
           <InfoRow
             label="창립 회원 번호"
             value={profile.founding_member_number != null ? `#${profile.founding_member_number}` : '-'}

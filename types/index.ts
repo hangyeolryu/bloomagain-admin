@@ -77,6 +77,12 @@ export interface UserProfile {
   // the backend's expires_at passes (no client-side cleanup needed).
   founding_member_number?: number;
   subscription_tier?: 'FREE' | 'PREMIUM';
+  // Where the PREMIUM came from. subscription_tier alone cannot distinguish a
+  // 창립 회원 무료 trial from a real Play/App Store purchase — both are PREMIUM.
+  subscription_source?: 'REVENUECAT' | 'FOUNDING_TRIAL' | 'PATRON' | 'ADMIN';
+  // Sticky ISO timestamp of the first real purchase; survives expiry and any
+  // later trial/admin grant, so it is the reliable "돈 낸 적 있는 사람" signal.
+  first_paid_at?: string;
   // Additional profile / safety fields present on the root user doc.
   gender?: string;
   riskScore?: number;
