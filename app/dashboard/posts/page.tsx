@@ -4,6 +4,7 @@
 // users/{uid}/posts·circles/{cid}/posts·루트 posts 를 최신순으로 모아 보여준다.
 
 import { useEffect, useMemo, useState } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -23,6 +24,41 @@ export default function PostsPage() {
   const [region, setRegion] = useState<string>('전체');
   const [q, setQ] = useState('');
   const [busyPath, setBusyPath] = useState<string | null>(null);
+  // 댓글 작성 중인 글의 path → 입력값. 한 번에 한 글만 연다.
+  const [openPath, setOpenPath] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // 공식 계정(티타 관리자) 명의 댓글. 클라이언트 SDK로는 못 쓴다 — 남의 명의로
+  // 쓰고 푸시까지 보내야 해서 callable(commentOnPostAsOfficial)을 거친다.
+  async function submitComment(p: AdminPost) {
+    const content = draft.trim();
+    if (!content || sending) return;
+    setSending(true);
+    try {
+      const fns = getFunctions(undefined, 'asia-northeast3');
+      const call = httpsCallable(fns, 'commentOnPostAsOfficial');
+      const res = await call({ path: p.path, ownerId: p.authorUid, content });
+      const out = (res.data ?? {}) as { pushed?: boolean; notified?: boolean };
+      setPosts((prev) =>
+        prev?.map((x) => (x.path === p.path ? { ...x, comments: x.comments + 1 } : x)) ?? prev,
+      );
+      setOpenPath(null);
+      setDraft('');
+      setToast(
+        out.notified === false
+          ? '댓글을 남겼어요.'
+          : out.pushed
+            ? '댓글을 남기고 푸시까지 보냈어요.'
+            : '댓글을 남겼어요. (푸시 토큰이 없어 앱 알림만 갑니다)',
+      );
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : '댓글을 남기지 못했어요.');
+    } finally {
+      setSending(false);
+    }
+  }
 
   // 티타픽 토글 — 성공하면 목록의 그 글만 갱신한다(전체 재조회는 느리다).
   async function togglePick(p: AdminPost) {
@@ -164,11 +200,55 @@ export default function PostsPage() {
                     >
                       {p.titaPick ? '티타픽 해제' : '티타픽으로'}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenPath(openPath === p.path ? null : p.path);
+                        setDraft('');
+                      }}
+                      className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      {openPath === p.path ? '닫기' : '댓글 달기'}
+                    </button>
                   </div>
+
+                  {openPath === p.path && (
+                    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      <textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        rows={3}
+                        maxLength={1000}
+                        autoFocus
+                        placeholder="티타 관리자 이름으로 달립니다. 글쓴이에게 알림과 푸시가 갑니다."
+                        className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm"
+                      />
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="text-xs text-gray-400 tabular-nums">{draft.length}/1000</span>
+                        <button
+                          type="button"
+                          disabled={sending || !draft.trim()}
+                          onClick={() => submitComment(p)}
+                          className="ml-auto rounded-lg bg-gray-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
+                        >
+                          {sending ? '남기는 중...' : '티타 관리자로 남기기'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
+        )}
+        {toast && (
+          <div
+            role="status"
+            onClick={() => setToast(null)}
+            className="cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm"
+          >
+            {toast}
+          </div>
         )}
         <p className="text-xs text-gray-400">
           최신 {posts?.length ?? 0}건까지 불러와요. 더 필요하면 getAllPosts(max) 상향.
