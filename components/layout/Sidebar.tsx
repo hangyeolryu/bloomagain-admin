@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: '대시보드', icon: '📊' },
   { href: '/dashboard/stats', label: '통계 오버뷰', icon: '📈' },
   { href: '/dashboard/patterns', label: '사용자 패턴', icon: '🕰️' },
+  { href: '/dashboard/engagement', label: '참여도 (눈팅·적극)', icon: '👀' },
 
   // 사람을 데려오는 일.
   { href: '/dashboard/needs', label: '니즈 설문 (5060)', icon: '🧭', section: '모으기' },
