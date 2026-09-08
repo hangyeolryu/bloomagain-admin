@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Link from 'next/link';
-import { getWaves } from '@/lib/firestore';
+import { getWaves, getUsersByIds } from '@/lib/firestore';
+import UserChip, { OFFICIAL_UID } from '@/components/ui/UserChip';
+import type { UserProfile } from '@/types';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import type { Wave, WaveStatus } from '@/types';
 import Badge from '@/components/ui/Badge';
@@ -30,6 +32,8 @@ export default function WavesPage() {
   const [loadingMore, setLoadingMore]   = useState(false);
   const [hasMore, setHasMore]           = useState(false);
   const [filter, setFilter]             = useState<FilterType>('all');
+  // uid만 떠 있으면 누구인지 알 수 없다. 얼굴·이름·나이·성별을 붙인다.
+  const [users, setUsers]               = useState<Record<string, UserProfile>>({});
 
   const lastDocRef  = useRef<QueryDocumentSnapshot | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -54,6 +58,30 @@ export default function WavesPage() {
   }, [hasMore, loadingMore]);
 
   loadMoreRef.current = loadMore;
+
+  // 화면에 뜬 uid의 프로필을 채운다 — 없는 것만 골라 열 개씩 묶어 읽는다.
+  useEffect(() => {
+    const need = Array.from(
+      new Set(waves.flatMap((w) => [w.fromUserId, w.toUserId])),
+    ).filter((uid) => uid && !users[uid]);
+    if (need.length === 0) return;
+    let alive = true;
+    getUsersByIds(need)
+      .then((list) => {
+        if (!alive) return;
+        setUsers((prev) => {
+          const next = { ...prev };
+          list.forEach((u) => {
+            next[u.id] = u;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('[Waves] 프로필 조회 실패:', err));
+    return () => {
+      alive = false;
+    };
+  }, [waves, users]);
 
   // Initial / filter-change load
   useEffect(() => {
@@ -87,6 +115,10 @@ export default function WavesPage() {
   }, []);
 
   const pendingCount  = waves.filter((w) => w.status === 'pending').length;
+  // 티타 관리자가 보내거나 받은 건 회원끼리의 인사가 아니다. 목록에서 뺀다.
+  const rows = waves.filter(
+    (w) => w.fromUserId !== OFFICIAL_UID && w.toUserId !== OFFICIAL_UID,
+  );
   const acceptedCount = waves.filter((w) => w.status === 'accepted').length;
   const declinedCount = waves.filter((w) => w.status === 'declined').length;
 
@@ -94,7 +126,9 @@ export default function WavesPage() {
     <div>
       <Header
         title="웨이브"
-        subtitle={`${waves.length}건 로드됨`}
+        subtitle={`회원끼리 ${rows.length}건${
+          waves.length !== rows.length ? ` · 티타 관리자 ${waves.length - rows.length}건 숨김` : ''
+        }`}
       />
 
       {/* Filter tabs */}
@@ -122,7 +156,7 @@ export default function WavesPage() {
 
       {loading ? (
         <LoadingSpinner />
-      ) : waves.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-100">
           <p className="text-4xl mb-2">👋</p>
           <p>웨이브 없음</p>
@@ -142,23 +176,13 @@ export default function WavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {waves.map((w) => (
+                {rows.map((w) => (
                   <tr key={w.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-2.5">
-                      <Link
-                        href={`/dashboard/users/view?id=${w.fromUserId}`}
-                        className="font-mono text-xs text-blue-600 hover:underline"
-                      >
-                        {w.fromUserId.slice(0, 8)}…
-                      </Link>
+                      <UserChip uid={w.fromUserId} user={users[w.fromUserId]} />
                     </td>
                     <td className="px-4 py-2.5">
-                      <Link
-                        href={`/dashboard/users/view?id=${w.toUserId}`}
-                        className="font-mono text-xs text-blue-600 hover:underline"
-                      >
-                        {w.toUserId.slice(0, 8)}…
-                      </Link>
+                      <UserChip uid={w.toUserId} user={users[w.toUserId]} />
                     </td>
                     <td className="hidden sm:table-cell px-4 py-2.5 max-w-[200px]">
                       <p className="text-gray-700 truncate text-xs">{w.message || <span className="text-gray-400 italic">메시지 없음</span>}</p>

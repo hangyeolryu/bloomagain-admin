@@ -6,6 +6,9 @@ import type { Conversation } from '@/types';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
+import { getUsersByIds } from '@/lib/firestore';
+import UserChip, { OFFICIAL_UID } from '@/components/ui/UserChip';
+import type { UserProfile } from '@/types';
 
 const PAGE_SIZE = 30;
 
@@ -61,6 +64,8 @@ function formatDate(date?: Date) {
 export default function ConversationsPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading]             = useState(true);
+  // uid만으로는 누구인지 알 수 없다. 얼굴·이름·나이·성별을 붙인다.
+  const [users, setUsers] = useState<Record<string, UserProfile>>({});
   const [loadingMore, setLoadingMore]     = useState(false);
   const [hasMore, setHasMore]             = useState(false);
   const [error, setError]                 = useState<string | null>(null);
@@ -87,6 +92,30 @@ export default function ConversationsPage() {
   loadMoreRef.current = loadMore;
 
   // Initial load
+  // 화면에 뜬 uid의 프로필을 채운다 — 없는 것만 골라 열 개씩 묶어 읽는다.
+  useEffect(() => {
+    const need = Array.from(
+      new Set(conversations.flatMap((c) => c.participants ?? [])),
+    ).filter((uid) => uid && !users[uid]);
+    if (need.length === 0) return;
+    let alive = true;
+    getUsersByIds(need)
+      .then((list) => {
+        if (!alive) return;
+        setUsers((prev) => {
+          const next = { ...prev };
+          list.forEach((u) => {
+            next[u.id] = u;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('[Conversations] 프로필 조회 실패:', err));
+    return () => {
+      alive = false;
+    };
+  }, [conversations, users]);
+
   useEffect(() => {
     fetchConversations()
       .then(({ items, nextCursor }) => {
@@ -157,16 +186,12 @@ export default function ConversationsPage() {
                   return (
                     <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-2.5">
-                        <div className="flex flex-col gap-0.5">
-                          {c.participants.map((uid) => (
-                            <Link
-                              key={uid}
-                              href={`/dashboard/users/view?id=${uid}`}
-                              className="font-mono text-xs text-blue-600 hover:underline"
-                            >
-                              {uid.slice(0, 8)}…
-                            </Link>
-                          ))}
+                        <div className="flex flex-col gap-1.5">
+                          {(c.participants ?? [])
+                            .filter((uid) => uid !== OFFICIAL_UID)
+                            .map((uid) => (
+                              <UserChip key={uid} uid={uid} user={users[uid]} />
+                            ))}
                         </div>
                       </td>
                       <td className="hidden sm:table-cell px-4 py-2.5 max-w-[240px]">

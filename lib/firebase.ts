@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,6 +19,9 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
+// 자리 사진 업로드용. Storage 규칙이 seat_photos/{uid} 아래 본인 uid 경로만
+// 쓰기를 허용하므로, 어드민도 자기 uid 아래에 올린다(규칙 변경 불필요).
+export const storage = getStorage(app);
 
 /** Call from a client component when you want GA; avoid top-level import so /verify WebViews do not load gtag. */
 export function initFirebaseAnalytics() {

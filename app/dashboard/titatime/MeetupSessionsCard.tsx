@@ -9,6 +9,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ExcludeMembers from './ExcludeMembers';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, storage } from '@/lib/firebase';
 
 type Status = 'open' | 'almost' | 'closed' | 'planning' | 'cancelled';
 
@@ -29,6 +31,28 @@ interface Session {
   description: string | null;
   published: boolean;
   sortOrder: number;
+  // 앱 신청 시트가 보여주는 것들. 예전엔 목록이 이걸 안 내려줘서 어드민에서
+  // 고칠 수가 없었고, minToOpen 하나 바꾸는 데 스크립트를 써야 했다.
+  startAt?: string | null;
+  venue?: string | null;
+  mapUrl?: string | null;
+  region?: string | null;
+  city?: string | null;
+  activity?: string | null;
+  topic?: string | null;
+  capacity?: number | null;
+  minToOpen?: number | null;
+  genderPref?: string | null;
+  agePref?: string | null;
+  minBirthYear?: number | null;
+  maxBirthYear?: number | null;
+  costNote?: string | null;
+  linkUrl?: string | null;
+  linkLabel?: string | null;
+  photoUrls?: string[] | null;
+  lat?: number | null;
+  lng?: number | null;
+  signupCount?: number;
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -59,6 +83,28 @@ const EMPTY_FORM = {
   cardTitle: '',
   cardColor: '',
   cardImageUrl: '',
+  // 언제·어디서. startAt은 datetime-local 값("2026-09-12T14:00")으로 들고
+  // 저장할 때 +09:00을 붙인다 — 앱의 '캘린더에 추가'가 이 값을 쓴다.
+  startAt: '',
+  venue: '',
+  mapUrl: '',
+  region: '서울',
+  city: '서울',
+  // 무엇을 하는 자리인가. 채워진 자리 넷 중 둘이 미술관이었고, 지역만 적힌
+  // 자리는 대부분 0명이었다(2026-09-07 실측). 동네보다 이게 신청을 가른다.
+  activity: '',
+  // 인원. capacity는 실제 예약 인원과 맞춘다. minToOpen을 못 채우면
+  // cancelUnderfilledSeats가 이틀 전에 자리를 접는다.
+  capacity: '' as number | '',
+  minToOpen: '' as number | '',
+  genderPref: 'any',
+  agePref: 'any',
+  // 비용은 카드에 미리 밝힌다. 비우면 앱이 "각자 주문하고 각자 계산"을 띄우는데,
+  // 참가비를 미리 내는 자리에서는 그 문장이 거짓말이 된다.
+  costNote: '',
+  linkUrl: '',
+  linkLabel: '',
+  photoUrls: [] as string[],
 };
 
 // 앱 팔레트에서 고른 프리셋 — 자유 hex도 되지만, 아무 색이나 고르면 브랜드가
@@ -72,6 +118,48 @@ const CARD_COLORS: { hex: string; label: string }[] = [
 
 type FormState = typeof EMPTY_FORM;
 
+/**
+ * 폼 값 → 백엔드 페이로드.
+ *
+ * 빈 문자열을 그대로 보내면 안 된다. 백엔드는 "보낸 필드만 갱신"이라
+ * `venue: ''`는 "장소를 지워라"가 되고, 숫자 칸의 ''는 타입 오류가 된다.
+ * 비운 칸은 아예 안 보내고, 지우고 싶을 때는 null을 명시적으로 보낸다.
+ */
+function toPayload(form: FormState): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    district: form.district.trim(),
+    dateLabel: form.dateLabel.trim(),
+    spotsLabel: form.spotsLabel.trim(),
+    status: form.status,
+    published: form.published,
+    sortOrder: form.sortOrder,
+    description: form.description.trim() || null,
+    // 사진은 배열 통째로 보낸다 — 지운 것도 반영되어야 한다.
+    photoUrls: form.photoUrls,
+  };
+  // 문자열: 비었으면 null(지우기), 있으면 다듬어서.
+  for (const k of ['cardTitle', 'cardColor', 'cardImageUrl', 'venue', 'mapUrl',
+    'region', 'city', 'costNote', 'linkUrl', 'linkLabel'] as const) {
+    const v = String(form[k] ?? '').trim();
+    out[k] = v || null;
+  }
+  // 활동은 topic에도 같은 값을 넣는다 — 앱과 편성이 둘 다 본다.
+  const activity = form.activity.trim();
+  out.activity = activity || null;
+  out.topic = activity || null;
+  // 숫자: 비었으면 null.
+  out.capacity = form.capacity === '' ? null : Number(form.capacity);
+  out.minToOpen = form.minToOpen === '' ? null : Number(form.minToOpen);
+  // 조건은 'any'가 기본. 좁혀진 자리는 이야기 피드에 안 나간다(publishSeatToStories).
+  out.genderPref = form.genderPref || 'any';
+  out.agePref = form.agePref || 'any';
+  // datetime-local("2026-09-12T14:00") → ISO(+09:00). 앱의 '캘린더에 추가'가 쓴다.
+  out.startAt = form.startAt ? `${form.startAt}:00+09:00` : null;
+  // 장소를 넣었으면 '장소 미정' 표시를 끈다.
+  if (out.venue) out.needsVenue = false;
+  return out;
+}
+
 export default function MeetupSessionsCard() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
@@ -81,6 +169,40 @@ export default function MeetupSessionsCard() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  /**
+   * 공간 사진 업로드.
+   *
+   * Storage 규칙이 seat_photos/{uid} 아래 **본인 uid 경로**만 쓰기를 허용한다
+   * (앱의 seat_edit_sheet와 같은 규칙). 어드민도 자기 uid 아래에 올리면 되므로
+   * 규칙을 건드릴 필요가 없다. 읽기는 로그인한 회원 누구나 되니 앱에서 보인다.
+   *
+   * 한 장이 실패해도 나머지는 올린다 — 다섯 장 중 하나 때문에 처음부터 다시
+   * 고르게 하면 안 된다.
+   */
+  async function uploadPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) { setNotice('로그인이 풀렸어요. 새로고침 후 다시 시도해주세요.'); return; }
+    setUploading(true);
+    const added: string[] = [];
+    const failed: string[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) { failed.push(`${file.name}(10MB 초과)`); continue; }
+      try {
+        const path = `seat_photos/${uid}/${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+        const r = storageRef(storage, path);
+        await uploadBytes(r, file);
+        added.push(await getDownloadURL(r));
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    if (added.length) setForm((f) => ({ ...f, photoUrls: [...f.photoUrls, ...added] }));
+    setNotice(failed.length ? `${failed.join(', ')} 은(는) 못 올렸어요.` : null);
+    setUploading(false);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -115,6 +237,21 @@ export default function MeetupSessionsCard() {
       description: s.description ?? '',
       published: s.published,
       sortOrder: s.sortOrder ?? 0,
+      // ISO(+09:00)를 datetime-local이 읽는 "YYYY-MM-DDTHH:mm"으로 자른다.
+      startAt: (s.startAt ?? '').slice(0, 16),
+      venue: s.venue ?? '',
+      mapUrl: s.mapUrl ?? '',
+      region: s.region ?? '서울',
+      city: s.city ?? '서울',
+      activity: s.activity ?? s.topic ?? '',
+      capacity: s.capacity ?? '',
+      minToOpen: s.minToOpen ?? '',
+      genderPref: s.genderPref ?? 'any',
+      agePref: s.agePref ?? 'any',
+      costNote: s.costNote ?? '',
+      linkUrl: s.linkUrl ?? '',
+      linkLabel: s.linkLabel ?? '',
+      photoUrls: s.photoUrls ?? [],
     });
     setEditingId(s.id);
     setNotice(null);
@@ -138,7 +275,7 @@ export default function MeetupSessionsCard() {
         {
           method: isNew ? 'POST' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...form, description: form.description.trim() || null }),
+          body: JSON.stringify(toPayload(form)),
         },
       );
       const json = await res.json();
@@ -393,6 +530,192 @@ export default function MeetupSessionsCard() {
                 </div>
               </div>
             </div>
+
+            {/* ── 앱 신청 시트에 보이는 것들 ─────────────────────────────
+                지금까지 이 값들은 어드민에서 못 고쳐서, 장소가 빈 채로 공개된
+                자리가 나오고("아직 망설여져요"로 취소한 분이 생겼다) 최소인원
+                하나 바꾸는 데 스크립트를 써야 했다(2026-09-07). */}
+            <div className="sm:col-span-2 space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-xs font-semibold text-gray-500">앱 신청 시트에 보이는 것</p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">시작 시각</span>
+                  <input
+                    type="datetime-local"
+                    value={form.startAt}
+                    onChange={(e) => setForm({ ...form, startAt: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <span className="mt-1 block text-xs text-gray-400">
+                    앱의 &lsquo;캘린더에 추가&rsquo;가 이 값을 써요. 위 날짜 문구와 따로예요.
+                  </span>
+                </label>
+
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">무엇을 하는 자리</span>
+                  <input
+                    value={form.activity}
+                    onChange={(e) => setForm({ ...form, activity: e.target.value })}
+                    placeholder="전시 · 공연 · 도예 · 차"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <span className="mt-1 block text-xs text-gray-400">
+                    동네보다 이게 신청을 가릅니다. 채워진 자리 넷 중 둘이 미술관이었어요.
+                  </span>
+                </label>
+
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">장소 이름</span>
+                  <input
+                    value={form.venue}
+                    onChange={(e) => setForm({ ...form, venue: e.target.value })}
+                    placeholder="테라스꾸까 (종로구 율곡로 1, 2층)"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">지도 링크</span>
+                  <input
+                    value={form.mapUrl}
+                    onChange={(e) => setForm({ ...form, mapUrl: e.target.value })}
+                    placeholder="https://naver.me/..."
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <span className="mt-1 block text-xs text-gray-400">
+                    5060에게 &lsquo;어디&rsquo;는 글자 주소보다 지도가 답입니다.
+                  </span>
+                </label>
+
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">시·도</span>
+                  <input
+                    value={form.region}
+                    onChange={(e) => setForm({ ...form, region: e.target.value, city: e.target.value })}
+                    placeholder="서울"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">비용 안내</span>
+                  <input
+                    value={form.costNote}
+                    onChange={(e) => setForm({ ...form, costNote: e.target.value })}
+                    placeholder="해피아워 세트 9,900원 — 각자 주문하고 각자 계산해요."
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <span className="mt-1 block text-xs text-gray-400">
+                    비우면 앱이 &lsquo;각자 주문하고 각자 계산&rsquo;을 띄워요. 미리 내는 자리면 꼭 적어주세요.
+                  </span>
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">정원</span>
+                  <input
+                    type="number" min={1}
+                    value={form.capacity}
+                    onChange={(e) => setForm({ ...form, capacity: e.target.value === '' ? '' : Number(e.target.value) })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">최소 인원</span>
+                  <input
+                    type="number" min={1}
+                    value={form.minToOpen}
+                    onChange={(e) => setForm({ ...form, minToOpen: e.target.value === '' ? '' : Number(e.target.value) })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <span className="mt-1 block text-xs text-gray-400">못 채우면 이틀 전에 자동으로 접혀요.</span>
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">성별</span>
+                  <select
+                    value={form.genderPref}
+                    onChange={(e) => setForm({ ...form, genderPref: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="any">상관없음</option>
+                    <option value="women">여성만</option>
+                    <option value="men">남성만</option>
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">나이</span>
+                  <select
+                    value={form.agePref}
+                    onChange={(e) => setForm({ ...form, agePref: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="any">상관없음</option>
+                    <option value="near">비슷한 또래</option>
+                  </select>
+                </label>
+              </div>
+
+              {(form.genderPref !== 'any' || form.agePref !== 'any') && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  대상을 좁힌 자리는 <strong>이야기 목록에 올라가지 않습니다.</strong>
+                  신청할 수 없는 분들에게까지 보이지 않게 하려는 거예요.
+                </p>
+              )}
+
+              {/* 공간 사진 — 어디로 가는지가 신청을 가른다. */}
+              <div className="text-sm">
+                <span className="mb-1 block font-medium text-gray-700">공간 사진</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {form.photoUrls.map((url) => (
+                    <span key={url} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, photoUrls: form.photoUrls.filter((u) => u !== url) })}
+                        className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-gray-900 text-xs text-white"
+                        aria-label="사진 빼기"
+                      >×</button>
+                    </span>
+                  ))}
+                  <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-lg border border-dashed border-gray-400 text-xs text-gray-500">
+                    {uploading ? '올리는 중' : '+ 사진'}
+                    <input
+                      type="file" accept="image/*" multiple hidden
+                      disabled={uploading}
+                      onChange={(e) => uploadPhotos(e.target.files)}
+                    />
+                  </label>
+                </div>
+                <span className="mt-1 block text-xs text-gray-400">
+                  첫 장이 이야기 글의 대표 사진이 돼요. 한 장에 10MB까지.
+                </span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">바깥 링크</span>
+                  <input
+                    value={form.linkUrl}
+                    onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
+                    placeholder="https://..."
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-700">링크에 붙일 말</span>
+                  <input
+                    value={form.linkLabel}
+                    onChange={(e) => setForm({ ...form, linkLabel: e.target.value })}
+                    placeholder="공연 안내 보기"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+            </div>
+
             <div className="flex items-center gap-4 sm:col-span-2">
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input

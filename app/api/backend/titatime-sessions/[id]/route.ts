@@ -33,7 +33,22 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     const json = await request.json();
     payload = {};
     // 보낸 필드만 전달 (부분 수정)
-    for (const k of ['district', 'dateLabel', 'spotsLabel', 'status', 'description', 'published', 'sortOrder']) {
+    // 백엔드 SessionIn이 받는 필드 전부. 예전엔 7개만 통과시켜서, 장소·지도
+    // 링크·정원·최소인원을 어드민에서 못 고치고 스크립트를 써야 했다.
+    for (const k of [
+      // 기본
+      'district', 'dateLabel', 'spotsLabel', 'status', 'description', 'published', 'sortOrder',
+      // 언제·어디서
+      'startAt', 'venue', 'mapUrl', 'lat', 'lng', 'region', 'city', 'needsVenue',
+      // 무엇을 — 신청을 가르는 건 동네가 아니라 이것이다(2026-09-07 실측)
+      'activity', 'topic',
+      // 인원·조건
+      'capacity', 'minToOpen', 'genderPref', 'agePref',
+      'minBirthYear', 'maxBirthYear', 'excludeUids',
+      // 겉모습·부가
+      'cardTitle', 'cardColor', 'cardImageUrl', 'photoUrls',
+      'costNote', 'linkUrl', 'linkLabel', 'leaderUid', 'leaderName',
+    ]) {
       if (k in json && json[k] !== undefined) payload[k] = json[k];
     }
   } catch {
