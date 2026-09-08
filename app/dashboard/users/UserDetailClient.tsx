@@ -12,6 +12,7 @@ import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import SendMessageModal from '@/components/user/SendMessageModal';
+import MemberTraits from '@/components/ui/MemberTraits';
 
 function InfoRow({ label, value }: { label: string; value?: string | number | boolean | null }) {
   return (
@@ -516,6 +517,19 @@ export default function UserDetailClient({ id }: { id: string }) {
           <InfoRow label="실명" value={legalNameDisplay} />
           <InfoRow label="법적 생년" value={profile.legalBirthYear} />
           <InfoRow label="성별" value={genderLabel(profile.gender)} />
+          {profile.identityDisputed && (
+            // 인증 성별·나이를 그대로 믿으면 안 되는 계정. 자리 성별 조건이
+            // 이 값으로 걸리기 때문에, 화면에서도 눈에 띄어야 한다.
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-semibold text-amber-800">인증 내용과 본인 말씀이 다릅니다</p>
+              <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                {profile.identityDisputedReason ?? '본인 명의 재인증이 필요합니다.'}
+              </p>
+              <p className="text-[11px] text-amber-600 mt-1.5">
+                성별을 정한 자리에는 이 계정이 나오지 않습니다.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Interests */}
@@ -537,6 +551,8 @@ export default function UserDetailClient({ id }: { id: string }) {
           </div>
           <InfoRow label="목적" value={profile.intent === 'friendship' ? '우정' : profile.intent || '-'} />
         </div>
+
+        <MemberTraits tags={profile.dailyQuestionTags} />
 
         {/* Security & Status */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">

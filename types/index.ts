@@ -70,6 +70,13 @@ export interface UserProfile {
   identityVerifiedAt?: Date;
   legalName?: string;
   legalBirthYear?: number;
+  // 인증 기록과 본인 말씀이 어긋나는 계정. 인증은 신뢰의 근거라 고치지 않고,
+  // 어긋난다는 사실만 표시한다 — 그동안 성별을 정한 자리에서는 빠진다.
+  identityDisputed?: boolean;
+  identityDisputedReason?: string;
+  // 결큐에서 고른 답에 붙는 태그 모음. 답변 원문은 본인만 읽을 수 있어서,
+  // 어드민은 이 배열로 어느 선택지였는지 되짚는다(MemberTraits).
+  dailyQuestionTags?: string[];
   // Launch-cohort badge + subscription (mirrored from Cloud SQL via the
   // FastAPI backend; snake_case to match the backend's Firestore writer).
   // founding_member_number is permanent once assigned (1..500); subscription_tier
