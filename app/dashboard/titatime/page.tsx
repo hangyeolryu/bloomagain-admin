@@ -17,10 +17,10 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MeetupSessionsCard from './MeetupSessionsCard';
 import SeatRoster from './SeatRoster';
 import ProposalsCard from './ProposalsCard';
+import VenueNeededCard, { type VenueSeat } from './VenueNeededCard';
 import { getTeatimeSignups, type TeatimeSignup } from '@/lib/firestore';
 
-type Session = {
-  id: string;
+type Session = VenueSeat & {
   district?: string;
   dateLabel?: string;
   spotsLabel?: string;
@@ -58,6 +58,9 @@ export default function TitatimePage() {
         title="Seats"
         subtitle="Open a seat, see who signed up, check attendance."
       />
+
+      {/* 장소가 안 정해진 자리 — 제일 위. 장소 미정이면 신청이 0으로 끝난다. */}
+      {sessions && <VenueNeededCard sessions={sessions} />}
 
       {err ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
