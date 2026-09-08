@@ -143,14 +143,22 @@ export default function ConversationsPage() {
     return () => observer.disconnect();
   }, []);
 
-  const blockedCount = conversations.filter((c) => (c.blockedParticipants ?? []).length > 0).length;
-  const activeCount  = conversations.filter((c) => c.isActive).length;
+  // 티타 관리자가 낀 대화는 뺀다. 운영 안내와 문의라 회원끼리의 대화가
+  // 아니고, 공식 계정이 120건 넘게 갖고 있어 목록이 그걸로 덮인다.
+  const rows = conversations.filter(
+    (c) => !(c.participants ?? []).includes(OFFICIAL_UID),
+  );
+  const hidden = conversations.length - rows.length;
+  const blockedCount = rows.filter((c) => (c.blockedParticipants ?? []).length > 0).length;
+  const activeCount  = rows.filter((c) => c.isActive).length;
 
   return (
     <div>
       <Header
         title="대화"
-        subtitle={`${conversations.length}건 로드됨 · 활성 ${activeCount}건 · 차단 포함 ${blockedCount}건`}
+        subtitle={`회원끼리 ${rows.length}건 · 활성 ${activeCount}건 · 차단 포함 ${blockedCount}건${
+          hidden ? ` · 티타 관리자 ${hidden}건 숨김` : ''
+        }`}
       />
 
       {loading ? (
@@ -161,7 +169,7 @@ export default function ConversationsPage() {
           <p className="font-semibold">대화를 불러오지 못했어요</p>
           <p className="text-xs text-gray-400 mt-1">{error}</p>
         </div>
-      ) : conversations.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-100">
           <p className="text-4xl mb-2">💬</p>
           <p>대화 없음</p>
@@ -181,7 +189,7 @@ export default function ConversationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {conversations.map((c) => {
+                {rows.map((c) => {
                   const isBlocked = (c.blockedParticipants ?? []).length > 0;
                   return (
                     <tr key={c.id} className="hover:bg-gray-50 transition-colors">
@@ -190,7 +198,12 @@ export default function ConversationsPage() {
                           {(c.participants ?? [])
                             .filter((uid) => uid !== OFFICIAL_UID)
                             .map((uid) => (
-                              <UserChip key={uid} uid={uid} user={users[uid]} />
+                              <UserChip
+                                key={uid}
+                                uid={uid}
+                                user={users[uid]}
+                                showActivity
+                              />
                             ))}
                         </div>
                       </td>
