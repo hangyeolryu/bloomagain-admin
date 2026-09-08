@@ -133,8 +133,19 @@ function SegmentCard({
 function TraitList({ traits, title, hint, direction }: {
   traits: Trait[]; title: string; hint: string; direction: 'up' | 'down';
 }) {
+  // 한 선택지에 태그가 서너 개씩 붙어 있어, 그대로 두면 같은 답이 세 줄로
+  // 반복된다("정든 곳, 오래 살고 싶다"가 settle_mindset·local_oriented·
+  // neighborhood_anchor로 세 번). 화면에 보이는 문장 기준으로 한 번만 띄운다.
+  const seen = new Set<string>();
   const rows = traits
     .filter((t) => (direction === 'up' ? t.lift > 1.08 : t.lift < 0.93))
+    .filter((t) => {
+      const txt = answerText(t.questionId, t.tag);
+      const key = txt ? `${t.questionId}|${txt.a}` : t.tag;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .slice(0, 8);
   if (rows.length === 0) {
     return (
