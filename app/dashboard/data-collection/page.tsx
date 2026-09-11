@@ -40,6 +40,90 @@ const ACQ_LABELS: Record<string, string> = {
   other: '✨ 기타',
 };
 
+/** 날짜(KST)별 가입 경로.
+ *
+ * 누적 막대만으로는 "광고를 켠 뒤 달라졌나"를 못 읽는다. 유튜브 광고를 시작한
+ * 날 유튜브 칸이 0에서 올라오는지, 그 대신 다른 칸이 줄지 않았는지를 같은
+ * 표에서 본다.
+ *
+ * '안 고름'을 숨기지 않는다. 자가응답이라 건너뛴 사람이 절반 가까이 되는데,
+ * 그걸 빼고 보면 비율이 실제보다 또렷해 보인다.
+ */
+function AcquisitionByDay({
+  rows,
+}: {
+  rows: Array<{ day: string; total: number; channels: Record<string, number> }>;
+}) {
+  if (!rows.length) return null;
+  const recent = rows.slice(0, 14);
+  // 이 기간에 실제로 나온 채널만 열로 세운다. 안 나온 채널까지 세우면
+  // 0이 줄줄이 늘어서 정작 달라진 칸이 안 보인다.
+  const seen = new Set<string>();
+  for (const r of recent) {
+    for (const [ch, n] of Object.entries(r.channels)) {
+      if (ch !== 'none' && n > 0) seen.add(ch);
+    }
+  }
+  const cols = Array.from(seen).sort();
+  const short = (ch: string) =>
+    (ACQ_LABELS[ch] ?? ch).replace(/^\S+\s/, '').split(' ')[0];
+
+  return (
+    <div className="mt-5 border-t border-gray-100 pt-4">
+      <p className="text-xs font-semibold text-gray-500 mb-2">
+        날짜별 (최근 14일, 한국 시간)
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-gray-400 border-b border-gray-100">
+              <th className="text-left font-medium py-1.5 pr-3">날짜</th>
+              <th className="text-right font-medium py-1.5 px-2">가입</th>
+              {cols.map((c) => (
+                <th key={c} className="text-right font-medium py-1.5 px-2 whitespace-nowrap">
+                  {short(c)}
+                </th>
+              ))}
+              <th className="text-right font-medium py-1.5 pl-2">안 고름</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((r) => (
+              <tr key={r.day} className="border-b border-gray-50 last:border-0">
+                <td className="py-1.5 pr-3 text-gray-600 tabular-nums">{r.day.slice(5)}</td>
+                <td className="py-1.5 px-2 text-right font-semibold text-gray-900 tabular-nums">
+                  {r.total}
+                </td>
+                {cols.map((c) => {
+                  const n = r.channels[c] ?? 0;
+                  return (
+                    <td
+                      key={c}
+                      className={`py-1.5 px-2 text-right tabular-nums ${
+                        n > 0 ? 'text-gray-800' : 'text-gray-300'
+                      }`}
+                    >
+                      {n || '·'}
+                    </td>
+                  );
+                })}
+                <td className="py-1.5 pl-2 text-right tabular-nums text-gray-400">
+                  {r.channels.none ?? 0}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-400 mt-2">
+        자가응답이라 정확하지 않습니다. 광고를 보고 며칠 뒤 검색해서 받은 분은
+        &lsquo;검색&rsquo;을 고르고, 회사 인스타 게시물을 본 분과 인스타 광고를 본 분이
+        같은 칸에 들어갑니다. 광고 플랫폼이 세는 설치 수와 대조해서 보세요.
+      </p>
+    </div>
+  );
+}
+
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -831,6 +915,8 @@ export default function DataCollectionPage() {
           채널별 유입 → 어느 채널에 콘텐츠·광고를 더 실을지의 근거.
           W4 리텐션을 채널별로 가르는 게 다음 단계 (GTM 대시보드 문서 참조).
         </p>
+
+        <AcquisitionByDay rows={stats.acquisitionByDay} />
       </div>
 
       {/* ── Mini Pulse ── */}

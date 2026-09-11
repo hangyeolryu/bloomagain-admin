@@ -1923,6 +1923,14 @@ export interface DataCollectionStats {
   // 온보딩 "어디서 알게 되셨어요?" 응답 집계 (users/*/analytics_milestones)
   acquisitionChannels: Array<{ channel: string; count: number }>;
   acquisitionAnswered: number;      // 응답한 사용자 수 (스킵 제외)
+  // 날짜(KST)별 가입 경로. 누적 총계만으로는 "광고를 켠 뒤 달라졌나"를 못 본다 —
+  // 유튜브 광고를 시작한 날 유튜브가 0에서 올라오는지를 이 표에서 읽는다.
+  // `none`은 가입은 했는데 경로를 안 고른 사람(선택 단계라 스킵 가능).
+  acquisitionByDay: Array<{
+    day: string;
+    total: number;
+    channels: Record<string, number>;
+  }>;
   // 원격 문항 뱅크 런타임 상태 — 하드코딩 대신 실제 gyeolQuestionBank 컬렉션에서
   // 읽는다. 문서가 있으면 앱이 번들 위에 오버레이 적용 중(활성).
   remoteQuestionBank: { total: number; retired: number };
@@ -2061,6 +2069,8 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
   //      acquisition_channel. 스킵한 사용자는 문서가 없거나 필드가 없다.
   const acqCounter = new Map<string, number>();
   let acquisitionAnswered = 0;
+  // uid → 가입 경로. 아래에서 가입일과 이어 붙인다.
+  const acqByUid = new Map<string, string>();
   try {
     const cg = collectionGroup(db, 'analytics_milestones');
     const snap = await getDocs(cg);
@@ -2069,6 +2079,10 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
       if (typeof ch === 'string' && ch.trim()) {
         acquisitionAnswered++;
         acqCounter.set(ch, (acqCounter.get(ch) ?? 0) + 1);
+        // 문서 경로가 users/{uid}/analytics_milestones/milestones 라
+        // 조부모가 곧 uid다.
+        const uid = d.ref.parent.parent?.id;
+        if (uid) acqByUid.set(uid, ch.trim());
       }
     }
   } catch (e) {
@@ -2077,6 +2091,32 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
   const acquisitionChannels = Array.from(acqCounter.entries())
     .map(([channel, count]) => ({ channel, count }))
     .sort((a, b) => b.count - a.count);
+
+  // 날짜별 가입 경로 — 위에서 이미 읽어둔 usersSnap의 createdAt과 이어 붙인다.
+  // 추가 읽기가 없다. 최근 21일만 남긴다(그 앞은 광고 판단에 쓸 일이 없다).
+  const acquisitionByDay = (() => {
+    const cut = Date.now() - 21 * 24 * 60 * 60 * 1000;
+    const perDay = new Map<string, Map<string, number>>();
+    for (const d of usersSnap.docs) {
+      const created = toDate(d.data().createdAt);
+      if (!created || created.getTime() < cut) continue;
+      // KST 기준 날짜로 묶는다. UTC로 묶으면 밤 9시 이후 가입이 다음 날로 샌다.
+      const day = new Date(created.getTime() + 9 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      const ch = acqByUid.get(d.id) ?? 'none';
+      const bucket = perDay.get(day) ?? new Map<string, number>();
+      bucket.set(ch, (bucket.get(ch) ?? 0) + 1);
+      perDay.set(day, bucket);
+    }
+    return Array.from(perDay.entries())
+      .map(([day, m]) => ({
+        day,
+        total: Array.from(m.values()).reduce((a, b) => a + b, 0),
+        channels: Object.fromEntries(m),
+      }))
+      .sort((a, b) => b.day.localeCompare(a.day));
+  })();
 
   const totalMiniPulseResponses = await (async () => {
     try {
@@ -2193,6 +2233,7 @@ export async function getDataCollectionStats(): Promise<DataCollectionStats> {
     questionStats,
     acquisitionChannels,
     acquisitionAnswered,
+    acquisitionByDay,
     remoteQuestionBank,
     warnings,
   };
