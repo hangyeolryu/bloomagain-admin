@@ -135,31 +135,6 @@
     ]
   },
   {
-    "id": 6,
-    "category": "성향 - 친화성",
-    "question_text": "의견이 다를 때 본인은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "내 입장을 분명히 말함",
-        "tags": [
-          "a_low",
-          "assertive",
-          "direct"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "상대 입장을 먼저 헤아림",
-        "tags": [
-          "a_high",
-          "diplomatic",
-          "empathetic"
-        ]
-      }
-    ]
-  },
-  {
     "id": 7,
     "category": "성향 - 성실성",
     "question_text": "약속 시간에 도착하는 편은?",
@@ -207,31 +182,6 @@
           "c_low",
           "spontaneous",
           "experimental"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 9,
-    "category": "성향 - 성실성",
-    "question_text": "집·짐·소지품 정리 스타일은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "항상 정돈된 편",
-        "tags": [
-          "c_high",
-          "tidy",
-          "neat"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "필요한 만큼만 정리",
-        "tags": [
-          "c_low",
-          "casual_tidiness",
-          "easygoing"
         ]
       }
     ]
@@ -803,31 +753,6 @@
     ]
   },
   {
-    "id": 33,
-    "category": "취향 - 활동 시간대",
-    "question_text": "가장 활기 있는 시간대는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "아침형",
-        "tags": [
-          "morning_person",
-          "early_bird",
-          "morning_active"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "저녁형",
-        "tags": [
-          "night_owl",
-          "evening_active",
-          "flexible_time"
-        ]
-      }
-    ]
-  },
-  {
     "id": 34,
     "category": "취향 - 소통",
     "question_text": "연락은 어느 쪽이 편하세요?",
@@ -848,37 +773,6 @@
           "text_based",
           "logical_connection",
           "messaging"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 35,
-    "category": "정서 - 사람과의 시간",
-    "question_text": "지난 한 달, 사람들과 보낸 시간은 어떠셨어요?",
-    "options": [
-      {
-        "id": "A",
-        "text": "충분했고 만족스러웠다",
-        "tags": [
-          "socially_satisfied",
-          "well_connected"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "조금 부족한 느낌이었다",
-        "tags": [
-          "mildly_lonely",
-          "wanting_more_contact"
-        ]
-      },
-      {
-        "id": "C",
-        "text": "많이 부족했다",
-        "tags": [
-          "lonely_high",
-          "isolation_signal"
         ]
       }
     ]
@@ -1462,33 +1356,6 @@
     ]
   },
   {
-    "id": 204,
-    "category": "성향 - 성실성",
-    "question_text": "약속 시간에 나는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "늘 조금 미리 도착",
-        "tags": [
-          "c_high",
-          "punctual",
-          "planner",
-          "reliable"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "딱 맞춰 혹은 여유롭게",
-        "tags": [
-          "c_low",
-          "flexible",
-          "easygoing",
-          "relaxed"
-        ]
-      }
-    ]
-  },
-  {
     "id": 205,
     "category": "성향 - 성실성",
     "question_text": "새 계획을 세우면?",
@@ -1653,31 +1520,6 @@
           "night_owl",
           "evening_active",
           "indoor_reflective"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 211,
-    "category": "생활 - 활동 리듬",
-    "question_text": "주말을 보내는 나의 기본값은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "밖으로 나가 활동",
-        "tags": [
-          "weekend_active",
-          "outdoor",
-          "energetic_weekend"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "집에서 충전",
-        "tags": [
-          "weekend_rest",
-          "homebody",
-          "indoor_recharge"
         ]
       }
     ]
@@ -1852,74 +1694,6 @@
     ]
   },
   {
-    "id": 218,
-    "category": "정서 - 회복 방식",
-    "question_text": "지치고 힘든 날, 나를 낫게 하는 건?",
-    "options": [
-      {
-        "id": "A",
-        "text": "사람과의 대화",
-        "tags": [
-          "verbal_recovery",
-          "social_coping",
-          "emotional_connection"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "혼자만의 고요",
-        "tags": [
-          "solitary_recovery",
-          "indoor_recharge",
-          "rest_recovery"
-        ]
-      },
-      {
-        "id": "C",
-        "text": "몸을 움직이기",
-        "tags": [
-          "action_recovery",
-          "activity_coping",
-          "physical_activity"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 219,
-    "category": "정서 - 보람",
-    "question_text": "요즘 가장 뿌듯한 순간은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "누군가에게 도움이 됐을 때",
-        "tags": [
-          "altruistic_joy",
-          "meaning_giving",
-          "helper"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "나를 위해 뭔가 해냈을 때",
-        "tags": [
-          "meaning_self",
-          "growth_joy",
-          "self_care"
-        ]
-      },
-      {
-        "id": "C",
-        "text": "가족과 좋은 시간",
-        "tags": [
-          "family_joy",
-          "meaning_family",
-          "warm"
-        ]
-      }
-    ]
-  },
-  {
     "id": 220,
     "category": "정서 - 사람과의 시간",
     "question_text": "사람을 만나고 돌아오면 나는?",
@@ -1998,31 +1772,6 @@
           "reserved_share",
           "cautious_trust",
           "private"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 223,
-    "category": "취향 - 소통",
-    "question_text": "연락은 어떤 방식이 편해요?",
-    "options": [
-      {
-        "id": "A",
-        "text": "전화로 목소리 듣는 게 좋다",
-        "tags": [
-          "voice_call",
-          "warm",
-          "verbal"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "문자·카톡이 편하다",
-        "tags": [
-          "text_based",
-          "messaging",
-          "casual"
         ]
       }
     ]
@@ -2142,31 +1891,6 @@
     ]
   },
   {
-    "id": 228,
-    "category": "문화 - 관계 속도",
-    "question_text": "새 친구와 가까워지는 속도는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "천천히 오래 알아가는 편",
-        "tags": [
-          "relation_slow",
-          "cautious",
-          "depth_lover"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "마음 맞으면 금방",
-        "tags": [
-          "relation_fast",
-          "open_new",
-          "warm"
-        ]
-      }
-    ]
-  },
-  {
     "id": 229,
     "category": "문화 - 관계의 깊이",
     "question_text": "내가 바라는 친구 관계는?",
@@ -2192,56 +1916,6 @@
     ]
   },
   {
-    "id": 230,
-    "category": "문화 - 도움 청하기",
-    "question_text": "어려운 일이 생기면?",
-    "options": [
-      {
-        "id": "A",
-        "text": "주변에 도움을 청한다",
-        "tags": [
-          "help_seek_easy",
-          "open_trust",
-          "social_coping"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "혼자 해결하려 한다",
-        "tags": [
-          "help_avoidant",
-          "self_reliant",
-          "independent_coping"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 231,
-    "category": "문화 - 세대",
-    "question_text": "어울리기 편한 사람은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "비슷한 또래",
-        "tags": [
-          "peer_only",
-          "same_generation",
-          "familiarity"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "나이 상관없이 통하면",
-        "tags": [
-          "cross_age",
-          "multi_gen",
-          "open_minded"
-        ]
-      }
-    ]
-  },
-  {
     "id": 232,
     "category": "문화 - 정과 흥",
     "question_text": "좋은 자리의 완성은?",
@@ -2262,31 +1936,6 @@
           "heung",
           "fun_seeker",
           "lively"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 233,
-    "category": "문화 - 눈치",
-    "question_text": "분위기 파악은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "빠르게 살피는 편",
-        "tags": [
-          "nunchi_high",
-          "socially_attuned",
-          "considerate"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "내 페이스대로 편하게",
-        "tags": [
-          "nunchi_low",
-          "authentic",
-          "easygoing"
         ]
       }
     ]
@@ -2362,31 +2011,6 @@
           "cautious",
           "pragmatic",
           "reflective"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 237,
-    "category": "트렌드 - 디지털",
-    "question_text": "새 앱이나 기기는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "호기심에 먼저 써본다",
-        "tags": [
-          "tech_curious",
-          "digital_explorer",
-          "open_new"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "익숙해질 때까지 지켜본다",
-        "tags": [
-          "tech_cautious",
-          "familiar",
-          "conservative_taste"
         ]
       }
     ]
@@ -2496,65 +2120,6 @@
           "yold_rest",
           "stable",
           "comfortable_pace"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 242,
-    "category": "트렌드 - 취미 폭",
-    "question_text": "취미는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "하나를 깊게 파는 편",
-        "tags": [
-          "focused_hobby",
-          "deep_dive",
-          "depth_lover"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "이것저것 두루 즐긴다",
-        "tags": [
-          "diverse_hobby",
-          "breadth_explorer",
-          "curious"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 243,
-    "category": "관계 - 찾는 인연",
-    "question_text": "티타에서 만나고 싶은 인연은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "취미 함께할 친구",
-        "tags": [
-          "activity_friend",
-          "friend_seeker",
-          "club_mate"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "마음 나눌 벗",
-        "tags": [
-          "soul_friend",
-          "deep_friend",
-          "emotional_connection"
-        ]
-      },
-      {
-        "id": "C",
-        "text": "동네에서 자주 볼 이웃",
-        "tags": [
-          "neighbor_friend",
-          "local_meetups",
-          "near_radius"
         ]
       }
     ]
@@ -2923,7 +2488,7 @@
   {
     "id": 257,
     "category": "일상 - 관심",
-    "question_text": "요즘 마음이 가는 쪽은?",
+    "question_text": "요즘 시간을 더 쓰고 싶은 쪽은?",
     "options": [
       {
         "id": "A",
@@ -3123,31 +2688,6 @@
     ]
   },
   {
-    "id": 264,
-    "category": "일상 - 새 시작",
-    "question_text": "새로운 것을 시작할 때 나는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "설레며 뛰어든다",
-        "tags": [
-          "adventurous",
-          "optimistic",
-          "new_experience"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "찬찬히 준비부터",
-        "tags": [
-          "planner",
-          "cautious",
-          "c_high"
-        ]
-      }
-    ]
-  },
-  {
     "id": 265,
     "category": "일상 - 주변 정리",
     "question_text": "물건이나 관계나, 나는?",
@@ -3168,31 +2708,6 @@
           "warm",
           "loyal",
           "a_high"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 266,
-    "category": "일상 - 목소리",
-    "question_text": "모임에서 내 목소리는?",
-    "options": [
-      {
-        "id": "A",
-        "text": "크고 잘 웃는 편",
-        "tags": [
-          "e_high",
-          "lively",
-          "expressive"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "차분하고 조용한 편",
-        "tags": [
-          "e_low",
-          "calm",
-          "reserved"
         ]
       }
     ]
@@ -3593,31 +3108,6 @@
           "gift_generous",
           "expressive_care",
           "occasion_keeper"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 135,
-    "category": "생활 감각",
-    "question_text": "약속 시간, 나는",
-    "options": [
-      {
-        "id": "A",
-        "text": "10분 전 도착이 국룰",
-        "tags": [
-          "time_strict",
-          "punctual",
-          "reliable_planner"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "5분쯤은 서로 애교",
-        "tags": [
-          "time_flexible",
-          "relaxed_pace",
-          "forgiving"
         ]
       }
     ]
@@ -4294,31 +3784,6 @@
     ]
   },
   {
-    "id": 163,
-    "category": "마음 온도",
-    "question_text": "고마운 마음이 들 때 나는",
-    "options": [
-      {
-        "id": "A",
-        "text": "바로 표현하는 편",
-        "tags": [
-          "warmth_expressive",
-          "emotive_open",
-          "warm_giver"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "마음에 담아두는 편",
-        "tags": [
-          "warmth_reserved",
-          "composed",
-          "quiet_depth"
-        ]
-      }
-    ]
-  },
-  {
     "id": 164,
     "category": "마음 온도",
     "question_text": "좋은 일이 있으면",
@@ -4364,31 +3829,6 @@
           "praise_shy",
           "modest",
           "reserved_response"
-        ]
-      }
-    ]
-  },
-  {
-    "id": 166,
-    "category": "가치 - 삶의 방향",
-    "question_text": "요즘 더 끌리는 쪽은?",
-    "options": [
-      {
-        "id": "A",
-        "text": "새로 배우고, 안 해본 걸 해보는 것",
-        "tags": [
-          "value_growth",
-          "new_experience",
-          "curious_life"
-        ]
-      },
-      {
-        "id": "B",
-        "text": "익숙한 걸 편안하게 즐기는 것",
-        "tags": [
-          "value_peace",
-          "calm_life",
-          "easygoing"
         ]
       }
     ]
