@@ -56,11 +56,11 @@
   {
     "id": 3,
     "category": "성향 - 외향성",
-    "question_text": "친구와 만난다면 더 편한 곳은?",
+    "question_text": "사람들과 어울릴 때 나는?",
     "options": [
       {
         "id": "A",
-        "text": "시끌벅적한 시장·맛집",
+        "text": "여럿이 왁자지껄할수록 신이 난다",
         "tags": [
           "e_high",
           "lively",
@@ -70,7 +70,7 @@
       },
       {
         "id": "B",
-        "text": "조용한 카페·찻집",
+        "text": "마음 맞는 한두 명이 가장 편하다",
         "tags": [
           "e_low",
           "quiet_venue",
@@ -559,11 +559,11 @@
   {
     "id": 25,
     "category": "트렌드 - 셀프케어",
-    "question_text": "최근 본인을 위해 쓴 시간은?",
+    "question_text": "요즘 마음이 더 가는 쪽은?",
     "options": [
       {
         "id": "A",
-        "text": "일주일에 몇 시간은 꼭 챙긴다",
+        "text": "이제는 내 삶을 먼저 챙기고 싶다",
         "tags": [
           "self_first",
           "self_care",
@@ -572,7 +572,7 @@
       },
       {
         "id": "B",
-        "text": "주변 챙기느라 거의 없다",
+        "text": "주변을 돌보고 나눌 때 더 행복하다",
         "tags": [
           "family_first",
           "duty_first",
@@ -610,11 +610,11 @@
   {
     "id": 27,
     "category": "트렌드 - 디지털",
-    "question_text": "새로운 앱이나 서비스를 만나면?",
+    "question_text": "새 기능을 익힐 때 나는?",
     "options": [
       {
         "id": "A",
-        "text": "일단 한번 써본다",
+        "text": "혼자 눌러보며 알아내는 게 재밌다",
         "tags": [
           "digital_explorer",
           "tech_curious",
@@ -623,7 +623,7 @@
       },
       {
         "id": "B",
-        "text": "자녀나 아는 사람에게 물어본다",
+        "text": "차근차근 알려주면 따라 하는 게 편하다",
         "tags": [
           "digital_help_seek",
           "tech_cautious"

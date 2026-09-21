@@ -2,7 +2,7 @@
 
 // 결큐 질문 관리 — 앱 배포 없이 질문 추가·수정·은퇴
 // ──────────────────────────────────────────────────────────────────────────
-// 앱은 번들 questions.json(165개)을 베이스로 쓰고, Firestore
+// 앱은 번들 questions.json을 베이스로 쓰고, Firestore
 // `gyeolQuestionBank`에 같은 id의 문서가 있으면 그걸로 덮어쓴다
 // (retired:true면 노출 제외). 즉 이 페이지에서 저장한 것만 원격 오버레이로
 // 올라가고, 손대지 않은 질문은 번들 그대로다. 반영 시점: 앱 다음 실행.
@@ -255,14 +255,37 @@ export default function GyeolQBankPage() {
     setFilter(String(nextId));
   };
 
-  // 번들 165개 전체를 원격 뱅크로 시드 — 이후 모든 질문이 원격에서 관리됨.
+  // 번들 전체를 원격 뱅크로 시드 — 이후 모든 질문이 원격에서 관리됨.
   // (선택 사항: 시드 안 해도 수정한 질문만 오버레이로 올라간다)
+  //
+  // 2026-09-21: **이미 원격에 있는 문서는 건너뛴다.** 전엔 무조건 덮어써서,
+  // 이 페이지에서 고친 질문(#3·#25·#27이 그랬다)이 번들의 옛 내용으로
+  // 되돌아가고 은퇴시킨 질문도 retired:false로 되살아났다. 한 번 누르면
+  // 조용히 일어나는 일이라 더 나빴다 — 문구가 바뀌면 그 id로 이미 쌓인
+  // 답변이 다른 질문의 답과 한 통계에 섞인다.
+  //
+  // 시드는 원래 "비어 있는 원격 뱅크를 채우는" 마이그레이션 도구다. 그러니
+  // 채우기만 하고, 있는 건 손대지 않는다. 개별 질문을 번들 내용으로
+  // 되돌리고 싶으면 그 질문을 편집해서 저장하면 된다.
   const seedAll = async () => {
-    if (!confirm(`번들 질문 ${BUNDLED.length}개를 전부 원격 뱅크에 업로드할까요?\n이후 질문 관리의 단일 출처가 Firestore가 됩니다.`)) return;
+    const missing = BUNDLED.filter((q) => !remote.has(q.id));
+    if (missing.length === 0) {
+      alert('원격 뱅크에 이미 다 있어요. 새로 올릴 질문이 없습니다.');
+      return;
+    }
+    const skipped = BUNDLED.length - missing.length;
+    if (
+      !confirm(
+        `원격에 없는 질문 ${missing.length}개를 올릴까요?` +
+          (skipped > 0 ? `\n이미 원격에 있는 ${skipped}개는 건드리지 않아요.` : '') +
+          '\n이후 질문 관리의 단일 출처가 Firestore가 됩니다.',
+      )
+    )
+      return;
     setSeeding(true);
     try {
       const batch = writeBatch(db);
-      for (const q of BUNDLED) {
+      for (const q of missing) {
         batch.set(doc(db, 'gyeolQuestionBank', String(q.id)), toDocData({ ...q, retired: false }));
       }
       await batch.commit();
