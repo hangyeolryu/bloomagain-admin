@@ -5658,3 +5658,90 @@ export async function getCultureEvents(): Promise<CultureEventRow[]> {
   });
   return out;
 }
+
+// ── 갈 곳: 손 들었는데 아직 안 묶인 분들 ─────────────────────────────
+//
+// 앱에서는 이유를 안 보여드린다(2026-09-24). "9월 27일이면 나이는 빼고
+// 묶어드릴게요"는 우리 규칙 해설이고, "조건 때문에 막혔으니 넓히시겠어요?"는
+// 우리가 정한 규칙의 뒷감당을 회원께 떠넘기는 말이다.
+//
+// 대신 이유는 여기서 우리가 본다. 서버(tryGroupOuting)가 못 묶을 때마다
+// 제안 문서에 적어 둔다.
+//   alone   아직 그 행사에 다른 분이 없다
+//   age     또래를 기다리는 중 — 사흘 뒤 또는 행사 닷새 전에 저절로 풀린다
+//   gender  '같은 성별끼리'에 걸렸다 — 이건 안 풀린다, 우리가 봐야 한다
+//   time    가고 싶은 시간대가 서로 다르다
+export interface OutingHoldRow {
+  id: string;
+  uid: string;
+  userName: string;
+  eventId: string;
+  eventTitle: string;
+  timeSlot: string;
+  genderPref: string;
+  agePref: string;
+  holdReason: string;
+  holdCandidates: number;
+  holdAgeOpensAt?: Date;
+  waitedDays: number;
+  createdAt?: Date;
+}
+
+export async function getOutingHolds(): Promise<OutingHoldRow[]> {
+  const snap = await getDocs(collection(db, 'seat_proposals'));
+  const rows: OutingHoldRow[] = [];
+  const uids = new Set<string>();
+  snap.forEach((d) => {
+    const x = d.data() as Record<string, unknown>;
+    if (!x.cultureEventId || x.status !== 'pending') return;
+    const made = (x.createdAt as { toDate?: () => Date } | undefined)?.toDate?.();
+    const opens = (x.holdAgeOpensAt as { toDate?: () => Date } | undefined)?.toDate?.();
+    const uid = (x.uid as string) ?? '';
+    if (uid) uids.add(uid);
+    rows.push({
+      id: d.id,
+      uid,
+      userName: '',
+      eventId: (x.cultureEventId as string) ?? '',
+      eventTitle: (x.cultureEventTitle as string) ?? '',
+      timeSlot: (x.timeSlot as string) ?? '',
+      genderPref: (x.genderPref as string) ?? 'any',
+      agePref: (x.agePref as string) ?? 'any',
+      holdReason: (x.holdReason as string) ?? '',
+      holdCandidates: (x.holdCandidates as number) ?? 0,
+      holdAgeOpensAt: opens,
+      waitedDays: made
+        ? Math.floor((Date.now() - made.getTime()) / 86400000)
+        : 0,
+      createdAt: made,
+    });
+  });
+
+  // 이름은 한 번에 붙인다. 전체를 훑지 않고 필요한 분만 읽는다.
+  const names = new Map<string, string>();
+  await Promise.all(
+    [...uids].map(async (uid) => {
+      try {
+        const u = await getDoc(doc(db, 'users', uid));
+        const d = u.data() as Record<string, unknown> | undefined;
+        names.set(
+          uid,
+          ((d?.name as string) || (d?.displayName as string) || '').trim()
+        );
+      } catch {
+        /* 못 읽으면 uid로 보여준다 */
+      }
+    })
+  );
+  rows.forEach((r) => {
+    r.userName = names.get(r.uid) || r.uid.slice(0, 8);
+  });
+
+  // 오래 기다리신 분부터. 성별에 걸린 분은 우리가 봐야 하니 맨 위로.
+  rows.sort((a, b) => {
+    const w = (r: OutingHoldRow) => (r.holdReason === 'gender' ? 1 : 0);
+    if (w(a) !== w(b)) return w(b) - w(a);
+    return b.waitedDays - a.waitedDays;
+  });
+  return rows;
+}

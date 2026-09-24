@@ -15,8 +15,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { getOutingFunnel, getCultureEvents } from '@/lib/firestore';
-import type { OutingFunnelRow, CultureEventRow } from '@/lib/firestore';
+import { getOutingFunnel, getCultureEvents, getOutingHolds } from '@/lib/firestore';
+import type { OutingFunnelRow, CultureEventRow, OutingHoldRow } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -39,10 +39,24 @@ function countBy<T>(rows: T[], key: (r: T) => string) {
   return Object.entries(m).sort((a, b) => b[1] - a[1]);
 }
 
+const HOLD_LABEL: Record<string, string> = {
+  alone: '아직 혼자',
+  age: '또래 기다림',
+  gender: '성별 조건',
+  time: '시간대 다름',
+};
+
+const SLOT_LABEL: Record<string, string> = {
+  weekday_day: '주중 낮',
+  weekend_day: '주말 낮',
+  evening: '저녁',
+};
+
 export default function OutingsPage() {
   const [days, setDays] = useState(14);
   const [rows, setRows] = useState<OutingFunnelRow[]>([]);
   const [events, setEvents] = useState<CultureEventRow[]>([]);
+  const [holds, setHolds] = useState<OutingHoldRow[]>([]);
   const [loading, setLoading] = useState(true);
   // 불러온 시각. '마지막 갱신 N시간 전'을 재는 기준이다.
   const [loadedAt, setLoadedAt] = useState(0);
@@ -53,13 +67,15 @@ export default function OutingsPage() {
     // alive 플래그로 떠난 뒤의 setState를 막는다.
     const run = async () => {
       try {
-        const [f, e] = await Promise.all([
+        const [f, e, h] = await Promise.all([
           getOutingFunnel(days),
           getCultureEvents(),
+          getOutingHolds(),
         ]);
         if (!alive) return;
         setRows(f);
         setEvents(e);
+        setHolds(h);
         setLoadedAt(Date.now());
       } finally {
         if (alive) setLoading(false);
@@ -293,6 +309,82 @@ export default function OutingsPage() {
           매일 새벽 5시 20분에 <b>refreshCultureEvents</b>가 돈다.
           마지막 갱신이 <b>36시간</b>을 넘으면 빨갛게 뜬다 — 갱신이 멎으면
           회원에게는 지난 행사만 남은 탭이 된다.
+        </p>
+      </section>
+
+      {/* ── 손 들었는데 아직 안 묶인 분들 ───────────────────────── */}
+      <section className="rounded-xl border bg-white p-5">
+        <h2 className="text-lg font-bold">기다리고 계신 분들</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          앱에서는 <b>이유를 보여드리지 않는다.</b> &ldquo;9월 27일이면 나이는 빼고
+          묶어드릴게요&rdquo;는 우리 규칙 해설이고, &ldquo;조건 때문에 막혔으니
+          넓히시겠어요?&rdquo;는 우리가 정한 규칙의 뒷감당을 회원께 떠넘기는 말이다.
+          이유는 여기서 우리가 본다.
+        </p>
+        {holds.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-500">
+            지금 기다리고 계신 분이 없습니다.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-gray-500">
+                <tr className="border-b">
+                  <th className="py-2 pr-3">누가</th>
+                  <th className="py-2 pr-3">어디</th>
+                  <th className="py-2 pr-3">왜 안 묶였나</th>
+                  <th className="py-2 pr-3">같은 곳에</th>
+                  <th className="py-2 pr-3">기다린 날</th>
+                  <th className="py-2">조건</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holds.map((h) => (
+                  <tr key={h.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3">{h.userName}</td>
+                    <td className="py-2 pr-3 max-w-[22rem] truncate">
+                      {h.eventTitle}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          h.holdReason === 'gender'
+                            ? 'bg-red-100 text-red-700'
+                            : h.holdReason === 'age'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {HOLD_LABEL[h.holdReason] ?? '아직 안 봤음'}
+                      </span>
+                      {h.holdReason === 'age' && h.holdAgeOpensAt && (
+                        <span className="ml-2 text-xs text-gray-500">
+                          {h.holdAgeOpensAt.getMonth() + 1}/
+                          {h.holdAgeOpensAt.getDate()}에 풀림
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums">
+                      {h.holdCandidates}명
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums">
+                      {h.waitedDays}일
+                    </td>
+                    <td className="py-2 text-xs text-gray-500">
+                      {SLOT_LABEL[h.timeSlot] ?? h.timeSlot}
+                      {h.genderPref === 'same' && ' · 같은 성별끼리'}
+                      {h.agePref === 'near' && ' · 또래 먼저'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-gray-500">
+          <b>또래 기다림</b>은 사흘 뒤(또는 행사 닷새 전)에 저절로 풀린다 —
+          그냥 두면 된다. <b>성별</b>만 우리가 봐야 한다. 안 풀리는 조건이라,
+          사흘을 넘기면 관리자 알림이 한 번 간다.
         </p>
       </section>
     </div>
