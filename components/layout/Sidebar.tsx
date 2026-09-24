@@ -37,6 +37,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/identity', label: 'NICE 본인확인', icon: '🪪', section: '모으기' },
 
   // 실제로 만나게 하는 일 — 이 앱의 본론.
+  { href: '/dashboard/outings', label: '갈 곳 (관심·퍼널)', icon: '🧭', section: '만나기' },
   { href: '/dashboard/titatime', label: '티타임 자리 관리', icon: '🫖', section: '만나기' },
   { href: '/dashboard/teatime', label: '티타임 신청 명단', icon: '📋', section: '만나기' },
   { href: '/dashboard/moim', label: '결모임 자리표', icon: '🎟️', section: '만나기' },

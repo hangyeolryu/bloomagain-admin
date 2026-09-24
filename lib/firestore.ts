@@ -5577,3 +5577,84 @@ export async function getSeatReadiness(): Promise<SeatReadiness> {
     warnings,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 갈 곳 탭 (2026-09-24)
+//
+// 서울시 공공데이터에서 매일 긁어오는 `culture_events`와, 그 화면의 퍼널
+// `outing_funnel`. 앱은 GA4에도 같은 이벤트를 보내지만 여기에도 남긴다 —
+// 2026-09-19에 "이야기 탭이 안 쓰인다"를 확인하려다 화면 조회가 GA4에만
+// 있어서 아무것도 못 뽑았다. 우리가 직접 읽을 수 있는 자리가 있어야 한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface OutingFunnelRow {
+  phase: string;
+  uid: string;
+  eventId?: string;
+  chip?: string;
+  district?: string;
+  category?: string;
+  kind?: string;
+  free_only?: number;
+  is_free?: number;
+  acted?: number;
+  results?: number;
+  visible?: number;
+  when?: string;
+  who?: string;
+  createdAt?: Date;
+}
+
+export async function getOutingFunnel(days = 14): Promise<OutingFunnelRow[]> {
+  const since = Date.now() - days * 86400000;
+  const snap = await getDocs(collection(db, 'outing_funnel'));
+  const out: OutingFunnelRow[] = [];
+  snap.forEach((d) => {
+    const x = d.data() as Record<string, unknown>;
+    const ts = x.createdAt as { toDate?: () => Date } | undefined;
+    const at = ts?.toDate ? ts.toDate() : undefined;
+    if (!at || at.getTime() < since) return;
+    out.push({ ...(x as unknown as OutingFunnelRow), createdAt: at });
+  });
+  return out;
+}
+
+export interface CultureEventRow {
+  id: string;
+  kind: string;
+  title: string;
+  category: string;
+  district: string;
+  place: string;
+  dateLabel: string;
+  isFree: boolean;
+  target: string;
+  linkUrl: string;
+  endAt?: Date;
+  updatedAt?: Date;
+}
+
+export async function getCultureEvents(): Promise<CultureEventRow[]> {
+  const snap = await getDocs(collection(db, 'culture_events'));
+  const out: CultureEventRow[] = [];
+  snap.forEach((d) => {
+    const x = d.data() as Record<string, unknown>;
+    const end = x.endAt as { toDate?: () => Date } | undefined;
+    const upd = x.updatedAt as { toDate?: () => Date } | undefined;
+    out.push({
+      id: d.id,
+      kind: (x.kind as string) ?? 'event',
+      title: (x.title as string) ?? '',
+      category: (x.category as string) ?? '',
+      district: (x.district as string) ?? '',
+      place: (x.place as string) ?? '',
+      dateLabel: (x.dateLabel as string) ?? '',
+      isFree: (x.isFree as boolean) ?? false,
+      target: (x.target as string) ?? '',
+      linkUrl: (x.linkUrl as string) ?? '',
+      endAt: end?.toDate ? end.toDate() : undefined,
+      updatedAt: upd?.toDate ? upd.toDate() : undefined,
+    });
+  });
+  return out;
+}
