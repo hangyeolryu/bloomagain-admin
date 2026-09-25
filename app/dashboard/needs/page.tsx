@@ -790,7 +790,70 @@ function EnjoySections({ data }: { data: NeedsStats['enjoy'] }) {
           redKey="under45"
         />
       </div>
+
+      <ChildBlock c={data.child} />
     </section>
+  );
+}
+
+/**
+ * 자녀 블록(2026-09-25~). 연령을 답한 45세 이상에게만 이어서 묻고, 답에 따라
+ * 갈린다 — 있어요(나이대→결혼→연락→사이) / 없어요(지금 상황). 그래서 분모가
+ * 문항마다 다르다: 결혼은 10대 이하를 뺀 수, 사이·상황은 각 갈래의 수.
+ */
+function ChildBlock({ c }: { c: NeedsStats['enjoy']['child'] }) {
+  if (c.seen === 0) return null;
+  const pc = (n: number, d: number) => (d > 0 ? `${Math.round((n / d) * 100)}%` : '—');
+  const yes = c.hasChild.find((r) => r.key === 'yes')?.count ?? 0;
+  const no = c.hasChild.find((r) => r.key === 'no')?.count ?? 0;
+  const thin = c.answered < 100;
+  return (
+    <div className="mt-8 border-t border-emerald-200 pt-6">
+      <div className="mb-1 flex items-baseline gap-2">
+        <h3 className="text-sm font-semibold text-gray-900">⑤ 자녀 (45세 이상에게만 · 9/25~)</h3>
+      </div>
+      <p className="mb-3 text-xs text-gray-500">
+        연령 답 뒤에 이어서 묻는 추가 질문. 본 사람 <b className="tabular-nums">{c.seen}</b> →
+        첫 질문 답 <b className="tabular-nums">{c.answered}</b>({pc(c.answered, c.seen)}) →
+        끝까지 <b className="tabular-nums">{c.finished}</b>({pc(c.finished, c.seen)}) ·
+        건너뜀 <b className="tabular-nums">{c.skipped}</b>.
+        {c.abandonedAt.length > 0 && (
+          <> 보다가 나감: {c.abandonedAt.map((a) => `${ENJOY_LABELS[a.key] ?? a.key} ${a.count}`).join(' · ')}</>
+        )}
+      </p>
+      {thin && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          아직 <b className="tabular-nums">{c.answered}</b>명. 갈래마다 분모가 더 작아지니
+          <b> 100명을 넘기기 전에는 비율로 결론 내지 마세요.</b>
+        </p>
+      )}
+      <div className="grid gap-8 md:grid-cols-2">
+        <Section title="자녀가 있으세요?" data={c.hasChild} labels={ENJOY_LABELS} />
+        <Section
+          title={`자녀 나이대 (있어요 ${yes}명 중, 첫째 기준)`}
+          data={c.childAge}
+          labels={ENJOY_LABELS}
+        />
+        <Section
+          title="자녀 결혼 (10대 이하는 안 물음)"
+          hint="'아직 다 미혼'이 30대 이상과 겹치면 사돈 라운지 수요의 크기다."
+          data={c.childMarital}
+          labels={ENJOY_LABELS}
+        />
+        <Section title="자녀와 연락 빈도" data={c.childContact} labels={ENJOY_LABELS} />
+        <Section
+          title="자녀와 어떤 사이"
+          hint="'좀 서먹함·복잡함'과 '명절 정도'가 겹치는 분들이 외로움의 다른 얼굴이다."
+          data={c.childRelation}
+          labels={ENJOY_LABELS}
+        />
+        <Section
+          title={`자녀 없는 분의 지금 상황 (없어요 ${no}명 중)`}
+          data={c.noChildStatus}
+          labels={ENJOY_LABELS}
+        />
+      </div>
+    </div>
   );
 }
 

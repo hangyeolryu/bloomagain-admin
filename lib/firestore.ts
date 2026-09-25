@@ -3659,6 +3659,26 @@ export interface NeedsStats {
     // 바깥 활동 문항은 2026-08-06 20:5x 배포분부터 들어온다. 그 전 응답자는
     // 이 칸이 비어 있는 게 정상이라 분모를 따로 둔다.
     outingRespondents: number;
+    // 자녀 블록(2026-09-25~). 연령을 답한 45세 이상에게만 이어서 묻고, 답에
+    // 따라 다음 질문이 갈린다(있어요 → 나이대 → 결혼 → 연락 → 사이 / 없어요 →
+    // 상황). step이 질문과 1:1이 아니라 q로 센다.
+    //
+    // 분모는 "자녀 블록을 본 세션"(그 블록의 q가 하나라도 찍힌 세션)이다.
+    // 배포 시각 상수를 두지 않는다 — 상수가 틀리면 응답률이 조용히 틀린다.
+    child: {
+      seen: number;        // 블록 첫 화면을 본 세션
+      answered: number;    // '자녀가 있으세요?'에 답한 세션
+      finished: number;    // 갈래 끝(어떤 사이 / 지금 상황)까지 답한 세션
+      skipped: number;     // '건너뛰고 결과 보기'
+      hasChild: { key: string; count: number }[];
+      childAge: { key: string; count: number }[];
+      childMarital: { key: string; count: number }[];
+      childContact: { key: string; count: number }[];
+      childRelation: { key: string; count: number }[];
+      noChildStatus: { key: string; count: number }[];
+      // 블록 안 어느 질문을 보다가 나갔나(답 없이 pagehide).
+      abandonedAt: { key: string; count: number }[];
+    };
   };
   // 랜딩별 성적. 아래 다른 표들은 전부 /needs만 센다 — 여기서만 둘을 견준다.
   byVariant: {
@@ -3773,7 +3793,18 @@ export const ENJOY_LABELS: Record<string, string> = {
   home: '집이 편함', has_group: '이미 다니는 모임 있음',
   // 연령
   '45-49': '45–49세', '50-54': '50–54세', '55-59': '55–59세', '60-64': '60–64세',
-  '65plus': '65세 이상', under45: '만 45세 미만',
+  '65plus': '65세 이상', under45: '45세 미만',
+  // 자녀 블록(2026-09-25~)
+  yes: '있어요', no: '없어요',
+  teen: '10대 이하', '20s': '20대', '30s': '30대', '40plus': '40대 이상',
+  all_single: '아직 다 미혼', some_married: '결혼·미혼 섞여 있음', all_married: '다 결혼함',
+  daily: '거의 매일', weekly: '주 1~2회', monthly: '월 1~2회', rarely: '명절·특별한 날',
+  close: '속 얘기도 하는 사이', ok: '무난함', distant: '좀 서먹함', complicated: '좀 복잡함',
+  single: '결혼 안 함', couple: '배우자와 둘이', divorced: '이혼', widowed: '사별',
+  na: '말하지 않음',
+  // 블록 질문 이름(이탈 지점 표시용)
+  hasChild: '자녀 있으세요?', childAge: '자녀 나이대', childMarital: '자녀 결혼',
+  childContact: '연락 빈도', childRelation: '어떤 사이', noChildStatus: '지금 상황',
 };
 
 export const NEEDS_DIM_LABELS: Record<string, string> = {
@@ -3822,7 +3853,15 @@ export async function getNeedsStats(): Promise<NeedsStats> {
   type EnjoySess = {
     activity?: string; district?: string; outing?: string; ageBand?: string;
     downloaded: boolean;
+    // 자녀 블록 — answer 이벤트에 하나씩 실린다. 세션 단위로 마지막 값을 든다.
+    hasChild?: string; childAge?: string; childMarital?: string;
+    childContact?: string; childRelation?: string; noChildStatus?: string;
+    childSeen: boolean; childSkipped: boolean; childAbandonQ?: string;
   };
+  const CHILD_QS = new Set([
+    'hasChild', 'childAge', 'childMarital', 'childContact', 'childRelation',
+    'noChildStatus', 'childSkip',
+  ]);
   const enjoyBySid = new Map<string, EnjoySess>();
   // 랜딩 비교 전용 step 맵. /needs가 쓰는 maxStepBySid·abandonStepBySid에
   // 같이 담으면 안 된다 — 그 맵의 키가 allSids로 흘러들어 /needs 퍼널 분모가
@@ -3966,12 +4005,26 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     // 아래 뒀다가 /enjoy 봇이 하나도 안 걸러진 적이 있다(2026-08-05).
     if (variant === 'enjoy' && !nonHumanSids.has(sid)) {
       let es = enjoyBySid.get(sid);
-      if (!es) { es = { downloaded: false }; enjoyBySid.set(sid, es); }
+      if (!es) {
+        es = { downloaded: false, childSeen: false, childSkipped: false };
+        enjoyBySid.set(sid, es);
+      }
       if (typeof x.activity === 'string' && x.activity) es.activity = x.activity;
       if (typeof x.district === 'string' && x.district) es.district = x.district;
       if (typeof x.outing === 'string' && x.outing) es.outing = x.outing;
       if (typeof x.ageBand === 'string' && x.ageBand) es.ageBand = x.ageBand;
       if (phase === 'download' || phase === 'skip_download') es.downloaded = true;
+      // 자녀 블록. "봤다"는 그 블록의 q가 찍힌 이벤트(답·이탈·건너뛰기) 하나면
+      // 충분하다. 값은 download 이벤트에도 실리지만(...answers) q 없이 오므로
+      // 필드로 줍는다.
+      for (const k of ['hasChild', 'childAge', 'childMarital', 'childContact', 'childRelation', 'noChildStatus'] as const) {
+        if (typeof x[k] === 'string' && x[k]) es[k] = x[k] as string;
+      }
+      if (typeof x.q === 'string' && CHILD_QS.has(x.q)) {
+        es.childSeen = true;
+        if (phase === 'answer' && x.q === 'childSkip') es.childSkipped = true;
+        if (phase === 'abandon') es.childAbandonQ = x.q;
+      }
     }
 
     // 아래 집계는 전부 /needs 전용이다. 다른 랜딩이 섞이면 어제까지의 숫자와
@@ -4224,6 +4277,27 @@ export async function getNeedsStats(): Promise<NeedsStats> {
     outing: enjoyTally((e) => e.outing),
     ageBand: enjoyTally((e) => e.ageBand),
     outingRespondents: enjoySess.filter((e) => e.outing).length,
+    child: (() => {
+      const tally = (pick: (e: EnjoySess) => string | undefined) => {
+        const m = new Map<string, number>();
+        enjoySess.forEach((e) => { const v = pick(e); if (v) m.set(v, (m.get(v) ?? 0) + 1); });
+        return toArr(m);
+      };
+      return {
+        seen: enjoySess.filter((e) => e.childSeen).length,
+        answered: enjoySess.filter((e) => e.hasChild).length,
+        finished: enjoySess.filter((e) => e.childRelation || e.noChildStatus).length,
+        skipped: enjoySess.filter((e) => e.childSkipped).length,
+        hasChild: tally((e) => e.hasChild),
+        childAge: tally((e) => e.childAge),
+        childMarital: tally((e) => e.childMarital),
+        childContact: tally((e) => e.childContact),
+        childRelation: tally((e) => e.childRelation),
+        noChildStatus: tally((e) => e.noChildStatus),
+        // 이탈 뒤에 답으로 이어졌으면(돌아와서 계속) 이탈로 안 센다.
+        abandonedAt: tally((e) => (e.childAbandonQ && !(e.childRelation || e.noChildStatus || e.childSkipped) ? e.childAbandonQ : undefined)),
+      };
+    })(),
   };
 
   const byVariant = [...vmap.values()].sort((a, b) => b.arrivals - a.arrivals);
