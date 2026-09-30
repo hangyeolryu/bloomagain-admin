@@ -15,8 +15,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { getOutingFunnel, getCultureEvents, getOutingHolds } from '@/lib/firestore';
-import type { OutingFunnelRow, CultureEventRow, OutingHoldRow } from '@/lib/firestore';
+import { getOutingFunnel, getCultureEvents, getOutingHolds, getOutingGroups } from '@/lib/firestore';
+import type { OutingFunnelRow, CultureEventRow, OutingHoldRow, OutingGroupRow } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -57,6 +57,7 @@ export default function OutingsPage() {
   const [rows, setRows] = useState<OutingFunnelRow[]>([]);
   const [events, setEvents] = useState<CultureEventRow[]>([]);
   const [holds, setHolds] = useState<OutingHoldRow[]>([]);
+  const [groups, setGroups] = useState<OutingGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   // 불러온 시각. '마지막 갱신 N시간 전'을 재는 기준이다.
   const [loadedAt, setLoadedAt] = useState(0);
@@ -67,15 +68,17 @@ export default function OutingsPage() {
     // alive 플래그로 떠난 뒤의 setState를 막는다.
     const run = async () => {
       try {
-        const [f, e, h] = await Promise.all([
+        const [f, e, h, g] = await Promise.all([
           getOutingFunnel(days),
           getCultureEvents(),
           getOutingHolds(),
+          getOutingGroups(),
         ]);
         if (!alive) return;
         setRows(f);
         setEvents(e);
         setHolds(h);
+        setGroups(g);
         setLoadedAt(Date.now());
       } finally {
         if (alive) setLoading(false);
@@ -309,6 +312,105 @@ export default function OutingsPage() {
           매일 새벽 5시 20분에 <b>refreshCultureEvents</b>가 돈다.
           마지막 갱신이 <b>36시간</b>을 넘으면 빨갛게 뜬다 — 갱신이 멎으면
           회원에게는 지난 행사만 남은 탭이 된다.
+        </p>
+      </section>
+
+
+      {/* ── 지금 열려 있는 무리 ─────────────────────────────────── */}
+      <section className="rounded-xl border bg-white p-5">
+        <h2 className="text-lg font-bold">지금 열려 있는 무리</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          앱에서는 <b>자기 또래 무리만</b> 보인다. 그래서 앱을 열어도 내 나이대 밖의
+          무리는 안 보이고 &ldquo;왜 안 떠?&rdquo;가 된다. 여기서는 전부 보인다.
+        </p>
+        {groups.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-500">
+            지금 모여 계신 무리가 없습니다.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {groups.map((g, i) => (
+              <div
+                key={`${g.eventId}-${i}`}
+                className={`rounded-lg border p-4 ${
+                  g.roomTalking ? 'border-amber-300 bg-amber-50' : 'bg-gray-50'
+                }`}
+              >
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="rounded bg-gray-900 px-2 py-0.5 text-xs font-bold text-white tabular-nums">
+                    {g.size}명
+                  </span>
+                  <span className="font-bold">{g.ageLabel}</span>
+                  <span className="text-sm text-gray-500">
+                    {g.slot}
+                    {g.gender && ` · ${g.gender === 'female' ? '여성만' : '남성만'}`}
+                  </span>
+                  <span className="ml-auto text-xs text-gray-500">
+                    {g.daysLeft !== null && g.daysLeft >= 0 ? `D-${g.daysLeft}` : ''}
+                  </span>
+                </div>
+
+                <div className="mt-2 text-sm">
+                  {g.linkUrl ? (
+                    <a
+                      href={g.linkUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-blue-700 hover:underline"
+                    >
+                      {g.eventTitle}
+                    </a>
+                  ) : (
+                    <span className="font-medium">{g.eventTitle}</span>
+                  )}
+                  <span className="ml-2 text-gray-500">
+                    {[g.dateLabel, g.district, g.isFree ? '무료' : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </div>
+
+                <div className="mt-2 text-sm text-gray-700">
+                  {g.members.map((m) => (
+                    <span key={m.name} className="mr-3">
+                      {m.name}
+                      <span className="text-gray-500">
+                        {m.age !== null ? ` ${m.age}세` : ''}
+                        {m.gender === 'female' ? ' 여' : m.gender === 'male' ? ' 남' : ''}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  <span className="text-gray-500">
+                    이 무리가 보이는 회원 <b className="tabular-nums">{g.visibleTo}</b>명
+                  </span>
+                  {g.roomId ? (
+                    g.roomTalking ? (
+                      <span className="font-semibold text-amber-700">
+                        이야기 시작됨 — 새 분은 안 들어감
+                      </span>
+                    ) : (
+                      <span className="text-green-700">
+                        방 열림 · 아직 조용함 — 한 분 더 들어갈 수 있음
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-gray-500">
+                      아직 방 없음 — 두 분이 되면 열린다
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-gray-500">
+          나이대는 <b>여기 더 들어올 수 있는 범위</b>다. 모인 분들 전원과 다섯 살
+          안에 들어야 하니, 사람이 늘수록 범위가 좁아진다. 노란 칸은 날짜 이야기가
+          시작된 방이라 <b>더 받지 않는다</b> — 정해둔 약속에 늦게 끼어들면 안 되는
+          날이어도 말을 못 꺼내시기 때문이다.
         </p>
       </section>
 

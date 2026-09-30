@@ -5819,3 +5819,215 @@ export async function getOutingHolds(): Promise<OutingHoldRow[]> {
   });
   return rows;
 }
+
+// ── 갈 곳: 지금 열려 있는 무리 ───────────────────────────────────────
+//
+// 앱에서는 **자기 또래 무리만** 보인다(culture_events.wantGroups). 그래서
+// 대표가 앱을 열어도 자기 나이대 밖의 무리는 안 보이고, "왜 안 떠?"가 된다
+// (2026-09-29에 실제로 그랬다 — 1975~1980년생 무리를 1970년생 계정으로
+// 찾고 있었다). 관리자에게만 필터를 풀면 대표가 보는 화면과 회원이 보는
+// 화면이 갈려 더 헷갈리니, 앱은 그대로 두고 **여기서 전부 본다.**
+//
+// 무리의 lo~hi는 '여기 더 들어올 수 있는 출생연도'다. 무리 전원과 다섯 살
+// 안에 들어야 하니 가장 위 연도 -5 ~ 가장 아래 연도 +5가 된다.
+export interface OutingGroupRow {
+  eventId: string;
+  eventTitle: string;
+  dateLabel: string;
+  place: string;
+  district: string;
+  linkUrl: string;
+  isFree: boolean;
+  daysLeft: number | null;
+  /** 받는 출생연도 구간 */
+  lo: number;
+  hi: number;
+  /** 연나이로 환산한 표기 (예: 46~51세) */
+  ageLabel: string;
+  size: number;
+  /** 비어 있지 않으면 그 성별만 들어갈 수 있다 */
+  gender: string;
+  slot: string;
+  members: { name: string; age: number | null; gender: string }[];
+  /** 방이 열렸으면 그 id */
+  roomId: string | null;
+  /** 회원이 한마디라도 했나 — 시작됐으면 새 분을 안 넣는다 */
+  roomTalking: boolean;
+  /** 이 무리를 볼 수 있는 인증 회원 수 */
+  visibleTo: number;
+}
+
+const SLOT_KO: Record<string, string> = {
+  weekday_day: '주중 낮',
+  weekend_day: '주말 낮',
+  evening: '저녁',
+};
+
+export async function getOutingGroups(): Promise<OutingGroupRow[]> {
+  const thisYear = new Date().getFullYear();
+
+  // 1) 무리가 있는 행사만 추린다.
+  const evSnap = await getDocs(collection(db, 'culture_events'));
+  type Ev = {
+    id: string;
+    title: string;
+    dateLabel: string;
+    place: string;
+    district: string;
+    linkUrl: string;
+    isFree: boolean;
+    endAt?: Date;
+    groups: {
+      lo: number;
+      hi: number;
+      size: number;
+      gender: string;
+      slot: string;
+    }[];
+  };
+  const events: Ev[] = [];
+  evSnap.forEach((d) => {
+    const x = d.data() as Record<string, unknown>;
+    const groups = (x.wantGroups as Ev['groups'] | undefined) ?? [];
+    if (!groups.length) return;
+    const end = x.endAt as { toDate?: () => Date } | undefined;
+    events.push({
+      id: d.id,
+      title: (x.title as string) ?? '',
+      dateLabel: (x.dateLabel as string) ?? '',
+      place: (x.place as string) ?? '',
+      district: (x.district as string) ?? '',
+      linkUrl: (x.linkUrl as string) ?? '',
+      isFree: (x.isFree as boolean) ?? false,
+      endAt: end?.toDate ? end.toDate() : undefined,
+      groups,
+    });
+  });
+  if (!events.length) return [];
+
+  // 2) 손 든 분들. 살아 있는 제안만(pending·grouped).
+  const propSnap = await getDocs(collection(db, 'seat_proposals'));
+  type Prop = { uid: string; eventId: string; roomId: string | null };
+  const props: Prop[] = [];
+  const uids = new Set<string>();
+  propSnap.forEach((d) => {
+    const x = d.data() as Record<string, unknown>;
+    const st = x.status as string;
+    if (st !== 'pending' && st !== 'grouped') return;
+    const eventId = x.cultureEventId as string | undefined;
+    const uid = x.uid as string | undefined;
+    if (!eventId || !uid) return;
+    props.push({
+      uid,
+      eventId,
+      roomId: (x.groupRoomId as string) ?? null,
+    });
+    uids.add(uid);
+  });
+
+  // 3) 회원 정보 — 손 든 분 이름과, 각 구간을 볼 수 있는 사람 수.
+  const people = new Map<string, { name: string; year: number | null; gender: string }>();
+  const allYears: { year: number; gender: string }[] = [];
+  const userSnap = await getDocs(collection(db, 'users'));
+  userSnap.forEach((d) => {
+    const x = d.data() as Record<string, unknown>;
+    if (x.isDeleted === true) return;
+    const year =
+      (x.legalBirthYear as number) ?? (x.yearOfBirth as number) ?? null;
+    const gender = (x.gender as string) ?? '';
+    if (uids.has(d.id)) {
+      people.set(d.id, {
+        name:
+          ((x.name as string) || (x.displayName as string) || '').trim() ||
+          d.id.slice(0, 6),
+        year: year && year > 1900 ? year : null,
+        gender,
+      });
+    }
+    if (x.identityVerified === true && year && year > 1900) {
+      allYears.push({ year, gender });
+    }
+  });
+
+  // 4) 방에서 회원이 말했는지. 방이 있는 무리만 확인한다.
+  const roomIds = [...new Set(props.map((p) => p.roomId).filter(Boolean))] as string[];
+  const talking = new Map<string, boolean>();
+  await Promise.all(
+    roomIds.map(async (rid) => {
+      try {
+        const ms = await getDocs(
+          query(
+            collection(db, 'conversations', rid, 'messages'),
+            orderBy('sentAt', 'desc'),
+            limit(20)
+          )
+        );
+        let spoke = false;
+        ms.forEach((m) => {
+          const x = m.data() as Record<string, unknown>;
+          if (x.isAdminMessage !== true) spoke = true;
+        });
+        talking.set(rid, spoke);
+      } catch {
+        talking.set(rid, false);
+      }
+    })
+  );
+
+  // 5) 합친다.
+  const rows: OutingGroupRow[] = [];
+  const now = Date.now();
+  for (const ev of events) {
+    const mine = props.filter((p) => p.eventId === ev.id);
+    for (const g of ev.groups) {
+      // 이 무리에 속한 분들 — 구간 안에 있고 시간대가 같은 분으로 본다.
+      const members = mine
+        .map((p) => ({ p, u: people.get(p.uid) }))
+        .filter(
+          (x) => x.u && x.u.year !== null && x.u.year >= g.lo && x.u.year <= g.hi
+        )
+        .map((x) => ({
+          name: x.u!.name,
+          age: x.u!.year ? thisYear - x.u!.year : null,
+          gender: x.u!.gender,
+        }));
+      const roomId = mine.find((p) => p.roomId)?.roomId ?? null;
+      const visibleTo = allYears.filter(
+        (y) =>
+          y.year >= g.lo &&
+          y.year <= g.hi &&
+          (!g.gender || g.gender === y.gender)
+      ).length;
+      rows.push({
+        eventId: ev.id,
+        eventTitle: ev.title,
+        dateLabel: ev.dateLabel,
+        place: ev.place,
+        district: ev.district,
+        linkUrl: ev.linkUrl,
+        isFree: ev.isFree,
+        daysLeft: ev.endAt
+          ? Math.ceil((ev.endAt.getTime() - now) / 86400000)
+          : null,
+        lo: g.lo,
+        hi: g.hi,
+        // 연나이 — 출생연도가 클수록 어리니 hi가 어린 쪽이다.
+        ageLabel: `${thisYear - g.hi}~${thisYear - g.lo}세`,
+        size: g.size,
+        gender: g.gender,
+        slot: SLOT_KO[g.slot] ?? g.slot,
+        members,
+        roomId,
+        roomTalking: roomId ? (talking.get(roomId) ?? false) : false,
+        visibleTo,
+      });
+    }
+  }
+
+  // 사람이 많이 모인 무리부터, 같으면 날짜가 임박한 것부터.
+  rows.sort((a, b) => {
+    if (a.size !== b.size) return b.size - a.size;
+    return (a.daysLeft ?? 999) - (b.daysLeft ?? 999);
+  });
+  return rows;
+}
