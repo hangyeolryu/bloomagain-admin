@@ -1,6 +1,15 @@
-import type { NextConfig } from "next";
+// Plain JS on purpose — NOT next.config.ts.
+// NOTE (2026-09-30): Firebase Hosting's frameworksBackend container ships only
+// production dependencies, so `typescript` (a devDependency) is missing at
+// runtime. With a .ts config Next tried to npm-install typescript on every cold
+// start (~17s) and then still failed to transpile the config, so the server
+// never booted and every request returned a plain-text 500 — including
+// /api/nice/init, which took down 휴대폰 본인인증 for the app.
+// Keep this file as .js and never add next.config.ts back alongside it
+// (Next.js prefers the .ts one when both exist).
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   // Bake server-side backend credentials into the server bundle at build time.
   // These are NOT exposed to the browser (no NEXT_PUBLIC_ prefix).
   // Required because Firebase Hosting's standalone Cloud Function doesn't load
@@ -43,4 +52,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
