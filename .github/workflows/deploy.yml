@@ -35,9 +35,15 @@
 name: Deploy to Firebase Hosting
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: {} # 수동 실행(Actions 탭 → Run workflow)도 허용
+  # TODO(2026-09-30): push 트리거는 일시적으로 꺼 둔다.
+  # 이 워크플로는 9/24부터 npm ci에서 죽어 단 한 번도 배포에 성공한 적이 없다
+  # (그동안의 배포는 전부 수동 firebase deploy). 락파일과 빈 값 가드를 고쳤지만
+  # 시크릿 값의 내용과 서비스계정 IAM 권한은 실제로 돌려 봐야 확인된다.
+  # 본인인증 장애 복구 당일에 자동 트리거로 프로덕션을 실험하지 않기 위해,
+  # 수동 실행으로 한 번 성공을 확인한 뒤 아래 두 줄의 주석을 풀 것.
+  #   push:
+  #     branches: [main]
+  workflow_dispatch: {} # 수동 실행(Actions 탭 → Run workflow)
 
 # 같은 브랜치 배포가 겹치지 않게 — 새 푸시가 오면 진행 중인 배포는 취소.
 concurrency:
