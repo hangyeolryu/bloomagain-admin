@@ -64,7 +64,7 @@ jobs:
         run: npm ci
 
       # 공개 상수(도메인/프로젝트/버킷)는 .env.example의 고정값을 그대로 쓰고,
-      # 나머지 민감·환경별 값은 Secrets에서 채운다. 서버 값은 next.config.ts가
+      # 나머지 민감·환경별 값은 Secrets에서 채운다. 서버 값은 next.config.js가
       # process.env로 읽어 빌드 시 inline하므로 여기서 함께 넣어 줘야 한다.
       - name: Write .env.production
         run: |
@@ -82,6 +82,36 @@ jobs:
           BACKEND_API_KEY=${{ secrets.BACKEND_API_KEY }}
           TITA_OFFICIAL_SENDER_UID=${{ secrets.TITA_OFFICIAL_SENDER_UID }}
           EOF
+
+      # ── 빈 값 방어 ───────────────────────────────────────────────────────────
+      # Secret이 없거나 이름이 틀리면 위 heredoc은 조용히 빈 문자열을 쓴다.
+      # 그대로 빌드하면 next.config.js의 env가 ''로 inline되고, 빌드도 배포도
+      # "성공"한 채로 런타임에만 죽는다 — 2026-09-30 본인인증 장애가 정확히
+      # 이 모양이었다(그때는 next.config.ts 트랜스파일 실패였지만 증상 동일:
+      # /api/nice/init이 평문 500). 배포 전에 여기서 멈추는 편이 훨씬 싸다.
+      - name: Verify required env values are non-empty
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in \
+            NEXT_PUBLIC_FIREBASE_API_KEY \
+            NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID \
+            NEXT_PUBLIC_FIREBASE_APP_ID \
+            BLOOMAGAIN_BACKEND_URL \
+            NICE_BACKEND_URL \
+            BACKEND_APP_ID \
+            BACKEND_API_KEY
+          do
+            value="$(sed -n "s/^${key}=//p" .env.production)"
+            if [ -z "$value" ]; then missing+=("$key"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::비어 있는 필수 값: ${missing[*]}"
+            echo "GitHub Settings → Secrets and variables → Actions 에서 등록하세요."
+            echo "(NICE_BACKEND_URL이 비면 휴대폰 본인인증이 죽습니다.)"
+            exit 1
+          fi
+          echo "필수 값 전부 채워져 있습니다."
 
       # 서비스계정 JSON을 파일로 쓰고 GOOGLE_APPLICATION_CREDENTIALS로 노출.
       # firebase-tools가 이 경로를 읽어 인증한다(대화형 로그인/토큰 불필요).
