@@ -5886,11 +5886,16 @@ export async function getOutingGroups(): Promise<OutingGroupRow[]> {
     }[];
   };
   const events: Ev[] = [];
+  const now0 = Date.now();
   evSnap.forEach((d) => {
     const x = d.data() as Record<string, unknown>;
     const groups = (x.wantGroups as Ev['groups'] | undefined) ?? [];
     if (!groups.length) return;
     const end = x.endAt as { toDate?: () => Date } | undefined;
+    // ⚠️ 이미 끝난 행사는 안 보여준다(2026-10-05). 인사동 엔틱페어가 어제
+    // 끝났는데 'D-0'으로 떠 있어서, 아직 갈 수 있는 줄 알고 88분께 초대를
+    // 보낼 뻔했다. 끝난 자리는 할 수 있는 일이 없다.
+    if (end?.toDate && end.toDate().getTime() < now0) return;
     events.push({
       id: d.id,
       title: (x.title as string) ?? '',
