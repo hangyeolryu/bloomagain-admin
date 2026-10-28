@@ -58,6 +58,9 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 승인하면 제안이 pending 목록에서 사라진다. 초안은 아래 목록에 생기는데,
+  // 아무 말이 없으면 "눌렀는데 없어졌다"로 읽힌다 — 어디로 갔는지 적어준다.
+  const [doneMsg, setDoneMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -78,6 +81,7 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
   async function accept(p: SeatProposal) {
     setBusy(p.id);
     setErr(null);
+    setDoneMsg(null);
     try {
       const res = await fetch('/api/backend/titatime-sessions', {
         method: 'POST',
@@ -103,6 +107,12 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
           leaderUid: p.leaderUid ?? p.uid,
           leaderName: p.nickname ?? null,
           genderPref: p.genderPref ?? 'any',
+          agePref: p.agePref ?? 'any',
+          // 제안의 활동이 곧 자리의 활동. 신청을 가르는 건 동네가 아니라 이것.
+          activity: p.activity ?? null,
+          topic: p.activity ?? null,
+          // 장소가 비어 있는 초안이다 — 맨 위 '장소 잡아야 하는 자리'에 올린다.
+          needsVenue: true,
         }),
       });
       const json = await res.json();
@@ -117,6 +127,11 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
       await decideSeatProposal(p.id, 'accepted', sessionId);
       await load();
       onSessionCreated();
+      setDoneMsg(
+        `${p.nickname || p.uid.slice(0, 8)} 님의 제안을 초안으로 만들었어요. ` +
+        '맨 위 ‘장소 잡아야 하는 자리’와 아래 ‘모집 세션 관리’에 있어요 — ' +
+        '날짜·장소를 채워 게시해주세요.',
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : '승인 실패');
     } finally {
@@ -141,7 +156,8 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
   const decided = rows?.filter((r) => r.status !== 'pending') ?? [];
 
   // 제안이 하나도 없으면 카드 자체를 접는다 — 빈 틀은 자리만 차지한다.
-  if (rows !== null && rows.length === 0) return null;
+  // 단, 방금 만든 초안 안내가 떠 있으면 남긴다. 접히면 또 "없어졌다"가 된다.
+  if (rows !== null && rows.length === 0 && !doneMsg) return null;
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5">
@@ -170,6 +186,11 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
 
       {err && (
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>
+      )}
+      {doneMsg && (
+        <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-800">
+          {doneMsg}
+        </p>
       )}
 
       {pending.length === 0 ? (

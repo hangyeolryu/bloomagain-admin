@@ -32,6 +32,9 @@ export default function TitatimePage() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [signups, setSignups] = useState<TeatimeSignup[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 모집 세션 관리 카드는 목록을 따로 들고 있다. 제안을 승인해 초안이 생기면
+  // 이 값을 올려서 그 카드도 다시 읽게 한다 — 안 그러면 초안이 안 보인다.
+  const [sessionsVersion, setSessionsVersion] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -73,9 +76,14 @@ export default function TitatimePage() {
       )}
 
       {/* 회원 제안 → 승인 → 초안. 자리 목록보다 위 — 새로 온 것부터. */}
-      <ProposalsCard onSessionCreated={load} />
+      <ProposalsCard
+        onSessionCreated={() => {
+          load();
+          setSessionsVersion((v) => v + 1);
+        }}
+      />
 
-      <MeetupSessionsCard />
+      <MeetupSessionsCard reloadKey={sessionsVersion} />
 
       <p className="text-xs text-gray-500">
         Full signup history:{' '}

@@ -111,7 +111,10 @@ export default function VenueNeededCard({ sessions }: { sessions: VenueSeat[] })
                         ? '오늘까지'
                         : `${toDecide}일 남음`}
                   </p>
-                  <p className="text-[11px] text-gray-400">모임 {left}일 전</p>
+                  {/* 회원 제안 초안은 날짜부터 없다 — 'null일 전'로 보이면 안 된다. */}
+                  <p className="text-[11px] text-gray-400">
+                    {left === null ? '날짜 미정' : `모임 ${left}일 전`}
+                  </p>
                 </div>
               </div>
 

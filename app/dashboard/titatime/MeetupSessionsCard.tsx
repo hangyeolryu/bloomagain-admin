@@ -160,7 +160,11 @@ function toPayload(form: FormState): Record<string, unknown> {
   return out;
 }
 
-export default function MeetupSessionsCard() {
+/**
+ * reloadKey — 이 카드 밖(회원 제안 승인)에서 자리가 생겼을 때 부모가 올려준다.
+ * 목록을 이 카드가 따로 들고 있어서, 초안을 만들어도 새로고침 전까지 안 보였다.
+ */
+export default function MeetupSessionsCard({ reloadKey = 0 }: { reloadKey?: number }) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -217,7 +221,7 @@ export default function MeetupSessionsCard() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, reloadKey]);
 
   function openNew() {
     setForm({ ...EMPTY_FORM, sortOrder: (sessions?.length ?? 0) });

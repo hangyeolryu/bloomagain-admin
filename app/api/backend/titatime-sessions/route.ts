@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SESSION_FIELDS } from './fields';
 
 /**
  * 티타임 모집 세션 관리 프록시 → FastAPI /api/v1/titatime/sessions.
@@ -66,6 +67,12 @@ export async function POST(request: NextRequest) {
       published: Boolean(json.published),
       sortOrder: Number.isFinite(json.sortOrder) ? Number(json.sortOrder) : 0,
     };
+    // 나머지는 보낸 필드만 그대로. 위 일곱 개만 통과시키던 동안 시간·장소·정원·
+    // 리더가 생성 때 조용히 사라졌다 — 수정(PATCH)에서 이미 한 번 고친 실수다.
+    for (const k of SESSION_FIELDS) {
+      if (k in payload) continue;
+      if (k in json && json[k] !== undefined) payload[k] = json[k];
+    }
   } catch {
     return NextResponse.json({ error: 'invalid body' }, { status: 400 });
   }
