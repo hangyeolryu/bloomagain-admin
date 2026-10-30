@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getDataCollectionStats } from '@/lib/firestore';
+import { adminFetch } from '@/lib/admin-fetch';
 import type { DataCollectionStats } from '@/lib/firestore';
 import StatsCard from '@/components/ui/StatsCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -670,7 +671,7 @@ export default function DataCollectionPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/admin/pipeline-status', { cache: 'no-store' })
+    adminFetch('/api/admin/pipeline-status', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setPipeline(d as PipelineProbe | null))
       .catch(() => setPipeline(null));

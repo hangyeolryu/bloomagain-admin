@@ -1,30 +1,20 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders } from '@/lib/backend-admin-headers';
 
 /**
  * GET /api/admin/pipeline-status
  *
- * Server-side proxy to the backend's `/api/v1/admin/pipeline-status` (tenant
- * auth). Surfaces infra facts the admin dashboard can't probe directly
- * (firebase-admin is disabled here, so no GCP/BigQuery/Postgres access from the
- * browser or SSR): embedding-dim alignment, survey_responses table existence,
- * alembic head, and BigQuery freshness. Read-only. Tenant key stays server-side.
+ * Server-side proxy to the backend's `/api/v1/admin/pipeline-status`. Surfaces
+ * infra facts the admin dashboard can't probe directly (firebase-admin is
+ * disabled here, so no GCP/BigQuery/Postgres access from the browser or SSR):
+ * embedding-dim alignment, survey_responses table existence, alembic head, and
+ * BigQuery freshness. Read-only. Needs the operator's ID token (adminFetch) —
+ * the backend's /admin router checks admins/{email} on every route.
  */
-export async function GET() {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId = process.env.BACKEND_APP_ID;
-  const apiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json(
-      { error: 'BLOOMAGAIN_BACKEND_URL not configured' },
-      { status: 500 },
-    );
-  }
-  const base = backendUrl.replace(/\/$/, '');
-  const headers: Record<string, string> = {
-    ...(appId ? { 'X-App-ID': appId } : {}),
-    ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-  };
+export async function GET(request: NextRequest) {
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
+  const { base, headers } = env;
 
   try {
     const r = await fetch(`${base}/api/v1/admin/pipeline-status`, {

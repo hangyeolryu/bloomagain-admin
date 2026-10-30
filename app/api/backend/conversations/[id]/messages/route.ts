@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders } from '@/lib/backend-admin-headers';
 
 /**
  * GET /api/backend/conversations/[id]/messages
@@ -11,13 +12,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId = process.env.BACKEND_APP_ID;
-  const apiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 });
-  }
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   const { id } = await params;
   const { searchParams } = new URL(request.url);
@@ -25,12 +21,9 @@ export async function GET(
 
   try {
     const upstream = await fetch(
-      `${backendUrl.replace(/\/$/, '')}/api/v1/admin/conversations/${encodeURIComponent(id)}/messages?${qs.toString()}`,
+      `${env.base}/api/v1/admin/conversations/${encodeURIComponent(id)}/messages?${qs.toString()}`,
       {
-        headers: {
-          ...(appId ? { 'X-App-ID': appId } : {}),
-          ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-        },
+        headers: env.headers,
         cache: 'no-store',
       },
     );
