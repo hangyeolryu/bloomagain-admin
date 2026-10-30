@@ -18,6 +18,7 @@ import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
 import { getUsersByIds } from '@/lib/firestore';
+import { adminFetch } from '@/lib/admin-fetch';
 import UserChip, { OFFICIAL_UID } from '@/components/ui/UserChip';
 import type { UserProfile } from '@/types';
 
@@ -52,7 +53,7 @@ async function fetchAll(): Promise<Conv[]> {
   for (let page = 0; page < MAX_PAGES; page++) {
     const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
     if (cursor != null) qs.set('cursor', String(cursor));
-    const res = await fetch(`/api/backend/conversations?${qs}`, { cache: 'no-store' });
+    const res = await adminFetch(`/api/backend/conversations?${qs}`, { cache: 'no-store' });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
     out.push(...((body.items ?? []) as Conv[]));

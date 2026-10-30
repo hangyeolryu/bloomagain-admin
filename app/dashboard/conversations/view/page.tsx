@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Header from '@/components/layout/Header';
+import { adminFetch } from '@/lib/admin-fetch';
 
 type Msg = {
   id: string;
@@ -55,7 +56,7 @@ function ConversationView() {
       setLoading(false);
       return;
     }
-    fetch(`/api/backend/conversations/${encodeURIComponent(id)}/messages`, { cache: 'no-store' })
+    adminFetch(`/api/backend/conversations/${encodeURIComponent(id)}/messages`, { cache: 'no-store' })
       .then(async (res) => {
         if (!res.ok) {
           const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -76,7 +77,7 @@ function ConversationView() {
     setAnalyzeErr(null);
     setAnalysis(null);
     try {
-      const res = await fetch(`/api/backend/conversations/${encodeURIComponent(id)}/analyze`, {
+      const res = await adminFetch(`/api/backend/conversations/${encodeURIComponent(id)}/analyze`, {
         method: 'POST',
       });
       const body = (await res.json().catch(() => ({}))) as { analysis?: string | null; error?: string };

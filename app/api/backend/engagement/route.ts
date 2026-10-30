@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders } from '@/lib/backend-admin-headers';
 
 /**
  * GET /api/backend/engagement?dormantDays=14
@@ -9,13 +10,8 @@ import { NextRequest, NextResponse } from 'next/server';
  * server-side. The backend caches for 5 minutes; this route is a thin pipe.
  */
 export async function GET(request: NextRequest) {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId = process.env.BACKEND_APP_ID;
-  const apiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 });
-  }
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   const { searchParams } = new URL(request.url);
   const qs = new URLSearchParams();
@@ -24,12 +20,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const upstream = await fetch(
-      `${backendUrl.replace(/\/$/, '')}/api/v1/admin/engagement?${qs.toString()}`,
+      `${env.base}/api/v1/admin/engagement?${qs.toString()}`,
       {
-        headers: {
-          ...(appId ? { 'X-App-ID': appId } : {}),
-          ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-        },
+        headers: env.headers,
         cache: 'no-store',
       },
     );

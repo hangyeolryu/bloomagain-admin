@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import UserChip from '@/components/ui/UserChip';
+import { adminFetch } from '@/lib/admin-fetch';
 import type { UserProfile } from '@/types';
 import QUESTIONS from '@/lib/gyeolq-questions-full.json';
 
@@ -200,7 +201,7 @@ export default function EngagementPage() {
   const [sort, setSort]       = useState<SortKey>('nearest');
 
   useEffect(() => {
-    fetch('/api/backend/engagement', { cache: 'no-store' })
+    adminFetch('/api/backend/engagement', { cache: 'no-store' })
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
