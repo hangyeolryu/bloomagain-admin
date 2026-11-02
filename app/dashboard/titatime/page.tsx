@@ -19,6 +19,7 @@ import SeatRoster from './SeatRoster';
 import ProposalsCard from './ProposalsCard';
 import VenueNeededCard, { type VenueSeat } from './VenueNeededCard';
 import { getTeatimeSignups, type TeatimeSignup } from '@/lib/firestore';
+import { adminFetch } from '@/lib/admin-fetch';
 
 type Session = VenueSeat & {
   district?: string;
@@ -39,7 +40,7 @@ export default function TitatimePage() {
   const load = useCallback(async () => {
     try {
       const [res, s] = await Promise.all([
-        fetch('/api/backend/titatime-sessions', { cache: 'no-store' }),
+        adminFetch('/api/backend/titatime-sessions', { cache: 'no-store' }),
         getTeatimeSignups(),
       ]);
       const json = await res.json();

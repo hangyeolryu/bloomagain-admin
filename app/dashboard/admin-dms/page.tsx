@@ -23,6 +23,7 @@ import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import CsInboxCard from './CsInbox';
 import WebContactInbox from './WebContactInbox';
+import { adminFetch } from '@/lib/admin-fetch';
 
 // One row per admin-initiated conversation. Read status is derived from the
 // most recent admin-authored message in the thread (isRead flag flipped by
@@ -216,7 +217,7 @@ function BroadcastPushCard() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/backend/broadcast-push', { method: 'GET' });
+      const res = await adminFetch('/api/backend/broadcast-push', { method: 'GET' });
       const json = await res.json();
       if (res.ok) setHistory(json.items ?? []);
     } catch { /* 이력 조회 실패는 조용히 무시 */ }
@@ -242,7 +243,7 @@ function BroadcastPushCard() {
   async function doPreview(onlyAdmins: boolean) {
     setPreviewing(true); setErr(null); setResult(null);
     try {
-      const res = await fetch('/api/backend/broadcast-push', {
+      const res = await adminFetch('/api/backend/broadcast-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dry_run: true, only_admins: onlyAdmins, gender, region: region.trim() }),
@@ -264,7 +265,7 @@ function BroadcastPushCard() {
     if (!confirm(`⚠️ 푸시를 보냅니다.\n\n대상: ${who}\n종류: ${typeLabel}\n제목: ${title}\n내용: ${body}\n\n정말 보낼까요?`)) return;
     setSending(true); setErr(null); setResult(null);
     try {
-      const res = await fetch('/api/backend/broadcast-push', {
+      const res = await adminFetch('/api/backend/broadcast-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

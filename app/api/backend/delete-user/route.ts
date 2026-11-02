@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders, proxyError, relayUpstream } from '@/lib/backend-admin-headers';
 
 /**
  * POST /api/backend/delete-user
  *
  * Proxies to FastAPI POST /api/v1/governance/admin-delete-user which removes
  * the user from Firebase Auth, Firestore, and PostgreSQL in one call.
+ * Backend requires a dashboard admin with manageUsers.
  *
  * Body: { userId: string }
  */
 export async function POST(request: NextRequest) {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId      = process.env.BACKEND_APP_ID;
-  const apiKey     = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 });
-  }
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   let userId: string;
   try {
@@ -26,29 +23,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(
-      `${backendUrl.replace(/\/$/, '')}/api/v1/governance/admin-delete-user`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(appId  ? { 'X-App-ID':  appId  } : {}),
-          ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-        },
-        body: JSON.stringify({ user_id: userId }),
-      }
-    );
-
-    if (upstream.status === 204) {
-      return NextResponse.json({ success: true });
-    }
-
-    const raw = await upstream.text();
-    let detail = `Backend error (${upstream.status})`;
-    try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-    return NextResponse.json({ error: detail }, { status: upstream.status });
+    const upstream = await fetch(`${env.base}/api/v1/governance/admin-delete-user`, {
+      method: 'POST',
+      headers: { ...env.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    if (upstream.status === 204) return NextResponse.json({ success: true });
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

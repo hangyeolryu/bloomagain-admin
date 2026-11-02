@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders, proxyError, relayUpstream } from '@/lib/backend-admin-headers';
 
 /**
  * POST /api/backend/grant-founding-member
@@ -6,19 +7,12 @@ import { NextRequest, NextResponse } from 'next/server';
  * Proxies to FastAPI POST /api/v1/governance/admin-grant-founding-member which
  * assigns a launch-cohort founding_member_number (1..500) AND a 6-month free
  * Premium trial to a user who completed NICE verification before the founding
- * system was deployed (commit db9005e).
+ * system was deployed (commit db9005e). This DOES consume a cohort slot — the
+ * 500-cap is permanent, so use sparingly. Backend requires manageUsers.
  *
- * Unlike /api/backend/set-subscription (which deliberately does NOT consume a
- * cohort slot for QA toggles), this endpoint DOES consume a slot. It is meant
- * for real users who would have received the badge automatically had the code
- * shipped earlier. Use sparingly — the 500-cap is permanent.
- *
- * Body
- * ----
- *   { "userId": "<firebase_uid>" }
+ * Body: { "userId": "<firebase_uid>" }
  *
  * Response (forwarded from FastAPI, see AdminGrantFoundingMemberResponse)
- * ----------------------------------------------------------------------
  *   {
  *     "user_id":                "<firebase_uid>",
  *     "founding_member_number": 1-500 | null,    // null if cap reached
@@ -30,16 +24,8 @@ import { NextRequest, NextResponse } from 'next/server';
  *   }
  */
 export async function POST(request: NextRequest) {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId      = process.env.BACKEND_APP_ID;
-  const apiKey     = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json(
-      { error: 'BLOOMAGAIN_BACKEND_URL not configured' },
-      { status: 500 },
-    );
-  }
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   let userId: string;
   try {
@@ -50,28 +36,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(
-      `${backendUrl.replace(/\/$/, '')}/api/v1/governance/admin-grant-founding-member`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(appId  ? { 'X-App-ID':  appId  } : {}),
-          ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-        },
-        body: JSON.stringify({ user_id: userId }),
-      },
-    );
-
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    const upstream = await fetch(`${env.base}/api/v1/governance/admin-grant-founding-member`, {
+      method: 'POST',
+      headers: { ...env.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

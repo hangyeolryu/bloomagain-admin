@@ -21,6 +21,7 @@ import {
   addProposerSignup,
   type SeatProposal,
 } from '@/lib/firestore';
+import { adminFetch } from '@/lib/admin-fetch';
 
 type Funnel = { shown: number; tapped: number; uniqueViewers: number };
 
@@ -83,7 +84,7 @@ export default function ProposalsCard({ onSessionCreated }: { onSessionCreated: 
     setErr(null);
     setDoneMsg(null);
     try {
-      const res = await fetch('/api/backend/titatime-sessions', {
+      const res = await adminFetch('/api/backend/titatime-sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

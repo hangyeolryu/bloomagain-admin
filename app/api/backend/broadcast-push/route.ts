@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders, proxyError, relayUpstream } from '@/lib/backend-admin-headers';
 
 /**
  * POST /api/backend/broadcast-push
@@ -6,68 +7,33 @@ import { NextRequest, NextResponse } from 'next/server';
  * Proxies to FastAPI POST /api/v1/operations/broadcast-push, which sends a
  * one-off FCM push to every user with an fcmToken.
  *
- * Guarded by X-Internal-Api-Key (server-only secret) — NOT the tenant key —
- * because the tenant key ships inside the mobile app and must never be able to
- * broadcast to all users. Set INTERNAL_API_KEY in the admin's server env to
- * the same value the backend uses.
+ * Backend requires X-Internal-Api-Key (never the tenant key, which ships in the
+ * app) AND the signed-in operator's ID token checked against admins/{email} —
+ * this proxy has no server-side auth of its own. See lib/backend-admin-headers.ts.
  *
  * Body: { title: string, body: string, type?: string }
  */
 
-function readEnv() {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const internalKey = process.env.INTERNAL_API_KEY;
-  if (!backendUrl) {
-    return { error: NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 }) };
-  }
-  if (!internalKey) {
-    return {
-      error: NextResponse.json(
-        { error: 'INTERNAL_API_KEY not configured on the admin server' },
-        { status: 500 },
-      ),
-    };
-  }
-  return { backendUrl: backendUrl.replace(/\/$/, ''), internalKey };
-}
-
 /** GET /api/backend/broadcast-push — recent broadcast history (newest first). */
-export async function GET() {
-  const env = readEnv();
-  if (env.error) return env.error;
+export async function GET(request: NextRequest) {
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   try {
-    const upstream = await fetch(`${env.backendUrl}/api/v1/operations/broadcast-push/history`, {
+    const upstream = await fetch(`${env.base}/api/v1/operations/broadcast-push/history`, {
       method: 'GET',
-      headers: { 'X-Internal-Api-Key': env.internalKey },
+      headers: env.headers,
       cache: 'no-store',
     });
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }
 
 export async function POST(request: NextRequest) {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const internalKey = process.env.INTERNAL_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 });
-  }
-  if (!internalKey) {
-    return NextResponse.json(
-      { error: 'INTERNAL_API_KEY not configured on the admin server' },
-      { status: 500 },
-    );
-  }
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   let payload: Record<string, unknown>;
   try {
@@ -98,27 +64,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(
-      `${backendUrl.replace(/\/$/, '')}/api/v1/operations/broadcast-push`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Internal-Api-Key': internalKey,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    const upstream = await fetch(`${env.base}/api/v1/operations/broadcast-push`, {
+      method: 'POST',
+      headers: { ...env.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

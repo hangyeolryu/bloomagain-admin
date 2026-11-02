@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { backendAdminHeaders, proxyError, relayUpstream } from '@/lib/backend-admin-headers';
 
 /**
  * POST /api/backend/check-users
@@ -7,38 +8,18 @@ import { NextRequest, NextResponse } from 'next/server';
  * Accepts { user_ids: string[] }, returns a map of uid → { exists, account_status?, subscription_tier? }.
  */
 export async function POST(request: NextRequest) {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId      = process.env.BACKEND_APP_ID;
-  const apiKey     = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 });
-  }
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   try {
     const body = await request.json();
-    const upstream = await fetch(
-      `${backendUrl.replace(/\/$/, '')}/api/v1/user/batch-check`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(appId  ? { 'X-App-ID':  appId  } : {}),
-          ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-        },
-        body: JSON.stringify(body),
-      }
-    );
-
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = 'Backend error';
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    const upstream = await fetch(`${env.base}/api/v1/user/batch-check`, {
+      method: 'POST',
+      headers: { ...env.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

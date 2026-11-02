@@ -1,32 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_FIELDS } from '../fields';
+import { backendAdminHeaders, proxyError, relayUpstream } from '@/lib/backend-admin-headers';
 
 /**
  * 개별 티타임 세션 수정/삭제 프록시 → FastAPI /api/v1/titatime/sessions/{id}.
- *  - PATCH  : 부분 수정 (내부키)
- *  - DELETE : 삭제 (내부키)
+ *  - PATCH  : 부분 수정 (내부키 + 운영자 ID 토큰)
+ *  - DELETE : 삭제 (내부키 + 운영자 ID 토큰)
  */
 
-function readEnv() {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const internalKey = process.env.INTERNAL_API_KEY;
-  if (!backendUrl) {
-    return { error: NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 }) };
-  }
-  if (!internalKey) {
-    return {
-      error: NextResponse.json(
-        { error: 'INTERNAL_API_KEY not configured on the admin server' },
-        { status: 500 },
-      ),
-    };
-  }
-  return { backendUrl: backendUrl.replace(/\/$/, ''), internalKey };
-}
-
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const env = readEnv();
-  if (env.error) return env.error;
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
   const { id } = await ctx.params;
 
   let payload: Record<string, unknown>;
@@ -42,43 +26,29 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   }
 
   try {
-    const upstream = await fetch(`${env.backendUrl}/api/v1/titatime/sessions/${encodeURIComponent(id)}`, {
+    const upstream = await fetch(`${env.base}/api/v1/titatime/sessions/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Api-Key': env.internalKey },
+      headers: { ...env.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }
 
-export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const env = readEnv();
-  if (env.error) return env.error;
+export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
   const { id } = await ctx.params;
 
   try {
-    const upstream = await fetch(`${env.backendUrl}/api/v1/titatime/sessions/${encodeURIComponent(id)}`, {
+    const upstream = await fetch(`${env.base}/api/v1/titatime/sessions/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      headers: { 'X-Internal-Api-Key': env.internalKey },
+      headers: env.headers,
     });
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

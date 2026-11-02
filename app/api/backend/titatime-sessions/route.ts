@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_FIELDS } from './fields';
+import { backendAdminHeaders, proxyError, relayUpstream } from '@/lib/backend-admin-headers';
 
 /**
  * 티타임 모집 세션 관리 프록시 → FastAPI /api/v1/titatime/sessions.
@@ -8,52 +9,28 @@ import { SESSION_FIELDS } from './fields';
  *  - POST : 세션 생성 (백엔드 POST /titatime/sessions, 내부키)
  *
  * 웹 모집 페이지가 보여주는 "이번 주 자리"의 단일 출처(Firestore meetup_sessions)를
- * 어드민에서 세팅한다. 내부키(X-Internal-Api-Key, 서버 전용)로만 쓰기 가능 —
- * 앱에 실리는 테넌트 키로는 절대 세션을 못 만든다.
+ * 어드민에서 세팅한다. 백엔드는 내부키(X-Internal-Api-Key)와 로그인한 운영자의
+ * ID 토큰(admins/{email} 확인)을 둘 다 요구한다 — 이 프록시엔 서버 쪽 인증이 없다.
  */
 
-function readEnv() {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const internalKey = process.env.INTERNAL_API_KEY;
-  if (!backendUrl) {
-    return { error: NextResponse.json({ error: 'BLOOMAGAIN_BACKEND_URL not configured' }, { status: 500 }) };
-  }
-  if (!internalKey) {
-    return {
-      error: NextResponse.json(
-        { error: 'INTERNAL_API_KEY not configured on the admin server' },
-        { status: 500 },
-      ),
-    };
-  }
-  return { backendUrl: backendUrl.replace(/\/$/, ''), internalKey };
-}
-
-export async function GET() {
-  const env = readEnv();
-  if (env.error) return env.error;
+export async function GET(request: NextRequest) {
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
   try {
-    const upstream = await fetch(`${env.backendUrl}/api/v1/titatime/sessions/all`, {
+    const upstream = await fetch(`${env.base}/api/v1/titatime/sessions/all`, {
       method: 'GET',
-      headers: { 'X-Internal-Api-Key': env.internalKey },
+      headers: env.headers,
       cache: 'no-store',
     });
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }
 
 export async function POST(request: NextRequest) {
-  const env = readEnv();
-  if (env.error) return env.error;
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
 
   let payload: Record<string, unknown>;
   try {
@@ -78,20 +55,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(`${env.backendUrl}/api/v1/titatime/sessions`, {
+    const upstream = await fetch(`${env.base}/api/v1/titatime/sessions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Api-Key': env.internalKey },
+      headers: { ...env.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      let detail = `Backend error (${upstream.status})`;
-      try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
-      return NextResponse.json({ error: detail }, { status: upstream.status });
-    }
-    return NextResponse.json(JSON.parse(raw));
+    return relayUpstream(upstream);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

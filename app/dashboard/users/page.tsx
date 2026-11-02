@@ -13,6 +13,7 @@ import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
 import { versionStatus, VERSION_STATUS_DOT, VERSION_STATUS_TEXT, VERSION_STATUS_LABEL, LATEST_APP_VERSION, normalizePlatform, platformFromAppAgent, PLATFORM_EMOJI, PLATFORM_LABEL } from '@/lib/app-version';
 import { activityTier, activityRatio, ACTIVITY_TIER_META } from '@/lib/activity-heat';
+import { adminFetch } from '@/lib/admin-fetch';
 
 const PAGE_SIZE = 30;
 
@@ -63,7 +64,7 @@ function buildBackfillPayload(u: UserProfile): BackfillPayload {
 
 async function checkUsersInBackend(userIds: string[]): Promise<PgStatusMap> {
   if (!userIds.length) return {};
-  const res = await fetch('/api/backend/check-users', {
+  const res = await adminFetch('/api/backend/check-users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_ids: userIds }),
@@ -81,7 +82,7 @@ interface BatchRegisterResult {
 async function batchBackfillUsersInBackend(
   users: BackfillPayload[]
 ): Promise<BatchRegisterResult> {
-  const res = await fetch('/api/backend/batch-admin-backfill', {
+  const res = await adminFetch('/api/backend/batch-admin-backfill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ users }),

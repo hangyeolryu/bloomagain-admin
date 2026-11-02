@@ -1,37 +1,27 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { backendAdminHeaders } from '@/lib/backend-admin-headers';
 
 /**
  * GET /api/admin/backend-health
  *
  * Aggregates backend `/api/v1/health` + `/api/v1/metrics` into one payload so
- * the admin health page can render with a single round-trip. Server-side
- * proxy keeps tenant credentials out of the browser.
+ * the admin health page can render with a single round-trip. /metrics requires
+ * the internal key + the operator's ID token (backendAdminHeaders); /health is
+ * public but gets the same headers.
  */
-export async function GET() {
-  const backendUrl = process.env.BLOOMAGAIN_BACKEND_URL;
-  const appId = process.env.BACKEND_APP_ID;
-  const apiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    return NextResponse.json(
-      { error: 'BLOOMAGAIN_BACKEND_URL not configured' },
-      { status: 500 },
-    );
-  }
-  const base = backendUrl.replace(/\/$/, '');
-  const tenantHeaders: Record<string, string> = {
-    ...(appId ? { 'X-App-ID': appId } : {}),
-    ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-  };
+export async function GET(request: NextRequest) {
+  const env = backendAdminHeaders(request);
+  if ('error' in env) return env.error;
+  const { base, headers } = env;
 
   const t0 = Date.now();
   const [healthRes, metricsRes] = await Promise.allSettled([
     fetch(`${base}/api/v1/health`, {
-      headers: tenantHeaders,
+      headers,
       cache: 'no-store',
     }),
     fetch(`${base}/api/v1/metrics`, {
-      headers: tenantHeaders,
+      headers,
       cache: 'no-store',
     }),
   ]);

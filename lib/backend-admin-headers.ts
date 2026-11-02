@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Upstream headers for the backend's /api/v1/admin/* routes, which require the
- * tenant key, the internal key AND the operator's Firebase ID token (verified
- * against admins/{email} by the backend). The token is forwarded as-is from the
- * browser (see lib/admin-fetch.ts); without it the backend answers 401.
+ * Upstream headers for every admin-only backend route (/admin/*, user backfill,
+ * delete-user, founding grants, broadcast push, titatime sessions, metrics).
+ * Sends the tenant key, the internal key AND the operator's Firebase ID token,
+ * which the backend verifies against admins/{email} (and the role, where the
+ * dashboard gates with can()). The token is forwarded as-is from the browser
+ * (lib/admin-fetch.ts); without it we answer 401 here, so a request relayed
+ * through these proxies can never reach the backend on the internal key alone.
  */
 export function backendAdminHeaders(
   request: NextRequest,
@@ -35,4 +38,20 @@ export function backendAdminHeaders(
       Authorization: authorization,
     },
   };
+}
+
+/** Pass a backend response through: JSON body on success, `{ error: detail }` otherwise. */
+export async function relayUpstream(upstream: Response): Promise<NextResponse> {
+  const raw = await upstream.text();
+  if (!upstream.ok) {
+    let detail = `Backend error (${upstream.status})`;
+    try { detail = (JSON.parse(raw) as { detail?: string }).detail ?? detail; } catch { /* not JSON */ }
+    return NextResponse.json({ error: detail }, { status: upstream.status });
+  }
+  return NextResponse.json(raw ? JSON.parse(raw) : {}, { status: upstream.status });
+}
+
+/** Proxy-level failure (network, bad env) → 500 with the message. */
+export function proxyError(err: unknown): NextResponse {
+  return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
 }

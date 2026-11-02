@@ -22,6 +22,7 @@ import type {
 } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { adminFetch } from '@/lib/admin-fetch';
 
 // 참석은 여기서 못 고친다 — 고치는 곳은 '티타임 자리 관리' 한 곳뿐이다.
 // 같은 걸 두 화면에서 고칠 수 있으면 어느 쪽이 맞는지 모르게 된다.
@@ -333,7 +334,7 @@ export default function TeatimePage() {
     getTeatimeViewerDetails()
       .then((v) => { if (!cancelled) setViewerDetails(v); })
       .catch(() => {/* 상세를 못 읽어도 명단은 보여준다 */});
-    fetch('/api/backend/titatime-sessions', { cache: 'no-store' })
+    adminFetch('/api/backend/titatime-sessions', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;

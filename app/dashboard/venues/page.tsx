@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getVenues, saveVenue, type Venue } from '@/lib/firestore';
 import Header from '@/components/layout/Header';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { adminFetch } from '@/lib/admin-fetch';
 
 const TYPE_KO: Record<string, string> = {
   exhibition: '전시',
@@ -119,7 +120,7 @@ export default function VenuesPage() {
     setErr(null);
     setCreated(null);
     try {
-      const res = await fetch('/api/backend/titatime-sessions', {
+      const res = await adminFetch('/api/backend/titatime-sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

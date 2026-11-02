@@ -13,6 +13,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal from '@/components/ui/Modal';
 import SendMessageModal from '@/components/user/SendMessageModal';
 import MemberTraits from '@/components/ui/MemberTraits';
+import { adminFetch } from '@/lib/admin-fetch';
 
 function InfoRow({ label, value }: { label: string; value?: string | number | boolean | null }) {
   return (
@@ -211,7 +212,7 @@ export default function UserDetailClient({ id }: { id: string }) {
     if (!profile) return;
     setActing(true);
     try {
-      const res = await fetch('/api/backend/grant-founding-member', {
+      const res = await adminFetch('/api/backend/grant-founding-member', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: profile.id }),
@@ -259,7 +260,7 @@ export default function UserDetailClient({ id }: { id: string }) {
     if (!profile) return;
     setActing(true);
     try {
-      const res = await fetch('/api/backend/delete-user', {
+      const res = await adminFetch('/api/backend/delete-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: profile.id }),

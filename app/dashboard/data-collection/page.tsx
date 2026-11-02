@@ -660,7 +660,7 @@ export default function DataCollectionPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/admin/backend-health', { cache: 'no-store' })
+    adminFetch('/api/admin/backend-health', { cache: 'no-store' })
       .then((r) => r.json())
       .then((d) => {
         const h = d?.health;

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { adminFetch } from '@/lib/admin-fetch';
 
 /**
  * 자리별 제외 회원.
@@ -69,7 +70,7 @@ export default function ExcludeMembers({
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/backend/titatime-sessions/${sessionId}`, {
+      const res = await adminFetch(`/api/backend/titatime-sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ excludeUids: next }),

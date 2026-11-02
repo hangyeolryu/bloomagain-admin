@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import ExcludeMembers from './ExcludeMembers';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage } from '@/lib/firebase';
+import { adminFetch } from '@/lib/admin-fetch';
 
 type Status = 'open' | 'almost' | 'closed' | 'planning' | 'cancelled';
 
@@ -210,7 +211,7 @@ export default function MeetupSessionsCard({ reloadKey = 0 }: { reloadKey?: numb
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/backend/titatime-sessions', { cache: 'no-store' });
+      const res = await adminFetch('/api/backend/titatime-sessions', { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || '불러오기 실패');
       setSessions(json.items ?? []);
@@ -274,7 +275,7 @@ export default function MeetupSessionsCard({ reloadKey = 0 }: { reloadKey?: numb
     setNotice(null);
     try {
       const isNew = editingId === '';
-      const res = await fetch(
+      const res = await adminFetch(
         isNew ? '/api/backend/titatime-sessions' : `/api/backend/titatime-sessions/${editingId}`,
         {
           method: isNew ? 'POST' : 'PATCH',
@@ -296,7 +297,7 @@ export default function MeetupSessionsCard({ reloadKey = 0 }: { reloadKey?: numb
   async function togglePublish(s: Session) {
     setBusy(true);
     try {
-      const res = await fetch(`/api/backend/titatime-sessions/${s.id}`, {
+      const res = await adminFetch(`/api/backend/titatime-sessions/${s.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ published: !s.published }),
@@ -315,7 +316,7 @@ export default function MeetupSessionsCard({ reloadKey = 0 }: { reloadKey?: numb
     if (!confirm(`"${s.district} · ${s.dateLabel}" 세션을 삭제할까요?`)) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/backend/titatime-sessions/${s.id}`, { method: 'DELETE' });
+      const res = await adminFetch(`/api/backend/titatime-sessions/${s.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || '삭제 실패');
       await load();
@@ -348,7 +349,7 @@ export default function MeetupSessionsCard({ reloadKey = 0 }: { reloadKey?: numb
     setBusy(true);
     setNotice(null);
     try {
-      const res = await fetch('/api/backend/broadcast-push', {
+      const res = await adminFetch('/api/backend/broadcast-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title.trim(), body: body.trim(), type: 'teatime' }),
