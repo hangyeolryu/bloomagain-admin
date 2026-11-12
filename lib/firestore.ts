@@ -1443,13 +1443,24 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const usersSnap = await getDocs(collection(db, 'users'));
   const users = usersSnap.docs.map((d) => d.data());
 
+  // 신규 가입은 탈퇴 묘비(isDeleted)를 빼고 센다. 묘비에는 가입일이 탈퇴
+  // 시각으로 찍힌 것이 스무 건쯤 있었고(2026-11-12 확인), createdAt만 보는
+  // 카운트 쿼리는 그걸 "이번 주 가입"으로 셌다 — 탈퇴가 가입으로 보였다.
+  // 어차피 위에서 users 전체를 읽었으니 여기서 거른다(쿼리 추가 없음).
+  const countNewSince = (since: Date) =>
+    users.filter((u) => {
+      if (u.isDeleted === true) return false;
+      const t = (u.createdAt as Timestamp | undefined)?.toMillis?.();
+      return typeof t === 'number' && t >= since.getTime();
+    }).length;
+  const newUsersThisWeek = countNewSince(sevenDaysAgo);
+  const newUsersThisMonth = countNewSince(thirtyDaysAgo);
+
   // All remaining counts run in parallel; each fails gracefully to 0
   const [
     totalCircles,
     pendingReports,
     unresolvedAlerts,
-    newUsersThisWeek,
-    newUsersThisMonth,
     activeUsersThisWeek,
     totalWaves,
     totalConversations,
@@ -1458,8 +1469,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     safeCount(collection(db, 'circles'), 'circles', warnings),
     safeCount(query(collection(db, 'reports'), where('status', '==', 'pending')), 'pending reports', warnings),
     safeCount(query(collection(db, 'admin_alerts'), where('resolved', '==', false)), 'unresolved alerts', warnings),
-    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'new users 7d', warnings),
-    safeCount(query(collection(db, 'users'), where('createdAt', '>=', Timestamp.fromDate(thirtyDaysAgo))), 'new users 30d', warnings),
     safeCount(query(collection(db, 'users'), where('lastActiveAt', '>=', Timestamp.fromDate(sevenDaysAgo))), 'active users 7d', warnings),
     safeCount(collection(db, 'waves'), 'waves', warnings),
     safeCount(collection(db, 'conversations'), 'conversations', warnings),
@@ -2408,7 +2417,10 @@ function classifyOnboardingStage(u: UserProfile): OnboardingStage {
 
 export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
   const usersSnap = await getDocs(collection(db, 'users'));
-  const total = usersSnap.size;
+  // 탈퇴 묘비는 퍼널에 없는 사람이다. 묘비의 createdAt이 탈퇴 시각으로 찍힌
+  // 건이 있어(2026-11-12), 섞으면 "최근 30일 가입·인증 전·기록 없음"이 부푼다.
+  const liveDocs = usersSnap.docs.filter((d) => d.data().isDeleted !== true);
+  const total = liveDocs.length;
 
   let signedUp = 0;
   let niceDone = 0;
@@ -2429,7 +2441,7 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
   // 케이스도 커버. 컬렉션이 없거나 read 실패해도 attemptSummary 없이 진행.
   const attemptsSummary = await loadRecentAttemptSummaries(30);
 
-  for (const d of usersSnap.docs) {
+  for (const d of liveDocs) {
     const data = d.data();
     const profile: UserProfile = {
       id: d.id,
