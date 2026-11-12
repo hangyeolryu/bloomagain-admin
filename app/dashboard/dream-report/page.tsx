@@ -37,6 +37,7 @@ type Report = {
   weekly: { week: string; web: number; app: number }[];
   quotes: { source: 'web' | 'app'; text: string; category: string }[];
   titaWishes: string[];
+  coreWants?: { source: 'web' | 'app'; dream: string; core: string; category: string }[];
   webFunnel: Funnel[];
   appInterviews: { total: number; completed: number; abandoned: number; error: string | null };
 };
@@ -269,6 +270,24 @@ export default function DreamReportPage() {
               )}
             </Card>
           </div>
+
+          {data.coreWants && data.coreWants.length > 0 && (
+            <Card
+              title="겉 꿈 → 진짜 바라는 것"
+              hint="티타AI가 한 겹 아래를 물어 찾은 마음이에요. 왼쪽(생각한 것)과 오른쪽(마음이 끌리는 것)이 다를수록 코칭·모임 설계의 실마리가 돼요."
+            >
+              <ul className="space-y-2.5">
+                {data.coreWants.map((c, i) => (
+                  <li key={i} className="text-sm leading-relaxed flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-[11px] font-semibold text-gray-400">{c.source === 'app' ? '앱' : '웹'}</span>
+                    <span className="text-gray-500">{c.dream || '—'}</span>
+                    <span className="text-gray-300">→</span>
+                    <span className="font-semibold text-emerald-800">{c.core}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           <Card
             title="이분들이 한 말"
