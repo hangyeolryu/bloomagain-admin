@@ -37,6 +37,9 @@ type Report = {
   weekly: { week: string; web: number; app: number }[];
   quotes: { source: 'web' | 'app'; text: string; category: string }[];
   titaWishes: string[];
+  webFeedback?: { total: number; good: number; ok: number; bad: number; goodRate: number | null;
+    comments: { rating: 'good' | 'ok' | 'bad'; text: string }[] } | null;
+  appFeedback?: string[];
   coreWants?: { source: 'web' | 'app'; dream: string; core: string; category: string }[];
   webFunnel: Funnel[];
   appInterviews: { total: number; completed: number; abandoned: number; error: string | null };
@@ -283,6 +286,39 @@ export default function DreamReportPage() {
                     <span className="text-gray-500">{c.dream || '—'}</span>
                     <span className="text-gray-300">→</span>
                     <span className="font-semibold text-emerald-800">{c.core}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {(data.webFeedback || (data.appFeedback && data.appFeedback.length > 0)) && (
+            <Card
+              title="대화가 어땠는지 — 피드백"
+              hint="웹은 끝 화면의 '좋았어요/그저 그래요/별로였어요', 앱은 인터뷰 끝 질문에 남긴 한마디예요."
+            >
+              {data.webFeedback && (
+                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm mb-3 tabular-nums">
+                  <span className="text-2xl font-bold text-gray-900">{pct(data.webFeedback.goodRate)}</span>
+                  <span className="text-gray-500">
+                    웹 좋았어요 {data.webFeedback.good} · 그저 그래요 {data.webFeedback.ok} · 별로였어요 {data.webFeedback.bad}
+                    {data.webFeedback.goodRate == null && ` (${data.minCell}명부터 비율)`}
+                  </span>
+                </div>
+              )}
+              <ul className="space-y-1.5 text-sm text-gray-800">
+                {data.webFeedback?.comments.map((c, i) => (
+                  <li key={`w${i}`}>
+                    <span className="mr-2 text-[11px] font-semibold text-gray-400">
+                      웹 · {c.rating === 'good' ? '좋았어요' : c.rating === 'ok' ? '그저' : '별로'}
+                    </span>
+                    {c.text}
+                  </li>
+                ))}
+                {data.appFeedback?.map((t, i) => (
+                  <li key={`a${i}`}>
+                    <span className="mr-2 text-[11px] font-semibold text-amber-600">앱</span>
+                    {t}
                   </li>
                 ))}
               </ul>
