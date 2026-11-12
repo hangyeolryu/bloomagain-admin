@@ -23,6 +23,10 @@ const nextConfig = {
     // Override the dedicated "티타 관리자" chat sender at deploy time. When
     // unset the admin-DM route falls back to the hardcoded staging uid.
     TITA_OFFICIAL_SENDER_UID: process.env.TITA_OFFICIAL_SENDER_UID ?? '',
+    // 내부키 — 티타임 자리 관리·꿈 리포트 프록시가 쓴다(백엔드가 이 키로만 연다).
+    // 값이 있을 때만 inline한다. 빈 값을 inline하면 런타임 환경변수로 넣어 둔 값까지
+    // ''로 덮여 지금 되던 라우트가 죽는다.
+    ...(process.env.INTERNAL_API_KEY ? { INTERNAL_API_KEY: process.env.INTERNAL_API_KEY } : {}),
   },
   // NOTE (2026-07-01): tried `serverExternalPackages: ['firebase-admin']` to
   // avoid bundling grpc/native modules, but Firebase Hosting's

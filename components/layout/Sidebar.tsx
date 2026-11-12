@@ -30,6 +30,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/engagement', label: '참여도 (눈팅·적극)', icon: '👀' },
 
   // 사람을 데려오는 일.
+  { href: '/dashboard/dream-report', label: '꿈 리포트 (티타AI)', icon: '🌱', section: '모으기' },
   { href: '/dashboard/needs', label: '니즈 설문 (5060)', icon: '🧭', section: '모으기' },
   { href: '/dashboard/marketing', label: '마케팅 운영', icon: '📣', section: '모으기' },
   { href: '/dashboard/gyeol', label: '결 유형 테스트', icon: '🍵', section: '모으기' },
