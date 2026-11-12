@@ -40,6 +40,7 @@ type Report = {
   webFeedback?: { total: number; good: number; ok: number; bad: number; goodRate: number | null;
     comments: { rating: 'good' | 'ok' | 'bad'; text: string }[] } | null;
   appFeedback?: string[];
+  handoff?: { issued: number; claimed: number } | null;
   coreWants?: { source: 'web' | 'app'; dream: string; core: string; category: string }[];
   webFunnel: Funnel[];
   appInterviews: { total: number; completed: number; abandoned: number; error: string | null };
@@ -170,6 +171,13 @@ export default function DreamReportPage() {
               }
               tone={data.wantsPeer.rate == null ? undefined : data.wantsPeer.rate >= 0.5 ? 'good' : 'warn'}
             />
+            {data.handoff && (
+              <Stat
+                label="웹 → 앱 이어가기"
+                value={data.handoff.claimed}
+                sub={`코드 받음 ${data.handoff.issued} · 앱에서 씀 ${data.handoff.claimed}`}
+              />
+            )}
             <Stat
               label="앱 회원 인터뷰"
               value={data.appInterviews.total}
