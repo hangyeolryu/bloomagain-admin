@@ -22,6 +22,7 @@
 #     BACKEND_APP_ID
 #     BACKEND_API_KEY
 #     TITA_OFFICIAL_SENDER_UID          (선택)
+#     INTERNAL_API_KEY                  (선택 — 백엔드와 같은 값. 없으면 티타임 자리 관리·꿈 리포트가 안 열린다)
 #
 # ── 서비스계정 IAM 역할 (bloomagain-korea 프로젝트) ──────────────────────────
 #   Firebase Hosting Admin, Cloud Run Admin, Cloud Functions Admin,
@@ -86,6 +87,7 @@ jobs:
           BACKEND_APP_ID=${{ secrets.BACKEND_APP_ID }}
           BACKEND_API_KEY=${{ secrets.BACKEND_API_KEY }}
           TITA_OFFICIAL_SENDER_UID=${{ secrets.TITA_OFFICIAL_SENDER_UID }}
+          INTERNAL_API_KEY=${{ secrets.INTERNAL_API_KEY }}
           EOF
 
       # ── 빈 값 방어 ───────────────────────────────────────────────────────────
