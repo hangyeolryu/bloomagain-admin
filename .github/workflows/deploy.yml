@@ -63,7 +63,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Cloud Functions가 Node.js 20을 2026-10-30에 내렸다. 서버 런타임은 package.json
+          # engines.node(22)를 따른다 — 빌드도 같은 버전으로 맞춘다.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
